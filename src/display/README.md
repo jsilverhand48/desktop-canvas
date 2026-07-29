@@ -10,3 +10,9 @@ Platform and surface abstractions.
 
 Scene wallpapers bypass RenderSurface entirely; their child process creates
 its own surface (see src/process/).
+
+`wayland/WaylandLayerOutput` uses the layer shell `background` layer by
+default. Do not switch to `bottom` looking for something lower: KWin maps
+`bottom` to BelowLayer, which is above the DesktopLayer that `background`
+maps to (and that plasmashell's desktop containment lives in). Plasma icon
+stacking is handled by packaging/plasma/, not by the layer choice.

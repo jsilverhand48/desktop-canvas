@@ -13,6 +13,10 @@ WaylandLayerOutput::WaylandLayerOutput(WaylandConnection& conn,
                                        const std::string& layer)
     : conn_(conn), egl_(egl), name_(info.name), scale_(info.scale) {
     surface_ = wl_compositor_create_surface(conn.compositor());
+    // "background" is the correct default everywhere. On KWin it shares
+    // DesktopLayer with plasmashell's desktop containment, which is what lets
+    // packaging/plasma/ raise the icons above us; "bottom" maps to KWin's
+    // BelowLayer, which is *above* DesktopLayer and would bury them.
     uint32_t layer_id = layer == "bottom"
                             ? ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM
                             : ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;

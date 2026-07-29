@@ -1,0 +1,11 @@
+{
+    "KPackageStructure": "KWin/Script",
+    "KPlugin": {
+        "Description": "Keeps the Plasma desktop containment stacked above wallpaper layer surfaces so desktop icons and widgets stay visible",
+        "Icon": "preferences-desktop-wallpaper",
+        "Id": "org.desktopcanvas.raisedesktop",
+        "License": "MIT",
+        "Name": "desktop-canvas: Raise Desktop Above Wallpapers"
+    },
+    "X-Plasma-API": "javascript"
+}

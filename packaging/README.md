@@ -11,8 +11,8 @@ Distribution artifacts.
   as a module; fill in the source sha256 before building).
 - `arch/PKGBUILD` reference Arch package.
 - `debian/` reference control and rules stubs for a Debian package.
-- `plasma/` KDE Plasma integration (transparent wallpaper plugin, KWin rule
-  and setup script) so desktop icons render above the wallpaper; see
+- `plasma/` KDE Plasma integration (transparent wallpaper plugin, KWin
+  script and setup script) so desktop icons render above the wallpaper; see
   plasma/README.md.
 
 Scene wallpapers depend on linux-wallpaperengine at runtime; distro

@@ -8,8 +8,12 @@
 // up; the vendored protocol XML is already in protocol/).
 //
 // Rendering behind icons/panels: the background layer is the lowest layer
-// shell layer; panels (top layer docks) always stack above. See the README
-// caveat matrix for how DE desktop icon windows interact with this.
+// shell layer; panels (top layer docks) always stack above. "bottom" is not
+// a lower alternative: on KWin it maps to BelowLayer, which sits above the
+// DesktopLayer that "background" maps to, so it would stack the wallpaper
+// over the Plasma desktop containment. See the README caveat matrix for how
+// DE desktop icon windows interact with this, and packaging/plasma/README.md
+// for the Plasma stacking fix.
 #pragma once
 
 #include <EGL/egl.h>

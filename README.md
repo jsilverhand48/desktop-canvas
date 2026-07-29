@@ -113,7 +113,7 @@ inside their own opaque desktop window:
 
 | Environment | Result |
 |---|---|
-| KDE Plasma Wayland | Panels stay above. Desktop icons live inside plasmashell's containment window, which by default is covered by the wallpaper (or covers it, racily, after plasmashell restarts). Run `packaging/plasma/setup-plasma-icons.sh` for the deterministic fix: it installs a transparent Plasma wallpaper plugin and a KWin rule pinning the containment above the wallpaper, so icons, widgets, and the desktop context menu all work on top of the animated wallpaper. Tradeoff: the containment then receives pointer input, so scene mouse parallax does not react. |
+| KDE Plasma Wayland | Panels stay above. Desktop icons live inside plasmashell's containment window, which KWin puts in the same layer as the wallpaper surface and stacks by map order, so whichever mapped last wins: the wallpaper covers the icons after the daemon restarts, and the Plasma wallpaper covers the wallpaper after plasmashell restarts. Run `packaging/plasma/setup-plasma-icons.sh` for the deterministic fix: it installs a transparent Plasma wallpaper plugin plus a KWin script that re-raises the containment whenever a window maps, so icons, widgets, and the desktop context menu all work on top of the animated wallpaper. Tradeoff: the containment then receives pointer input, so scene mouse parallax does not react. |
 | Hyprland, Sway, wlroots | Clean: bars (waybar etc.) above, wallpaper behind everything, mouse input reaches the wallpaper over empty desktop. |
 | XFCE, MATE, Cinnamon (X11) | Disable the DE's own desktop icon drawing (xfdesktop / caja / nemo desktop settings) so its opaque DESKTOP window does not cover the wallpaper. |
 | GNOME Wayland | Not supported. |
