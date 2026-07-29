@@ -1,0 +1,32 @@
+# Reference PKGBUILD for desktop-canvas. Point `source` at a release
+# tarball once the project is hosted; for a local build run makepkg with
+# `--holdver` after adjusting source=() to the checkout path.
+pkgname=desktop-canvas
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Animated Wallpaper Engine wallpapers behind your Linux desktop"
+arch=(x86_64)
+license=(MIT)
+depends=(wayland libglvnd mpv libx11 libxrandr)
+makedepends=(cmake ninja pkgconf wayland-protocols)
+optdepends=(
+  'linux-wallpaperengine: scene (scene.pkg) wallpaper support'
+  'qt6-webengine: web wallpaper support (build with DESKTOP_CANVAS_WEB=ON)'
+  'qt6-declarative: web wallpaper support (QML runtime)'
+  'layer-shell-qt: web wallpaper layering on Wayland'
+)
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cmake -B build -S "$pkgname-$pkgver" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DDESKTOP_CANVAS_WEB=ON \
+    -DDESKTOP_CANVAS_TESTS=OFF
+  cmake --build build
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+}

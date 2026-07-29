@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Desktop Canvas
+Comment=Animated wallpaper daemon
+Exec=desktop-canvas
+Icon=preferences-desktop-wallpaper
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true

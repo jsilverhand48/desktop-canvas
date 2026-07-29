@@ -1,0 +1,20 @@
+# systemd user service for desktop-canvas.
+# Enable with: systemctl --user enable --now desktop-canvas
+# The service binds to the graphical session so it starts after the
+# compositor is up and stops on logout.
+[Unit]
+Description=desktop-canvas animated wallpaper daemon
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=@CMAKE_INSTALL_PREFIX@/bin/desktop-canvas
+Restart=on-failure
+RestartSec=3
+# Wallpapers on removable media may not be mounted yet at login; the daemon
+# handles that, but give it a moment on very slow mounts.
+TimeoutStartSec=15
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,0 +1,27 @@
+Source: desktop-canvas
+Section: x11
+Priority: optional
+Maintainer: Desktop Canvas Maintainers <nobody@example.invalid>
+Build-Depends: debhelper-compat (= 13),
+               cmake,
+               ninja-build,
+               pkgconf,
+               libwayland-dev,
+               wayland-protocols,
+               libegl-dev,
+               libgl-dev,
+               libmpv-dev,
+               libx11-dev,
+               libxrandr-dev
+Standards-Version: 4.6.2
+
+Package: desktop-canvas
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: mpv
+Suggests: qt6-webengine-dev, qt6-declarative-dev, liblayershellqtinterface-dev
+Description: Animated Wallpaper Engine wallpapers behind the Linux desktop
+ Renders Wallpaper Engine workshop content (video, scene, web wallpapers)
+ behind icons, widgets and taskbars on Wayland (wlr-layer-shell) and X11.
+ Scene wallpapers require linux-wallpaperengine, which Debian does not
+ package; build with -DDESKTOP_CANVAS_BUNDLE_LWE=ON to bundle it.

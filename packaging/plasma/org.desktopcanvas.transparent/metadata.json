@@ -1,0 +1,11 @@
+{
+    "KPackageStructure": "Plasma/Wallpaper",
+    "KPlugin": {
+        "Id": "org.desktopcanvas.transparent",
+        "Name": "Transparent (Desktop Canvas)",
+        "Description": "Fully transparent wallpaper so an external wallpaper daemon shows through while desktop icons stay visible",
+        "Icon": "preferences-desktop-wallpaper",
+        "License": "MIT",
+        "Version": "1.0"
+    }
+}

@@ -1,0 +1,50 @@
+# Flatpak manifest for desktop-canvas (reference; build with
+# flatpak-builder). Uses the KDE runtime so Qt6 WebEngine is available for
+# the web backend without bundling Chromium.
+#
+# Caveats:
+# - The daemon needs to read your Steam library; adjust the filesystem
+#   permission below to your library location (removable media requires
+#   /run/media access or use Flatseal).
+# - linux-wallpaperengine is built as a module so scene wallpapers work out
+#   of the box; drop that module to slim the build if you only use
+#   video/web wallpapers.
+app-id: io.github.desktopcanvas.DesktopCanvas
+runtime: org.kde.Platform
+runtime-version: '6.7'
+sdk: org.kde.Sdk
+command: desktop-canvas
+
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  - --share=ipc
+  # Steam libraries (internal and removable). Tighten as desired.
+  - --filesystem=~/.local/share/Steam:ro
+  - --filesystem=~/.steam:ro
+  - --filesystem=/run/media:ro
+  # Autostart via background portal is preferable; this exposes the user
+  # systemd bus as a pragmatic alternative.
+  - --socket=session-bus
+
+modules:
+  - name: linux-wallpaperengine
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+    sources:
+      - type: archive
+        url: https://github.com/Almamu/linux-wallpaperengine/archive/refs/tags/v0.6.3.tar.gz
+        sha256: SETME_RUN_flatpak_builder_WITH_CORRECT_HASH
+
+  - name: desktop-canvas
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DDESKTOP_CANVAS_WEB=ON
+      - -DDESKTOP_CANVAS_TESTS=OFF
+    sources:
+      - type: dir
+        path: ../..
