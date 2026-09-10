@@ -28,6 +28,15 @@ public:
     bool makeCurrent(EGLSurface surface);
     void swapBuffers(EGLSurface surface);
 
+    // Unbind the shared context from whatever surface is current.
+    // eglDestroySurface only *flags* a still-current surface for deletion, so
+    // an output must release the context before destroying its surface, or
+    // the driver keeps the colour buffers alive until some other surface is
+    // made current. That never happens when the next wallpaper is a child
+    // process rather than an in-process backend, so the surface leaks for the
+    // remaining lifetime of the daemon.
+    void releaseCurrent();
+
     EGLDisplay display() const { return display_; }
     bool valid() const { return context_ != EGL_NO_CONTEXT; }
 

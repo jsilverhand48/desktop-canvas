@@ -82,7 +82,12 @@ X11DesktopOutput::X11DesktopOutput(EventLoop& loop, X11Connection& conn,
 X11DesktopOutput::~X11DesktopOutput() {
     if (frame_timer_) loop_.cancelTimer(frame_timer_);
     conn_.removeWindowHandler(window_);
-    if (egl_surface_ != EGL_NO_SURFACE) egl_.destroySurface(egl_surface_);
+    if (egl_surface_ != EGL_NO_SURFACE) {
+        // Release before destroying; see EglContext::releaseCurrent and the
+        // matching comment in WaylandLayerOutput's destructor.
+        egl_.releaseCurrent();
+        egl_.destroySurface(egl_surface_);
+    }
     if (window_) XDestroyWindow(conn_.display(), window_);
     conn_.flush();
 }

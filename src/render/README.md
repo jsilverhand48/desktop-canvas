@@ -23,5 +23,9 @@ Wallpaper instance orchestration and in-process backends.
 - `VideoBackend` (`VideoInstance`) libmpv render API into a RenderSurface:
   update callback bridged via eventfd, frames rendered only when both mpv
   has a new frame and the compositor signaled readiness. Mute toggles live
-  via the mpv "mute" property.
+  via the mpv "mute" property. Teardown makes the surface current before
+  `mpv_render_context_free()`: libmpv requires the creating GL context to be
+  current for every `mpv_render_*` call, and free is where it deletes its
+  textures, FBOs and hwdec interop resources. Freeing without it leaks a few
+  hundred MB per instance, which rotation turns into an OOM kill within days.
 - `web/` optional Qt6 WebEngine backend (M6, DESKTOP_CANVAS_WEB=ON).

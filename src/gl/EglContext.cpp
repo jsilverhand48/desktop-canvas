@@ -94,6 +94,11 @@ bool EglContext::makeCurrent(EGLSurface surface) {
     return eglMakeCurrent(display_, surface, surface, context_) == EGL_TRUE;
 }
 
+void EglContext::releaseCurrent() {
+    if (display_ == EGL_NO_DISPLAY) return;
+    eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+}
+
 void EglContext::swapBuffers(EGLSurface surface) {
     eglSwapBuffers(display_, surface);
 }

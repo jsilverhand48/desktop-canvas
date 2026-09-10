@@ -7,12 +7,23 @@
 #                             release for "scene" wallpapers (default OFF; scenes
 #                             otherwise use the binary found on PATH at runtime).
 #   DESKTOP_CANVAS_TESTS      Build the test binaries under claude_tests/
-#                             (default ON).
+#                             (default ON, skipped automatically when the
+#                             directory is absent, as in release tarballs).
 #
 # The daemon itself links Wayland, EGL, libmpv, and X11 libraries. JSON and
 # CLI parsing use vendored single header libraries in third_party/.
+#
+# Besides the binaries this installs the desktop entry, AppStream metainfo,
+# application icon, systemd user unit, licence and the optional KDE Plasma
+# integration packages. The first three are named after CANVAS_APP_ID below.
 cmake_minimum_required(VERSION 3.20)
-project(desktop-canvas VERSION 0.1.0 LANGUAGES C CXX)
+project(desktop-canvas VERSION 1.0.0 LANGUAGES C CXX)
+
+# Reverse DNS application id. AppStream, the desktop entry and the icon must
+# all carry this name, and Flatpak requires it to sit under a namespace the
+# project controls (here the GitHub account hosting the repository). Changing
+# it means renaming the matching files under packaging/.
+set(CANVAS_APP_ID "io.github.jsilverhand48.DesktopCanvas")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -144,10 +155,34 @@ configure_file(packaging/systemd/desktop-canvas.service.in
                ${CMAKE_CURRENT_BINARY_DIR}/desktop-canvas.service @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/desktop-canvas.service
         DESTINATION lib/systemd/user)
-install(FILES packaging/autostart/desktop-canvas.desktop
-        DESTINATION share/applications)
 
-if(DESKTOP_CANVAS_TESTS)
+# Desktop entry, AppStream metainfo and icon. AppStream ties the component id
+# to the desktop file name, so these three basenames must stay identical.
+install(FILES packaging/desktop/${CANVAS_APP_ID}.desktop
+        DESTINATION share/applications)
+install(FILES packaging/metainfo/${CANVAS_APP_ID}.metainfo.xml
+        DESTINATION share/metainfo)
+install(FILES packaging/icons/${CANVAS_APP_ID}.svg
+        DESTINATION share/icons/hicolor/scalable/apps)
+install(FILES LICENSE DESTINATION share/doc/${PROJECT_NAME})
+
+# KDE Plasma integration: a transparent wallpaper plugin plus the KWin script
+# that keeps the desktop containment above wallpaper layer surfaces. Installed
+# system wide so packages carry them; packaging/plasma/setup-plasma-icons.sh
+# remains the per user path for people building from source. Neither is
+# activated by installing it, the script or the desktop settings still has to
+# select them.
+install(DIRECTORY packaging/plasma/org.desktopcanvas.transparent
+        DESTINATION share/plasma/wallpapers)
+install(DIRECTORY packaging/plasma/kwin-script/org.desktopcanvas.raisedesktop
+        DESTINATION share/kwin/scripts)
+
+# claude_tests/ is not tracked in git and so is absent from release tarballs.
+# Skip it there rather than failing configure, which would otherwise break
+# every distro build made from a tagged tarball.
+if(DESKTOP_CANVAS_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/claude_tests/CMakeLists.txt")
     enable_testing()
     add_subdirectory(claude_tests)
+elseif(DESKTOP_CANVAS_TESTS)
+    message(STATUS "claude_tests/ not present, tests disabled")
 endif()

@@ -102,6 +102,17 @@ void VideoInstance::destroyMpv() {
         wakeup_fd_ = -1;
     }
     if (render_ctx_) {
+        // libmpv requires the GL context the renderer was created with to be
+        // current for *every* mpv_render_* call, free included: that call is
+        // where mpv deletes its textures, FBOs, shaders and hwdec interop
+        // resources. Freeing without a current context leaves them owned by a
+        // driver context nothing will touch again, leaking a few hundred MB
+        // per instance. Rotation destroys an instance per tick, so the daemon
+        // grew to 15 GB and was OOM killed after roughly two days.
+        if (!surface_.makeCurrent())
+            log::warn() << surface_.name()
+                        << ": makeCurrent failed before mpv teardown, GPU "
+                           "resources will leak";
         mpv_render_context_free(render_ctx_);
         render_ctx_ = nullptr;
     }

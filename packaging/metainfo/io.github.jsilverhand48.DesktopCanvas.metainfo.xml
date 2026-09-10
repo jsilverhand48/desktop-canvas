@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+AppStream metadata for desktop-canvas.
+
+The component id must match a namespace the project controls, and the
+<launchable> desktop-id must match the installed .desktop file name, so
+this file, packaging/desktop/, packaging/icons/ and the CANVAS_APP_ID
+variable in the top level CMakeLists.txt all move together. If the project
+moves to a GitHub organisation, rename all four at once.
+
+Validate with:
+  appstreamcli validate packaging/metainfo/*.metainfo.xml
+-->
+<component type="desktop-application">
+  <id>io.github.jsilverhand48.DesktopCanvas</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>Desktop Canvas</name>
+  <summary>Animated wallpapers behind your desktop</summary>
+
+  <developer id="io.github.jsilverhand48">
+    <name>jsilverhand48</name>
+  </developer>
+
+  <description>
+    <p>
+      Desktop Canvas renders Wallpaper Engine workshop content behind your
+      icons, widgets and taskbars on Wayland compositors that implement
+      wlr-layer-shell, and on X11.
+    </p>
+    <p>Supported wallpaper types:</p>
+    <ul>
+      <li>Video wallpapers, decoded in process with libmpv and hardware
+          accelerated where available</li>
+      <li>Scene wallpapers, rendered by a supervised linux-wallpaperengine
+          child process</li>
+      <li>Web wallpapers, rendered by a supervised Qt WebEngine child
+          process when built with the web backend enabled</li>
+    </ul>
+    <p>
+      Wallpapers can be rotated on a playlist, and audio is muted by default
+      until you unmute it. The daemon is controlled at runtime with the
+      desktop-canvasctl command line tool.
+    </p>
+    <p>
+      Wallpaper Engine content is not included. You need a Steam library
+      holding workshop items for app 431960. Scene wallpapers additionally
+      require linux-wallpaperengine, which most distributions do not
+      package.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.jsilverhand48.DesktopCanvas.desktop</launchable>
+
+  <categories>
+    <category>Utility</category>
+    <category>Settings</category>
+  </categories>
+
+  <keywords>
+    <keyword>wallpaper</keyword>
+    <keyword>background</keyword>
+    <keyword>animated</keyword>
+    <keyword>layer-shell</keyword>
+  </keywords>
+
+  <url type="homepage">https://github.com/jsilverhand48/desktop-canvas</url>
+  <url type="bugtracker">https://github.com/jsilverhand48/desktop-canvas/issues</url>
+  <url type="vcs-browser">https://github.com/jsilverhand48/desktop-canvas</url>
+
+  <!--
+    Flathub requires at least one screenshot, served over https from a
+    stable host. Add entries here (raw.githubusercontent.com URLs pinned to
+    a tag work) before opening a Flathub submission; the file validates
+    without them for distro packaging.
+
+    <screenshots>
+      <screenshot type="default">
+        <caption>A video wallpaper running behind the desktop</caption>
+        <image>https://raw.githubusercontent.com/jsilverhand48/desktop-canvas/v1.0.0/docs/screenshot-video.png</image>
+      </screenshot>
+    </screenshots>
+  -->
+
+  <!-- The app ships no content of its own; wallpapers come from the user's
+       own Steam library. Rated as a player, not as a content source. -->
+  <content_rating type="oars-1.1"/>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <releases>
+    <release version="1.0.0" date="2026-08-02">
+      <description>
+        <p>First tagged release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

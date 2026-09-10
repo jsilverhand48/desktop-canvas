@@ -1,0 +1,12 @@
+version = 1
+SPDX-PackageName = "desktop-canvas"
+SPDX-PackageDownloadLocation = "https://aur.archlinux.org/desktop-canvas.git"
+
+# RFC40 requires AUR package sources (the PKGBUILD and its helper files, not
+# the packaged software) to be licensed 0BSD. Verify with `pkgctl license
+# check` from devtools.
+[[annotations]]
+path = ["PKGBUILD", ".SRCINFO", ".gitignore", "README.md"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "jsilverhand48"
+SPDX-License-Identifier = "0BSD"

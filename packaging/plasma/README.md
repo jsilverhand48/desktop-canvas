@@ -3,6 +3,15 @@
 KDE Plasma integration so desktop icons and widgets stay visible above
 desktop-canvas wallpapers.
 
+`cmake --install` places `org.desktopcanvas.transparent` in
+`share/plasma/wallpapers` and `org.desktopcanvas.raisedesktop` in
+`share/kwin/scripts`, so distro packages carry both. Installing does not
+enable them: the containment still has to be switched to the transparent
+wallpaper and the KWin script still has to be turned on, which is what
+`setup-plasma-icons.sh` does. That script installs its own per user copies
+under `~/.local/share`, which take precedence over the system ones and are
+the right path for source builds and for iterating on the script itself.
+
 ## Background
 
 On Plasma, icons live inside plasmashell's desktop containment window

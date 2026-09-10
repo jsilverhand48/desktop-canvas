@@ -7,6 +7,8 @@ Platform and surface abstractions.
 - `RenderSurface` a GPU surface an in-process backend renders into, with a
   frame pacing contract: swap, then requestFrame(cb), and do not swap again
   until cb fires. This prevents blocking on occluded surfaces.
+  Implementations share one EGL context, so their destructors must call
+  `EglContext::releaseCurrent()` before `destroySurface()`; see `src/gl/`.
 
 Scene wallpapers bypass RenderSurface entirely; their child process creates
 its own surface (see src/process/).

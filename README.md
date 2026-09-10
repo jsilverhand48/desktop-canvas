@@ -38,7 +38,13 @@ cmake --install build          # optional, installs to /usr/local
 
 Options: `-DDESKTOP_CANVAS_WEB=ON` (web wallpapers via Qt6 WebEngine),
 `-DDESKTOP_CANVAS_BUNDLE_LWE=ON` (download and bundle a pinned
-linux-wallpaperengine), `-DDESKTOP_CANVAS_TESTS=OFF`.
+linux-wallpaperengine), `-DDESKTOP_CANVAS_TESTS=OFF`. Tests build by default
+when `claude_tests/` is present and are skipped when it is not.
+
+Installing places the `desktop-canvas` daemon and `desktop-canvasctl` in
+`bin`, plus a systemd user unit, an XDG desktop entry, AppStream metainfo, an
+application icon, and the KDE Plasma wallpaper plugin and KWin script. The
+Plasma pieces are installed but not activated; see the caveat matrix below.
 
 ## Use
 
@@ -130,5 +136,11 @@ config (`scene.disable_mouse`).
 - `tools/canvasctl/` control CLI
 - `protocol/` vendored Wayland protocol XML (generated at build time)
 - `third_party/` vendored single header libraries (nlohmann json, CLI11)
-- `packaging/` systemd unit, autostart entry, Flatpak/PKGBUILD/debian
-- `claude_tests/` tests (ctest)
+- `packaging/` desktop entry, AppStream metainfo, icon, systemd unit, Plasma
+  integration, and Flatpak/PKGBUILD/debian recipes (see `packaging/README.md`)
+- `claude_tests/` tests (ctest), untracked, so absent from release tarballs
+
+## License
+
+MIT, see `LICENSE`. The vendored headers under `third_party/` keep their own
+licences (nlohmann json MIT, CLI11 BSD 3 clause) alongside the sources.

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Desktop Canvas
+GenericName=Animated Wallpaper
+Comment=Animated Wallpaper Engine wallpapers behind your desktop
+Exec=desktop-canvas
+Icon=io.github.jsilverhand48.DesktopCanvas
+Terminal=false
+Categories=Settings;DesktopSettings;
+Keywords=wallpaper;background;animated;layer-shell;
+StartupNotify=false

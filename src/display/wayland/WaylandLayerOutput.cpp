@@ -45,7 +45,14 @@ WaylandLayerOutput::WaylandLayerOutput(WaylandConnection& conn,
 WaylandLayerOutput::~WaylandLayerOutput() {
     conn_.unregisterSurface(surface_);
     if (frame_callback_) wl_callback_destroy(frame_callback_);
-    if (egl_surface_ != EGL_NO_SURFACE) egl_.destroySurface(egl_surface_);
+    if (egl_surface_ != EGL_NO_SURFACE) {
+        // Release before destroying: a surface that is still current is only
+        // flagged for deletion, and the shared context would otherwise stay
+        // bound to it until another in-process backend makes its own surface
+        // current. See EglContext::releaseCurrent.
+        egl_.releaseCurrent();
+        egl_.destroySurface(egl_surface_);
+    }
     if (egl_window_) wl_egl_window_destroy(egl_window_);
     if (layer_surface_) zwlr_layer_surface_v1_destroy(layer_surface_);
     if (surface_) wl_surface_destroy(surface_);

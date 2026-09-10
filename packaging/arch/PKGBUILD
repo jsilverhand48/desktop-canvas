@@ -1,32 +1,89 @@
-# Reference PKGBUILD for desktop-canvas. Point `source` at a release
-# tarball once the project is hosted; for a local build run makepkg with
-# `--holdver` after adjusting source=() to the checkout path.
-pkgname=desktop-canvas
-pkgver=0.1.0
+# Maintainer: jsilverhand48 <jsilverhand48 at users dot noreply dot github dot com>
+
+# Split package. The web backend drags in qt6-webengine, which is far larger
+# than the rest of the package combined, so it is built here but shipped as
+# desktop-canvas-web for the people who actually want web wallpapers.
+
+pkgbase=desktop-canvas
+pkgname=(desktop-canvas desktop-canvas-web)
+pkgver=1.0.0
 pkgrel=1
 pkgdesc="Animated Wallpaper Engine wallpapers behind your Linux desktop"
 arch=(x86_64)
-license=(MIT)
+url="https://github.com/jsilverhand48/desktop-canvas"
+# MIT for the project, BSD-3-Clause for the CLI11 headers vendored under
+# third_party/ and compiled into the binaries.
+license=(MIT BSD-3-Clause)
 depends=(wayland libglvnd mpv libx11 libxrandr)
-makedepends=(cmake ninja pkgconf wayland-protocols)
-optdepends=(
-  'linux-wallpaperengine: scene (scene.pkg) wallpaper support'
-  'qt6-webengine: web wallpaper support (build with DESKTOP_CANVAS_WEB=ON)'
-  'qt6-declarative: web wallpaper support (QML runtime)'
-  'layer-shell-qt: web wallpaper layering on Wayland'
+makedepends=(
+  cmake
+  ninja
+  pkgconf
+  # wayland-scanner ships in wayland, which is already a depends
+  # needed only to build the desktop-canvas-web split package
+  qt6-base
+  qt6-declarative
+  qt6-webengine
+  layer-shell-qt
 )
-source=("$pkgname-$pkgver.tar.gz")
+source=("$pkgbase-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+# TODO: replace with the real digest once v1.0.0 is tagged and released.
+# Run `updpkgsums` (pacman-contrib) in this directory to fill it in.
 sha256sums=('SKIP')
 
 build() {
-  cmake -B build -S "$pkgname-$pkgver" -G Ninja \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX=/usr \
-    -DDESKTOP_CANVAS_WEB=ON \
-    -DDESKTOP_CANVAS_TESTS=OFF
+  local cmake_options=(
+    -B build
+    -S "$pkgbase-$pkgver"
+    -G Ninja
+    -W no-author
+    # None, not Release: Release would append -O3 and override the -O2 and
+    # hardening flags from makepkg.conf.
+    -D CMAKE_BUILD_TYPE=None
+    -D CMAKE_INSTALL_PREFIX=/usr
+    -D DESKTOP_CANVAS_WEB=ON
+    # claude_tests/ is not shipped in the release tarball, so there is
+    # nothing for a check() to run.
+    -D DESKTOP_CANVAS_TESTS=OFF
+  )
+  cmake "${cmake_options[@]}"
   cmake --build build
 }
 
-package() {
+package_desktop-canvas() {
+  optdepends=(
+    'linux-wallpaperengine: scene (scene.pkg) wallpaper support, from the AUR as linux-wallpaperengine-git'
+    'desktop-canvas-web: web (HTML/JS) wallpaper support'
+    'plasma-desktop: KDE integration, keeps desktop icons above the wallpaper'
+  )
+
   DESTDIR="$pkgdir" cmake --install build
+
+  # Belongs to the desktop-canvas-web split package.
+  rm "$pkgdir/usr/bin/desktop-canvas-web"
+
+  # Upstream installs its licence under share/doc; Arch wants it under
+  # share/licenses, so move rather than duplicate it.
+  rm -r "$pkgdir/usr/share/doc"
+  install -Dm644 "$pkgbase-$pkgver/LICENSE" \
+    -t "$pkgdir/usr/share/licenses/$pkgname/"
+  install -Dm644 "$pkgbase-$pkgver/third_party/CLI/LICENSE" \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE.CLI11"
+  install -Dm644 "$pkgbase-$pkgver/third_party/nlohmann/LICENSE.MIT" \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE.nlohmann_json"
+}
+
+package_desktop-canvas-web() {
+  pkgdesc="Web (HTML/JS) wallpaper backend for desktop-canvas"
+  depends=(
+    "desktop-canvas=$pkgver-$pkgrel"
+    qt6-base
+    qt6-declarative
+    qt6-webengine
+    layer-shell-qt
+  )
+
+  install -Dm755 build/desktop-canvas-web -t "$pkgdir/usr/bin/"
+  install -Dm644 "$pkgbase-$pkgver/LICENSE" \
+    -t "$pkgdir/usr/share/licenses/$pkgname/"
 }
