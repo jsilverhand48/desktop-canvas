@@ -10,6 +10,8 @@
 // Flag precedence: defaults < config file < command line. See
 // config/Config.h for the file schema and ipc/Protocol.h for the control
 // protocol used by desktop-canvasctl.
+#include <malloc.h>
+
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -166,6 +168,14 @@ int runDaemon(Config& config) {
     // them.
     setenv("QT_FORCE_STDERR_LOGGING", "1", 0);
 
+    // libmpv spawns ~60 threads per video and glibc would give each its own
+    // malloc arena. Freed memory then stays fragmented across dozens of
+    // arenas that malloc_trim cannot fully return, so RSS grew ~100 MB per
+    // video played and never came back. Two arenas keep it flat (measured:
+    // ~90 MB idle after repeated videos instead of ~350 MB and climbing).
+    // Must run before any thread starts. MALLOC_ARENA_MAX still overrides.
+    if (!std::getenv("MALLOC_ARENA_MAX")) mallopt(M_ARENA_MAX, 2);
+
     EventLoop loop;
 
     std::unique_ptr<Platform> platform;
@@ -202,10 +212,15 @@ int runDaemon(Config& config) {
         log::warn() << "installed linux-wallpaperengine has unexpected flags; "
                        "scene control may misbehave";
     }
+    bool lweLayer = LweCommandBuilder::supportsLayer(help);
+    if (!help.empty() && !lweLayer && platform->isWayland())
+        log::warn() << "linux-wallpaperengine has no --layer flag; scenes use "
+                       "its default layer and may cover desktop icons";
 
     AudioPolicy audio(config.audioMuted, config.audioVolume);
     ChildSupervisor supervisor(loop);
     InstanceManager manager(loop, platform.get(), config, audio, supervisor);
+    manager.setSceneLayerSupported(lweLayer);
 
     Rotator rotator(loop, manager, config);
 

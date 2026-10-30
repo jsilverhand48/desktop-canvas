@@ -15,6 +15,11 @@ RestartSec=3
 # Wallpapers on removable media may not be mounted yet at login; the daemon
 # handles that, but give it a moment on very slow mounts.
 TimeoutStartSec=15
+# Safety net against memory leaks: if the daemon (plus its scene children)
+# exceeds this, the kernel OOM kills inside this cgroup only and
+# Restart=on-failure brings it back, instead of the system wide OOM killer
+# taking out an unrelated application.
+MemoryMax=1G
 
 [Install]
 WantedBy=graphical-session.target

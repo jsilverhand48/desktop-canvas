@@ -113,4 +113,25 @@ void X11DesktopOutput::setOnReady(std::function<void()> cb) {
     if (on_ready_ && ready()) on_ready_();
 }
 
+void X11DesktopOutput::show() {
+    if (shown_) return;
+    shown_ = true;
+    XMapWindow(conn_.display(), window_);
+    XLowerWindow(conn_.display(), window_);
+    conn_.flush();
+}
+
+void X11DesktopOutput::hide() {
+    // The timer callback and ready callback capture the stopping backend.
+    on_ready_ = nullptr;
+    if (frame_timer_) {
+        loop_.cancelTimer(frame_timer_);
+        frame_timer_ = 0;
+    }
+    if (!shown_) return;
+    shown_ = false;
+    XUnmapWindow(conn_.display(), window_);
+    conn_.flush();
+}
+
 }  // namespace canvas

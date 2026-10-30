@@ -11,17 +11,29 @@ std::vector<std::string> LweCommandBuilder::build(const LweOptions& opts) {
     std::vector<std::string> argv;
     argv.push_back(opts.enginePath.empty() ? "linux-wallpaperengine"
                                            : opts.enginePath);
-    if (!opts.screenRoot.empty()) {
-        argv.push_back("--screen-root");
-        argv.push_back(opts.screenRoot);
-        argv.push_back("--bg");
-        argv.push_back(opts.wallpaperDir);
-    } else if (!opts.windowGeometry.empty()) {
-        argv.push_back("--window");
-        argv.push_back(opts.windowGeometry);
+    if (!opts.screenRoots.empty()) {
+        // Each screen gets its own --bg and --scaling; lwe binds both to
+        // the preceding --screen-root.
+        for (const auto& root : opts.screenRoots) {
+            argv.push_back("--screen-root");
+            argv.push_back(root);
+            argv.push_back("--bg");
+            argv.push_back(opts.wallpaperDir);
+            argv.push_back("--scaling");
+            argv.push_back(opts.scaling);
+        }
+    } else {
+        if (!opts.windowGeometry.empty()) {
+            argv.push_back("--window");
+            argv.push_back(opts.windowGeometry);
+        }
+        argv.push_back("--scaling");
+        argv.push_back(opts.scaling);
     }
-    argv.push_back("--scaling");
-    argv.push_back(opts.scaling);
+    if (!opts.screenRoots.empty() && !opts.layer.empty()) {
+        argv.push_back("--layer");
+        argv.push_back(opts.layer);
+    }
     argv.push_back("--fps");
     argv.push_back(std::to_string(opts.fps));
     if (opts.muted) {
@@ -36,7 +48,7 @@ std::vector<std::string> LweCommandBuilder::build(const LweOptions& opts) {
     }
     if (opts.disableMouse) argv.push_back("--disable-mouse");
     // Window mode takes the wallpaper as the positional default background.
-    if (opts.screenRoot.empty()) argv.push_back(opts.wallpaperDir);
+    if (opts.screenRoots.empty()) argv.push_back(opts.wallpaperDir);
     return argv;
 }
 
@@ -51,6 +63,10 @@ std::string LweCommandBuilder::probeHelp(const std::string& enginePath) {
     std::array<char, 4096> buf;
     while (fgets(buf.data(), buf.size(), pipe.get())) out += buf.data();
     return out;
+}
+
+bool LweCommandBuilder::supportsLayer(const std::string& help) {
+    return help.find("--layer") != std::string::npos;
 }
 
 }  // namespace canvas

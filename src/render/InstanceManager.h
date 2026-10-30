@@ -8,6 +8,17 @@
 //   web   -> optional backend (M6); reported unsupported otherwise
 // Wallpapers whose scene child keeps crashing are added to config.broken and
 // unassigned automatically.
+//
+// On Wayland, outputs showing the same scene wallpaper share one
+// linux-wallpaperengine process (one --screen-root per output), so assets
+// and the GL context are loaded once instead of per screen. Changing any
+// output of such a group restarts the whole group with the new split.
+//
+// Video RenderSurfaces are kept per output, created on the first video for
+// that output and reused (hidden in between) until the output disappears or
+// the surface reports closed(). Wayland layer surfaces report closed() after
+// one use (KWin will not remap them), so on Wayland each video gets a fresh
+// surface; X11 windows are reused.
 #pragma once
 
 #include <map>
@@ -43,6 +54,12 @@ public:
     // entries instead of assigning them and blanking an output.
     bool usable(const std::string& id) const;
 
+    // Whether the scene engine accepts --layer (probed once at startup).
+    // When true, Wayland scenes are put on config.layer like video surfaces;
+    // otherwise lwe picks its own default ("bottom" on r598+, which covers
+    // the Plasma desktop icons). Takes effect on the next started scene.
+    void setSceneLayerSupported(bool supported) { sceneLayerSupported_ = supported; }
+
     // Reconciles running instances with config assignments and the current
     // output list. Safe to call repeatedly; only differences cause changes.
     void apply();
@@ -68,12 +85,28 @@ public:
 
 private:
     struct Slot {
-        std::unique_ptr<RenderSurface> surface;   // null for scene instances
-        std::unique_ptr<WallpaperInstance> instance;
+        // Shared by every output of a merged scene group.
+        std::shared_ptr<WallpaperInstance> instance;
+        // Sorted outputs the instance covers; just this output when unmerged.
+        std::vector<std::string> group;
     };
 
-    void startInstance(const std::string& outputName, const WallpaperInfo& info);
+    // True when outputs showing info can share one process (Wayland scenes).
+    bool mergeable(const WallpaperInfo& info) const;
+    // Starts one instance covering every output in group (size 1 unless
+    // mergeable) and records a slot for each of them.
+    void startInstance(const std::vector<std::string>& group,
+                       const WallpaperInfo& info);
+    // Surface for outputName, created on first use or when the previous one
+    // reports closed() (compositor closed it, or a used Wayland surface).
+    // Null on failure.
+    RenderSurface* surfaceFor(const std::string& outputName);
+    // Stops the instance on outputName and drops the slot of every output
+    // sharing it.
     void stopInstance(const std::string& outputName);
+    // Each running instance once, even when shared by several outputs, so
+    // pause/resume/mute act (and mute restarts) a merged process only once.
+    std::vector<WallpaperInstance*> instances() const;
     // Locates the desktop-canvas-web helper: next to the daemon binary
     // first, then PATH. Empty when unavailable.
     static std::string findWebHelper();
@@ -87,6 +120,10 @@ private:
     ChildSupervisor& supervisor_;
     std::vector<WallpaperInfo> items_;
     std::string assetsDir_;
+    bool sceneLayerSupported_ = false;
+    // Declared before slots_ so instances, which borrow these surfaces, are
+    // destroyed first.
+    std::map<std::string, std::unique_ptr<RenderSurface>> surfaces_;
     std::map<std::string, Slot> slots_;      // key: output name
     std::map<std::string, std::string> overrides_;  // rotation, not persisted
 };

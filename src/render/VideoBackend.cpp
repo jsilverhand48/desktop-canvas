@@ -2,6 +2,7 @@
 #include "render/VideoBackend.h"
 
 #include <EGL/egl.h>
+#include <malloc.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -119,6 +120,12 @@ void VideoInstance::destroyMpv() {
     if (mpv_) {
         mpv_terminate_destroy(mpv_);
         mpv_ = nullptr;
+        // mpv runs ~60 decoder/demuxer/VO threads per instance and glibc gives
+        // each its own 64 MB aligned malloc arena. When the threads exit their
+        // memory is freed back to those arenas but not to the kernel, so the
+        // daemon's RSS ratcheted up by a few hundred MB with every video and
+        // never came down. Trimming hands the free pages in every arena back.
+        malloc_trim(0);
     }
 }
 
@@ -134,6 +141,10 @@ void VideoInstance::start() {
         maybeRender();
     });
     running_ = true;
+    // On X11 the window may come back hidden from the previous instance and
+    // show() maps it; on Wayland the surface is new and still waiting for its
+    // first configure. Either way the ready callback starts mpv.
+    surface_.show();
     if (surface_.ready() && !mpv_) {
         if (initMpv()) {
             surface_ready_ = true;
@@ -145,7 +156,11 @@ void VideoInstance::stop() {
     if (!running_) return;
     running_ = false;
     surface_.setOnReady(nullptr);
+    // Teardown first: it needs the surface ready() to make it current, and
+    // hide() unconfigures it. hide() then drops the frame callback, which
+    // captures this instance and would otherwise outlive it.
     destroyMpv();
+    surface_.hide();
 }
 
 void VideoInstance::pause() {

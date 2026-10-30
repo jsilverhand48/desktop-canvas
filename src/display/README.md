@@ -9,6 +9,13 @@ Platform and surface abstractions.
   until cb fires. This prevents blocking on occluded surfaces.
   Implementations share one EGL context, so their destructors must call
   `EglContext::releaseCurrent()` before `destroySurface()`; see `src/gl/`.
+  Surfaces are reused across wallpapers while `closed()` is false.
+  `show()`/`hide()` map and unmap without destroying, and `hide()` also
+  drops pending frame and ready callbacks. X11 windows are reused
+  indefinitely. A Wayland layer surface reports `closed()` after its first
+  `hide()` (or when the compositor closes it), and the owner replaces it:
+  KWin closes a layer surface that is remapped after a null buffer unmap,
+  which left the output black after switching back to a video wallpaper.
 
 Scene wallpapers bypass RenderSurface entirely; their child process creates
 its own surface (see src/process/).

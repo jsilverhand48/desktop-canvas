@@ -2,7 +2,10 @@
 
 Daemon source tree. Module map:
 
-- `main.cpp` CLI parsing, platform selection, daemon wiring, IPC dispatch
+- `main.cpp` CLI parsing, platform selection, daemon wiring, IPC dispatch.
+  runDaemon() caps glibc at two malloc arenas (unless MALLOC_ARENA_MAX is
+  set) before any thread starts, so memory freed by libmpv's many threads
+  is actually returned to the system; see render/README.md (VideoBackend).
 - `core/` event loop (epoll), logging
 - `config/` config file schema, load/save, CLI merge
 - `source/` workshop content scanner (project.json parsing), playlist file

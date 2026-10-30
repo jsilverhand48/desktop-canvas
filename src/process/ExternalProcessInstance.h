@@ -24,6 +24,7 @@ public:
 
     // tag = "<kind>:<output>", e.g. "scene:DP-1", "web:HDMI-A-1"; the part
     // after ':' is used by InstanceManager to locate the slot on failure.
+    // A scene merged across outputs is tagged with its first output.
     ExternalProcessInstance(ChildSupervisor& supervisor, std::string tag,
                             std::string outputName, std::string wallpaperId,
                             bool muted, ArgvBuilder builder);

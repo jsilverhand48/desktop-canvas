@@ -74,10 +74,41 @@ void WaylandLayerOutput::layerClosed(void* data, zwlr_layer_surface_v1*) {
     auto* self = static_cast<WaylandLayerOutput*>(data);
     log::warn() << "layer surface closed for " << self->name_;
     self->configured_ = false;
+    self->closed_ = true;
+}
+
+void WaylandLayerOutput::show() {
+    if (shown_ || closed()) return;
+    shown_ = true;
+    // Initial commit without a buffer: the compositor answers with a
+    // configure, and layerConfigure -> resize marks us ready again.
+    wl_surface_commit(surface_);
+    conn_.flush();
+}
+
+void WaylandLayerOutput::hide() {
+    // Callbacks capture the backend that is stopping; never let them fire
+    // after it is gone, even if the surface is already hidden.
+    on_ready_ = nullptr;
+    frame_cb_ = nullptr;
+    if (frame_callback_) {
+        wl_callback_destroy(frame_callback_);
+        frame_callback_ = nullptr;
+    }
+    if (!shown_) return;
+    shown_ = false;
+    configured_ = false;
+    retired_ = true;  // see header: never remap, the owner replaces us
+    wl_surface_attach(surface_, nullptr, 0, 0);
+    wl_surface_commit(surface_);
+    conn_.flush();
 }
 
 void WaylandLayerOutput::resize(int width, int height) {
     if (width <= 0 || height <= 0) return;
+    // A configure can still be in flight from before hide(); ignore it so a
+    // hidden surface does not report ready.
+    if (!shown_) return;
     width_ = width;
     height_ = height;
     if (!egl_window_) {

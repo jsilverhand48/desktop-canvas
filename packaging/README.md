@@ -28,7 +28,8 @@ and those three file names in one go.
   filled with the install prefix at configure time); enable with
   `systemctl --user enable --now desktop-canvas`. This is the autostart
   mechanism; the desktop entry above is a menu launcher, not an autostart
-  file.
+  file. `MemoryMax=4G` caps the service cgroup so a leak gets the daemon
+  restarted rather than triggering the system wide OOM killer.
 - `plasma/` KDE Plasma integration (transparent wallpaper plugin and KWin
   script) so desktop icons render above wallpapers; see `plasma/README.md`.
   Both are installed system wide (`share/plasma/wallpapers` and

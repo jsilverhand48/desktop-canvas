@@ -12,6 +12,26 @@ Wallpaper instance orchestration and in-process backends.
   assignment (exact name, then `*`). Overrides belong to Rotator and are
   never persisted; an IPC `set` mirrors itself into the override map so a
   manual choice is visible until the next rotation tick reclaims the output.
+  On Wayland, outputs resolving to the same scene wallpaper share a single
+  linux-wallpaperengine process (one `--screen-root` per output), so three
+  screens showing one scene load its assets and GL context once instead of
+  three times. Slots of a merged group hold the same shared instance; any
+  change to the group (an output switching wallpaper, appearing, or
+  vanishing) restarts the whole group with the new split, and a crash
+  blanks every output in it. pause/resume/mute act once per instance.
+  Video, web, and X11 scene instances stay one per output.
+  Wayland scenes are started with `--layer <config.layer>` when main's
+  startup probe found the flag (`setSceneLayerSupported`), so they share
+  the video surfaces' layer instead of lwe's `bottom` default, which covers
+  the Plasma desktop icons.
+  Video RenderSurfaces live in a per output map, separate from instance
+  slots: created on the first video for an output, hidden between videos,
+  and replaced when the output disappears or the surface reports
+  `closed()`. On Wayland that is after every video, since KWin closes a
+  layer surface that is remapped (the cause of black screens after
+  switching back to a video), so each video gets a fresh surface; X11
+  windows are reused. The per video leak once blamed on surface churn came
+  from freeing mpv without its GL context current (see VideoBackend below).
 - `Rotator` timed rotation over a playlist file: every `playlist.interval`
   seconds it draws a random id (skipping ids missing from the library,
   unsupported, or blacklisted) and installs it as a runtime override on
@@ -28,4 +48,10 @@ Wallpaper instance orchestration and in-process backends.
   current for every `mpv_render_*` call, and free is where it deletes its
   textures, FBOs and hwdec interop resources. Freeing without it leaks a few
   hundred MB per instance, which rotation turns into an OOM kill within days.
+  The surface is borrowed: start() calls show(), stop() frees mpv while the
+  surface is still ready and then calls hide(). After
+  `mpv_terminate_destroy()` it calls `malloc_trim(0)`: mpv's ~60 threads per
+  instance leave freed memory parked in glibc malloc arenas, and without the
+  trim (plus the arena cap set in main.cpp) daemon RSS grew ~100 MB per
+  video played and was never returned to the system.
 - `web/` optional Qt6 WebEngine backend (M6, DESKTOP_CANVAS_WEB=ON).

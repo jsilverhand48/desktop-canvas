@@ -5,6 +5,10 @@
 // it, and lowered explicitly for WMs that need the hint. Frame pacing has
 // no compositor callback on X11, so requestFrame arms an event loop timer
 // at the configured fps.
+//
+// The window outlives individual wallpapers (see RenderSurface.h): hide()
+// unmaps it and cancels the frame timer, show() maps and lowers it again.
+// The EGLSurface stays valid while unmapped, so ready() is unaffected.
 #pragma once
 
 #include <X11/Xlib.h>
@@ -36,6 +40,8 @@ public:
     void swapBuffers() override;
     void requestFrame(std::function<void()> cb) override;
     void setOnReady(std::function<void()> cb) override;
+    void show() override;
+    void hide() override;
 
 private:
     EventLoop& loop_;
@@ -47,6 +53,7 @@ private:
     Window window_ = 0;
     EGLSurface egl_surface_ = EGL_NO_SURFACE;
     uint64_t frame_timer_ = 0;
+    bool shown_ = true;  // constructor maps the window
     std::function<void()> on_ready_;
 };
 

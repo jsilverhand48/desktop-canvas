@@ -7,6 +7,13 @@
 // times the output's integer scale (fractional-scale support is a follow
 // up; the vendored protocol XML is already in protocol/).
 //
+// Each surface serves one video wallpaper. hide() attaches a null buffer,
+// which unmaps the layer surface, and from then on closed() is true so
+// InstanceManager creates a new surface for the next video. Remapping an
+// unmapped layer surface is allowed by the protocol, but KWin answers it with
+// "closed" and the output stayed black until the next wallpaper switch.
+// layerClosed also marks the surface closed() for the same replacement.
+//
 // Rendering behind icons/panels: the background layer is the lowest layer
 // shell layer; panels (top layer docks) always stack above. "bottom" is not
 // a lower alternative: on KWin it maps to BelowLayer, which sits above the
@@ -49,6 +56,9 @@ public:
     void swapBuffers() override;
     void requestFrame(std::function<void()> cb) override;
     void setOnReady(std::function<void()> cb) override { on_ready_ = std::move(cb); }
+    void show() override;
+    void hide() override;
+    bool closed() const override { return closed_ || retired_; }
 
 private:
     static void layerConfigure(void* data, zwlr_layer_surface_v1* surface,
@@ -65,6 +75,9 @@ private:
     int width_ = 0;   // logical
     int height_ = 0;  // logical
     bool configured_ = false;
+    bool shown_ = true;    // constructor maps the surface
+    bool closed_ = false;   // compositor sent closed; never reusable
+    bool retired_ = false;  // hidden once; KWin will not remap it
 
     wl_surface* surface_ = nullptr;
     zwlr_layer_surface_v1* layer_surface_ = nullptr;

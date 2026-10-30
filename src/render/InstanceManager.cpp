@@ -79,7 +79,8 @@ void InstanceManager::apply() {
     if (!platform_) return;
     auto outputs = platform_->outputs();
 
-    // Drop slots for outputs that disappeared.
+    // Drop slots for outputs that disappeared. A merged group loses all its
+    // slots here; the survivors are restarted below without the old output.
     std::vector<std::string> stale;
     for (const auto& [name, slot] : slots_) {
         bool exists = std::any_of(outputs.begin(), outputs.end(),
@@ -87,7 +88,15 @@ void InstanceManager::apply() {
         if (!exists) stale.push_back(name);
     }
     for (const auto& name : stale) stopInstance(name);
+    // Surfaces of vanished outputs go too, after their instances stopped.
+    std::erase_if(surfaces_, [&](const auto& entry) {
+        return std::none_of(outputs.begin(), outputs.end(), [&](const auto& o) {
+            return o.name == entry.first;
+        });
+    });
 
+    // What each output should show (null = nothing).
+    std::map<std::string, const WallpaperInfo*> desired;
     for (const auto& out : outputs) {
         std::string id = resolve(out.name);
         const WallpaperInfo* info = id.empty() ? nullptr : find(id);
@@ -97,23 +106,52 @@ void InstanceManager::apply() {
                                          : " (" + info->unsupportedReason + ")");
             info = nullptr;
         }
-        auto it = slots_.find(out.name);
-        const std::string current =
-            it != slots_.end() && it->second.instance
-                ? it->second.instance->wallpaperId()
-                : "";
-        if (!info) {
-            if (!current.empty()) stopInstance(out.name);
+        desired[out.name] = info;
+    }
+
+    // Which outputs each output's instance should cover.
+    std::map<std::string, std::vector<std::string>> groups;
+    for (const auto& out : outputs) {
+        const WallpaperInfo* info = desired[out.name];
+        if (!info) continue;
+        auto& group = groups[out.name];
+        if (!mergeable(*info)) {
+            group.push_back(out.name);
             continue;
         }
-        if (current == info->id) continue;
-        stopInstance(out.name);
-        startInstance(out.name, *info);
+        for (const auto& [name, other] : desired)  // map order: sorted
+            if (other && other->id == info->id) group.push_back(name);
+    }
+
+    // Stop instances that no longer match; this drops every output sharing
+    // them, so the start pass below sees them as empty.
+    for (const auto& out : outputs) {
+        auto it = slots_.find(out.name);
+        if (it == slots_.end()) continue;
+        const WallpaperInfo* info = desired[out.name];
+        if (!info || it->second.instance->wallpaperId() != info->id ||
+            it->second.group != groups[out.name])
+            stopInstance(out.name);
+    }
+
+    // Start what is missing; a merged group starts once for all its outputs.
+    for (const auto& out : outputs) {
+        const WallpaperInfo* info = desired[out.name];
+        if (!info || slots_.count(out.name)) continue;
+        startInstance(groups[out.name], *info);
     }
 }
 
-void InstanceManager::startInstance(const std::string& outputName,
+bool InstanceManager::mergeable(const WallpaperInfo& info) const {
+    return info.type == WallpaperType::Scene && platform_ &&
+           platform_->isWayland();
+}
+
+void InstanceManager::startInstance(const std::vector<std::string>& group,
                                     const WallpaperInfo& info) {
+    // Only merged scenes cover more than one output; everything else
+    // (video, web, X11 scenes) targets group.front() alone.
+    const std::string& outputName = group.front();
     bool muted = audio_.effectiveMuted(info.id);
     // X11 children run windowed at the output geometry and get demoted to
     // the desktop layer; Wayland children target the output by name.
@@ -127,7 +165,7 @@ void InstanceManager::startInstance(const std::string& outputName,
             }
         }
     }
-    Slot slot;
+    std::shared_ptr<WallpaperInstance> instance;
     switch (info.type) {
         case WallpaperType::Scene: {
             LweOptions opts;
@@ -138,11 +176,14 @@ void InstanceManager::startInstance(const std::string& outputName,
             opts.scaling = config_.scaling;
             opts.volume = audio_.volume();
             opts.disableMouse = config_.sceneDisableMouse;
-            if (platform_ && platform_->isWayland())
-                opts.screenRoot = outputName;
-            else
+            if (mergeable(info)) {
+                opts.screenRoots = group;
+                if (sceneLayerSupported_) opts.layer = config_.layer;
+            } else
                 opts.windowGeometry = geometry;
-            slot.instance = std::make_unique<ExternalProcessInstance>(
+            // The tag names the first output; handleBroken drops the whole
+            // group through it.
+            instance = std::make_shared<ExternalProcessInstance>(
                 supervisor_, "scene:" + outputName, outputName, info.id,
                 muted, [opts](bool m) {
                     LweOptions o = opts;
@@ -153,11 +194,10 @@ void InstanceManager::startInstance(const std::string& outputName,
         }
         case WallpaperType::Video: {
 #ifdef CANVAS_HAVE_VIDEO
-            slot.surface =
-                platform_->createSurface(outputName, config_.layer);
-            if (!slot.surface) return;
-            slot.instance = std::make_unique<VideoInstance>(
-                loop_, *slot.surface, info.id, info.filePath().string(),
+            RenderSurface* surface = surfaceFor(outputName);
+            if (!surface) return;
+            instance = std::make_shared<VideoInstance>(
+                loop_, *surface, info.id, info.filePath().string(),
                 config_.scaling, muted, audio_.volume());
             break;
 #else
@@ -177,7 +217,7 @@ void InstanceManager::startInstance(const std::string& outputName,
             std::string project = (info.dir / "project.json").string();
             std::string output = outputName;
             bool wayland = platform_ && platform_->isWayland();
-            slot.instance = std::make_unique<ExternalProcessInstance>(
+            instance = std::make_shared<ExternalProcessInstance>(
                 supervisor_, "web:" + outputName, outputName, info.id, muted,
                 [helper, url, project, output, geometry, wayland](bool m) {
                     std::vector<std::string> argv{helper, "--url", url,
@@ -197,10 +237,29 @@ void InstanceManager::startInstance(const std::string& outputName,
         case WallpaperType::Unsupported:
             return;
     }
+    std::string where;
+    for (const auto& name : group) where += (where.empty() ? "" : ", ") + name;
     log::info() << "starting " << toString(info.type) << " wallpaper "
-                << info.id << " (" << info.title << ") on " << outputName;
-    slot.instance->start();
-    slots_[outputName] = std::move(slot);
+                << info.id << " (" << info.title << ") on " << where;
+    instance->start();
+    for (const auto& name : group) slots_[name] = Slot{instance, group};
+}
+
+RenderSurface* InstanceManager::surfaceFor(const std::string& outputName) {
+    // Only called right after stopInstance(outputName), so no instance still
+    // borrows a surface this replaces.
+    auto it = surfaces_.find(outputName);
+    if (it != surfaces_.end() && it->second->closed()) {
+        log::info() << "replacing retired surface for " << outputName;
+        surfaces_.erase(it);
+        it = surfaces_.end();
+    }
+    if (it == surfaces_.end()) {
+        auto created = platform_->createSurface(outputName, config_.layer);
+        if (!created) return nullptr;
+        it = surfaces_.emplace(outputName, std::move(created)).first;
+    }
+    return it->second.get();
 }
 
 std::string InstanceManager::findWebHelper() {
@@ -228,12 +287,25 @@ std::string InstanceManager::findWebHelper() {
 void InstanceManager::stopInstance(const std::string& outputName) {
     auto it = slots_.find(outputName);
     if (it == slots_.end()) return;
-    if (it->second.instance) it->second.instance->stop();
-    slots_.erase(it);
+    // Hold a reference so the instance outlives the erase of its slots.
+    std::shared_ptr<WallpaperInstance> instance = it->second.instance;
+    instance->stop();
+    std::erase_if(slots_, [&](const auto& entry) {
+        return entry.second.instance == instance;
+    });
+}
+
+std::vector<WallpaperInstance*> InstanceManager::instances() const {
+    std::vector<WallpaperInstance*> result;
+    for (const auto& [name, slot] : slots_)
+        if (std::find(result.begin(), result.end(), slot.instance.get()) ==
+            result.end())
+            result.push_back(slot.instance.get());
+    return result;
 }
 
 void InstanceManager::handleBroken(const std::string& tag) {
-    // tag format: "scene:<output>"
+    // tag format: "scene:<output>"; for a merged scene, its first output.
     auto pos = tag.find(':');
     if (pos == std::string::npos) return;
     std::string output = tag.substr(pos + 1);
@@ -245,7 +317,7 @@ void InstanceManager::handleBroken(const std::string& tag) {
         config_.broken.push_back(id);
         config_.save(config_.sourcePath);
     }
-    slots_.erase(it);
+    stopInstance(output);  // the whole group if merged
     apply();  // possibly assign nothing / other outputs unaffected
 }
 
@@ -296,23 +368,19 @@ bool InstanceManager::setAssignment(const std::string& output,
 }
 
 void InstanceManager::pauseAll() {
-    for (auto& [name, slot] : slots_)
-        if (slot.instance) slot.instance->pause();
+    for (auto* instance : instances()) instance->pause();
 }
 
 void InstanceManager::resumeAll() {
-    for (auto& [name, slot] : slots_)
-        if (slot.instance) slot.instance->resume();
+    for (auto* instance : instances()) instance->resume();
 }
 
 void InstanceManager::setMuted(bool muted) {
     audio_.setDefaultMuted(muted);
     config_.audioMuted = muted;
     config_.save(config_.sourcePath);
-    for (auto& [name, slot] : slots_)
-        if (slot.instance)
-            slot.instance->setMuted(
-                audio_.effectiveMuted(slot.instance->wallpaperId()));
+    for (auto* instance : instances())
+        instance->setMuted(audio_.effectiveMuted(instance->wallpaperId()));
 }
 
 std::map<std::string, std::string> InstanceManager::running() const {

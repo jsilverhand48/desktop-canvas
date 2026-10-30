@@ -9,6 +9,11 @@
 // keeps the daemon from blocking on occluded surfaces and from rendering
 // faster than the compositor can display.
 //
+// The RenderSurface is borrowed from InstanceManager, which reuses it for
+// later videos on that output while it allows (see RenderSurface.h). start()
+// shows it and stop() tears mpv down and then hides it; the surface itself
+// is never destroyed here.
+//
 // Audio: mpv option "mute" is set from AudioPolicy; the requirement is that
 // wallpapers default to muted. Mute can be flipped live (no restart).
 #pragma once
