@@ -61,6 +61,18 @@ void SceneHost::start() {
     if (started_) return;
     started_ = true;
     platform_.setOnOutputsChanged([this] { syncOutputs(); });
+    // Pointer input the helper sees itself (its own Wayland surfaces on
+    // wlroots, polling on X11); on Plasma the daemon forwards it instead.
+    platform_.setOnPointer([this](const std::string& output, double x, double y) {
+        renderer_.setPointer(output, x, y);
+    });
+    platform_.setOnPointerButton(
+        [this](const std::string& output, uint32_t button, bool pressed) {
+            renderer_.setPointerButton(output, button, pressed);
+        });
+    if (options_.span)
+        log::info() << "span over " << options_.outputs.size()
+                    << " outputs (each still renders the whole frame)";
     syncOutputs();
     window_start_ = std::chrono::steady_clock::now();
     last_tick_ = window_start_;

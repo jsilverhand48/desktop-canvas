@@ -10,6 +10,7 @@
 // the native scene engine (src/scene/, plan phases P1 onward) plugs in here.
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace canvas::scenehost {
@@ -28,6 +29,9 @@ public:
     // --set-property text form.
     virtual void setPointer(const std::string& /*output*/, double /*x*/,
                             double /*y*/) {}
+    // Linux input button codes (BTN_LEFT = 272) at the last pointer position.
+    virtual void setPointerButton(const std::string& /*output*/,
+                                  uint32_t /*button*/, bool /*pressed*/) {}
     virtual void setProperty(const std::string& /*name*/,
                              const std::string& /*value*/) {}
     virtual void setMuted(bool /*muted*/) {}

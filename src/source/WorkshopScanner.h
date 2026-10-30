@@ -38,6 +38,21 @@ public:
     // /run/media/<user>/*/SteamLibrary mount. Only existing paths are
     // returned.
     static std::vector<std::filesystem::path> defaultRoots();
+    // defaultRoots() for an explicit home and user. Looks in every Steam
+    // install (steamInstalls), every library its
+    // steamapps/libraryfolders.vdf lists, and /run/media/<user>/*/SteamLibrary;
+    // returns the workshop content dirs that exist, without duplicates
+    // (~/.steam/steam is usually a link to ~/.local/share/Steam).
+    static std::vector<std::filesystem::path> defaultRootsFor(
+        const std::filesystem::path& home, const std::string& user);
+    // Steam client locations under home: native (~/.local/share/Steam,
+    // ~/.steam/steam), Flatpak (~/.var/app/com.valvesoftware.Steam/...)
+    // and snap (~/snap/steam/common/.local/share/Steam).
+    static std::vector<std::filesystem::path> steamInstalls(
+        const std::filesystem::path& home);
+    // Library folders ("path" entries) in a libraryfolders.vdf text.
+    static std::vector<std::filesystem::path> parseLibraryFolders(
+        const std::string& vdf);
 
     // Given a content root, walks up to steamapps and looks for
     // common/wallpaper_engine/assets in the same Steam library.

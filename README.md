@@ -21,8 +21,9 @@ Audio from wallpapers is muted by default; unmute with
   Sway, and other wlroots compositors), or X11 (backend in progress).
   GNOME Wayland is not supported (Mutter lacks layer-shell).
 - wayland (or X11) and EGL at runtime; libmpv for video wallpapers;
-  libepoxy and libpng for desktop-canvas-scene; linux-wallpaperengine for
-  scene wallpapers on the `lwe` engine.
+  libepoxy and libpng for desktop-canvas-scene; libsystemd (sd-bus) for the
+  KDE bridge; linux-wallpaperengine for scene wallpapers on the `lwe`
+  engine.
 - Wallpaper Engine workshop content, e.g. a Steam library containing
   `steamapps/workshop/content/431960`. Content roots are autodetected from
   `~/.local/share/Steam`, `~/.steam/steam`, and
@@ -165,9 +166,30 @@ inside their own opaque desktop window:
 
 Mouse input: on Wayland, pointer events reach the wallpaper only where no
 other surface is above it (works on wlroots compositors; on Plasma the
-containment usually intercepts). Scene wallpapers manage their own input via
-linux-wallpaperengine. `--disable-mouse` behavior is available through the
-config (`scene.disable_mouse`).
+containment usually intercepts). On Plasma Wayland the KDE bridge (config
+`kde_bridge`, on by default; needs libsystemd at build time) loads a small
+KWin script while the daemon runs that reports the cursor position, which
+the daemon forwards to scenes rendered by desktop-canvas-scene.
+linux-wallpaperengine reads its own input, so lwe scenes still do not react
+under the Plasma icons. `--disable-mouse` behavior is available through the
+config (`scene.disable_mouse`). Check the bridge with
+`desktop-canvas --probe-kde-bridge 10` (while no daemon is running): it
+prints the cursor and fullscreen windows KWin reports.
+
+Fullscreen apps: wallpapers on a monitor covered by a fullscreen window
+pause until it leaves (config `fullscreen_pause`: `enabled`, `only_active`,
+`ignore_app_ids`). Windows are seen through EWMH on X11,
+wlr-foreign-toplevel-management on wlroots compositors and the KDE bridge
+on Plasma Wayland.
+
+Screen spans: config `spans` lists groups of outputs (for example
+`[["DP-5", "DP-6"]]`) that show one scene as a single canvas stretched over
+them whenever all of them show that scene (`--screen-span` for
+linux-wallpaperengine).
+
+Steam libraries are found in native, Flatpak and snap Steam installs and in
+every library their `libraryfolders.vdf` lists, plus
+`/run/media/$USER/*/SteamLibrary`.
 
 ## Repository layout
 

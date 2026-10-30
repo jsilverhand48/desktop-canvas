@@ -27,7 +27,12 @@ blocks the daemon's single threaded event loop.
   output (dropped when the output disappears, recreated when it returns or
   reports `closed()`), frame pacing, and the helper side of the protocol
   (hello, ready once every output presented, stats every 2 s as heartbeat;
-  pause, resume, quit, mute, volume, pointer, props, covered). No GL, so
+  pause, resume, quit, mute, volume, pointer, props, covered). Pointer
+  motion and buttons the helper sees itself (its own Wayland surfaces on
+  wlroots, polling on X11) go to the renderer too; on Plasma the daemon
+  forwards the KDE bridge's cursor as "pointer" messages. `--span`
+  (`SceneHostOptions::span`) is accepted and logged; each output renders
+  the whole frame until the engine composes scenes (phase P4). No GL, so
   `claude_tests/test_scene_host` drives it with fakes.
 - `FrameClock` fixed rate ticker on absolute deadlines: no drift, and no
   catch up burst after a stall (it restarts from now).

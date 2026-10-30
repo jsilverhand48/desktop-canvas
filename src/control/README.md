@@ -22,6 +22,12 @@ IPC socket (`handleIpc`, desktop-canvasctl) and the browser settings UI
   (forget the verdict); either relaunches the wallpaper.
 - Volume changes apply live (InstanceManager::setVolume); only backends that
   take volume at launch (lwe, web) are restarted, and only when unmuted.
+- Desktop integration: `settings()` reports `fullscreen_pause`,
+  `kde_bridge` and `spans`; `status()` gives every output its `x`, `y` and
+  `covered` (a fullscreen app pauses it). Fullscreen rule changes apply live
+  (`refreshCoverage`), span changes restart every instance (validated with
+  `Config::validSpans`), and a `kde_bridge` change returns a note that it
+  applies after a daemon restart.
 - Every write persists config.json and triggers the live effect it needs;
   the mapping is documented at the top of `Controller.h` (instance
   restarts, rescans, `Rotator::refresh`, mute, assignments, blacklist).

@@ -41,6 +41,13 @@ public:
     // Per window event dispatch for X11DesktopOutput instances.
     void addWindowHandler(Window w, std::function<void(const XEvent&)> cb);
     void removeWindowHandler(Window w);
+    // Sees every event before the window handlers (X11Toplevels).
+    void addEventObserver(std::function<void(const XEvent&)> cb) {
+        observers_.push_back(std::move(cb));
+    }
+    // Adds event mask bits to the root window selection, which always keeps
+    // SubstructureNotifyMask.
+    void addRootEventMask(long mask);
 
     // When a new top level window whose _NET_WM_PID satisfies the predicate
     // is mapped, stamp it _NET_WM_WINDOW_TYPE_DESKTOP and lower it. Used to
@@ -66,6 +73,8 @@ private:
     std::function<bool(pid_t)> demote_predicate_;
     std::vector<std::pair<Window, std::function<void(const XEvent&)>>>
         window_handlers_;
+    std::vector<std::function<void(const XEvent&)>> observers_;
+    long root_mask_ = SubstructureNotifyMask;
 };
 
 }  // namespace canvas

@@ -9,7 +9,10 @@ Daemon source tree. Module map:
   set) before any thread starts, so memory freed by libmpv's many threads
   is actually returned to the system; see render/README.md (VideoBackend).
   When built with libmpv (CANVAS_HAVE_VIDEO) it installs VideoInstance as
-  InstanceManager's VideoFactory.
+  InstanceManager's VideoFactory. It feeds the platform's toplevel windows
+  to InstanceManager for the fullscreen pause and, on Plasma Wayland with
+  `kde_bridge` on, starts the KDE bridge (`--probe-kde-bridge N` runs only
+  the bridge, for diagnosis). X11 surfaces pace at `config.fps`.
 - `core/` event loop (epoll), logging
 - `config/` config file schema, load/save, CLI merge
 - `source/` workshop content scanner (project.json parsing), the rotation
@@ -31,6 +34,9 @@ Daemon source tree. Module map:
   helper lookup, linux-wallpaperengine command construction, and the
   instance types for lwe/web children and the native helper
 - `input/` pointer forwarding (X11 poller lands with M4/M5)
+- `desktop/` desktop integration: the fullscreen pause policy and the KDE
+  bridge (sd-bus service plus a KWin script loaded at runtime, for the
+  cursor under the Plasma desktop icons and fullscreen windows)
 - `audio/` mute/volume policy (muted by default)
 - `ipc/` unix socket control protocol shared with tools/canvasctl
 - `control/` Controller: every action and setting, shared by IPC and the

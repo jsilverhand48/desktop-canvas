@@ -14,7 +14,7 @@ url="https://github.com/jsilverhand48/desktop-canvas"
 # MIT for the project, BSD-3-Clause for the CLI11 headers vendored under
 # third_party/ and compiled into the binaries.
 license=(MIT BSD-3-Clause)
-depends=(wayland libglvnd mpv libx11 libxrandr libepoxy libpng)
+depends=(wayland libglvnd mpv libx11 libxrandr libepoxy libpng systemd-libs)
 makedepends=(
   cmake
   ninja

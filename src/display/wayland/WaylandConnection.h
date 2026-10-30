@@ -2,7 +2,10 @@
 //
 // Binds the globals the daemon needs: wl_compositor, zwlr_layer_shell_v1
 // (background surfaces), zxdg_output_manager_v1 (output names and logical
-// geometry), and wl_seat (pointer input, M5). Tracks wl_outputs as they
+// geometry: size and position in the global layout), and wl_seat (pointer
+// motion and buttons over our own surfaces). A
+// zwlr_foreign_toplevel_manager_v1 global is only remembered; WaylandToplevels
+// binds it when the fullscreen pause asks for other clients' windows. Tracks wl_outputs as they
 // appear and disappear; each is described by OutputInfo. The display fd is
 // registered with the EventLoop using the prepare_read pattern so the daemon
 // stays single threaded.
@@ -32,6 +35,8 @@ struct OutputInfo {
     zxdg_output_v1* xdg_output = nullptr;
     uint32_t registry_name = 0;   // for removal matching
     std::string name;             // connector name from xdg-output
+    int32_t logical_x = 0;        // position in the global layout (xdg-output)
+    int32_t logical_y = 0;
     int32_t logical_width = 0;    // from xdg-output
     int32_t logical_height = 0;
     int32_t scale = 1;            // integer scale from wl_output
@@ -72,6 +77,19 @@ public:
         std::function<void(const std::string&, double, double)> cb) {
         pointer_cb_ = std::move(cb);
     }
+    // Button presses and releases over registered surfaces (Linux input
+    // codes, BTN_LEFT = 272).
+    void setOnPointerButton(
+        std::function<void(const std::string&, uint32_t, bool)> cb) {
+        pointer_button_cb_ = std::move(cb);
+    }
+
+    // zwlr_foreign_toplevel_manager_v1 as advertised by the compositor
+    // (wlroots family; KWin does not offer it): registry name and version,
+    // 0 when absent. Bound on demand by WaylandToplevels.
+    uint32_t toplevelManagerName() const { return toplevel_manager_name_; }
+    uint32_t toplevelManagerVersion() const { return toplevel_manager_version_; }
+    wl_registry* registry() const { return registry_; }
 
     void flush();
 
@@ -99,6 +117,9 @@ private:
     std::vector<std::pair<wl_surface*, std::string>> registered_surfaces_;
     wl_surface* pointer_focus_ = nullptr;
     std::function<void(const std::string&, double, double)> pointer_cb_;
+    std::function<void(const std::string&, uint32_t, bool)> pointer_button_cb_;
+    uint32_t toplevel_manager_name_ = 0;
+    uint32_t toplevel_manager_version_ = 0;
 
     friend struct PointerListenerAccess;
 };

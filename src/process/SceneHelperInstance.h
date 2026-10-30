@@ -3,10 +3,10 @@
 //
 // The child runs under ChildSupervisor with ExitPolicy::HelperProtocol and
 // a control channel. Everything that lwe needed restarts or signals for is
-// a live message here: pause and resume, mute, volume, pointer. Each new
-// helper process (first start or a respawn after a crash) gets the current
-// pause, mute and volume state re-sent after its hello, plus the latest
-// pointer position.
+// a live message here: pause and resume, mute, volume, pointer, coverage
+// by fullscreen windows. Each new helper process (first start or a respawn
+// after a crash) gets the current pause, mute, volume and coverage state
+// re-sent after its hello, plus the latest pointer position.
 //
 // Pointer updates are coalesced: the latest position per output is kept and
 // at most one burst is sent every kPointerIntervalMs. A helper that sends
@@ -55,6 +55,7 @@ public:
         std::string assetsDir;  // empty = helper autodetects
         std::vector<std::pair<std::string, std::string>> properties;
         bool strict = false;  // engine "auto": exit 3 on unsupported content
+        bool span = false;    // one canvas over all outputs (config spans)
     };
 
     // tag = "native:<first output>" (InstanceManager::handleBroken uses the
@@ -76,6 +77,8 @@ public:
     void setMuted(bool muted) override;
     bool setVolume(int percent) override;  // always live
     void setPointer(const std::string& output, double x, double y) override;
+    // Sent as "covered"; the helper stops presenting on covered outputs.
+    void setCovered(const std::string& output, bool covered) override;
 
     const std::string& wallpaperId() const override { return wallpaper_id_; }
     const std::string& outputName() const override { return output_name_; }
@@ -113,6 +116,7 @@ private:
     std::unique_ptr<ControlChannel> channel_;
     std::vector<std::string> unsupported_;  // from the latest helper
     std::map<std::string, std::pair<double, double>> pointer_;  // pending
+    std::map<std::string, bool> covered_;  // re-sent after every hello
     uint64_t pointer_timer_ = 0;
     uint64_t watchdog_timer_ = 0;
     std::function<void(const std::vector<std::string>&)> on_unsupported_;

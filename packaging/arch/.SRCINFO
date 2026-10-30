@@ -20,6 +20,7 @@ pkgbase = desktop-canvas
 	depends = libxrandr
 	depends = libepoxy
 	depends = libpng
+	depends = systemd-libs
 	source = desktop-canvas-1.0.0.tar.gz::https://github.com/jsilverhand48/desktop-canvas/archive/refs/tags/v1.0.0.tar.gz
 	sha256sums = SKIP
 

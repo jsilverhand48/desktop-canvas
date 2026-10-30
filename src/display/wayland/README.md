@@ -3,8 +3,14 @@
 Wayland implementation of the display abstractions.
 
 - `WaylandConnection` display connect, registry binds (wl_compositor,
-  zwlr_layer_shell_v1, zxdg_output_manager_v1, wl_output), output tracking
-  with connector names, event loop integration (prepare_read pattern).
+  zwlr_layer_shell_v1, zxdg_output_manager_v1, wl_output, wl_seat), output
+  tracking with connector names and logical position and size, pointer
+  motion and buttons over registered surfaces, event loop integration
+  (prepare_read pattern). A zwlr_foreign_toplevel_manager_v1 global is only
+  remembered.
+- `WaylandToplevels` binds that manager on demand (`watchToplevels`) and
+  reports other clients' windows (app id, outputs, fullscreen, activated),
+  published on each handle's `done` so changes arrive atomically.
 - `WaylandLayerOutput` RenderSurface on a background layer surface:
   anchored to all edges, exclusive zone -1, keyboard interactivity none,
   integer buffer scale, frame callback based pacing.

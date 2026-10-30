@@ -41,6 +41,20 @@ Wallpaper instance orchestration and in-process backends.
   Pause is remembered (`paused()`): instances started while paused (a
   rotation tick, a fallback, a hotplug) start paused. `setVolume` applies
   volume live where possible and restarts only unmuted launch-time backends.
+  Fullscreen pause: `setToplevels` takes the desktop's window list
+  (Platform::watchToplevels, or the KDE bridge), `desktop/FullscreenPolicy`
+  turns it into covered outputs with the config rules (`refreshCoverage`
+  after rule changes), every instance hears `setCovered` per output, and an
+  instance whose outputs are all covered pauses exactly like a manual pause
+  (`updatePause` applies only transitions: a manual resume keeps covered
+  instances paused, uncovering resumes unless manually paused, an instance
+  started on a covered output starts paused). `pointerAtGlobal` routes the
+  KDE bridge's global cursor to the instance on the output under it, in
+  output local coordinates.
+  Spans (config `spans`): before the usual grouping, a span whose outputs
+  are all present and show the same mergeable scene becomes one group in
+  config order, started as a span (lwe `--screen-span`, native `--span`);
+  outputs left over group as before.
   Every scene launch passes the wallpaper's pinned property values, and with
   `scene.randomize_options` on one random value per other dropdown (limited
   to its allowed list), via `source/SceneOptions`, as `--set-property`. The

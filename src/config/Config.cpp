@@ -4,6 +4,7 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <set>
 
 #include <nlohmann/json.hpp>
 
@@ -87,6 +88,34 @@ Config Config::load(const fs::path& path) {
     }
     if (j.contains("web") && j["web"].is_object())
         cfg.webEnabled = j["web"].value("enabled", cfg.webEnabled);
+    if (j.contains("fullscreen_pause") && j["fullscreen_pause"].is_object()) {
+        const auto& f = j["fullscreen_pause"];
+        cfg.fullscreenPauseEnabled = f.value("enabled", cfg.fullscreenPauseEnabled);
+        cfg.fullscreenPauseOnlyActive =
+            f.value("only_active", cfg.fullscreenPauseOnlyActive);
+        for (const auto& id : f.value("ignore_app_ids", json::array()))
+            if (id.is_string() && !id.get<std::string>().empty())
+                cfg.fullscreenIgnoreAppIds.push_back(id.get<std::string>());
+    }
+    if (j.contains("kde_bridge") && j["kde_bridge"].is_boolean())
+        cfg.kdeBridge = j["kde_bridge"].get<bool>();
+    if (j.contains("spans") && j["spans"].is_array()) {
+        std::vector<std::vector<std::string>> spans;
+        for (const auto& span : j["spans"]) {
+            if (!span.is_array()) continue;
+            std::vector<std::string> outputs;
+            for (const auto& o : span)
+                if (o.is_string()) outputs.push_back(o.get<std::string>());
+            spans.push_back(std::move(outputs));
+        }
+        // Keep the valid prefix of entries: drop any entry that would make
+        // the set invalid.
+        for (auto& span : spans) {
+            auto candidate = cfg.spans;
+            candidate.push_back(span);
+            if (validSpans(candidate)) cfg.spans = std::move(candidate);
+        }
+    }
     for (const auto& b : j.value("broken", json::array()))
         if (b.is_string()) cfg.broken.push_back(b.get<std::string>());
     fs::path legacyPlaylist;
@@ -137,6 +166,33 @@ Config Config::load(const fs::path& path) {
     return cfg;
 }
 
+bool Config::validSpans(const std::vector<std::vector<std::string>>& spans,
+                        std::string* error) {
+    std::set<std::string> seen;
+    for (const auto& span : spans) {
+        std::set<std::string> mine;
+        for (const auto& output : span) {
+            if (output.empty()) {
+                if (error) *error = "span outputs must be non empty names";
+                return false;
+            }
+            if (!mine.insert(output).second) {
+                if (error) *error = "output " + output + " repeats in a span";
+                return false;
+            }
+            if (!seen.insert(output).second) {
+                if (error) *error = "output " + output + " is in two spans";
+                return false;
+            }
+        }
+        if (mine.size() < 2) {
+            if (error) *error = "a span needs at least two outputs";
+            return false;
+        }
+    }
+    return true;
+}
+
 std::string Config::engineFor(const std::string& id) const {
     auto it = wallpapers.find(id);
     if (it != wallpapers.end() && !it->second.engine.empty())
@@ -167,6 +223,11 @@ bool Config::save(const fs::path& path) const {
                   {"randomize_options", sceneRandomizeOptions},
                   {"include_nsfw_options", sceneIncludeNsfwOptions}};
     j["web"] = {{"enabled", webEnabled}};
+    j["fullscreen_pause"] = {{"enabled", fullscreenPauseEnabled},
+                             {"only_active", fullscreenPauseOnlyActive},
+                             {"ignore_app_ids", fullscreenIgnoreAppIds}};
+    j["kde_bridge"] = kdeBridge;
+    j["spans"] = spans;
     j["broken"] = broken;
     j["playlist"] = {{"interval", playlistInterval},
                      {"outputs", playlistOutputs}};

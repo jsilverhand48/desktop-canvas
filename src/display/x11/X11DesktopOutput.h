@@ -4,7 +4,8 @@
 // EWMH window managers keep it below normal windows and docks stay above
 // it, and lowered explicitly for WMs that need the hint. Frame pacing has
 // no compositor callback on X11, so requestFrame arms an event loop timer
-// at the configured fps.
+// for the next slot of the configured fps, on absolute deadlines (no drift;
+// after falling behind it restarts from now instead of bursting).
 //
 // The window outlives individual wallpapers (see RenderSurface.h): hide()
 // unmaps it and cancels the frame timer, show() maps and lowers it again.
@@ -15,6 +16,7 @@
 
 #include <EGL/egl.h>
 
+#include <chrono>
 #include <functional>
 #include <string>
 
@@ -49,7 +51,8 @@ private:
     EglContext& egl_;
     std::string name_;
     int width_, height_;
-    int frame_interval_ms_;
+    std::chrono::nanoseconds frame_period_;
+    std::chrono::steady_clock::time_point next_frame_{};
     Window window_ = 0;
     EGLSurface egl_surface_ = EGL_NO_SURFACE;
     uint64_t frame_timer_ = 0;

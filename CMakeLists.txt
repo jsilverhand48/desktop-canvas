@@ -98,6 +98,7 @@ if(CANVAS_HAVE_WAYLAND OR CANVAS_HAVE_X11)
             src/display/wayland/WaylandConnection.cpp
             src/display/wayland/WaylandLayerOutput.cpp
             src/display/wayland/WaylandPlatform.cpp
+            src/display/wayland/WaylandToplevels.cpp
         )
         # Generated protocol headers stay private: the public display
         # headers only forward declare the protocol structs.
@@ -106,6 +107,7 @@ if(CANVAS_HAVE_WAYLAND OR CANVAS_HAVE_X11)
             ${CMAKE_CURRENT_SOURCE_DIR}/protocol/wlr-layer-shell-unstable-v1.xml
             ${CMAKE_CURRENT_SOURCE_DIR}/protocol/xdg-output-unstable-v1.xml
             ${CMAKE_CURRENT_SOURCE_DIR}/protocol/fractional-scale-v1.xml
+            ${CMAKE_CURRENT_SOURCE_DIR}/protocol/wlr-foreign-toplevel-management-unstable-v1.xml
         )
         target_link_libraries(canvas_display PUBLIC
             PkgConfig::WAYLAND_CLIENT PkgConfig::WAYLAND_EGL)
@@ -116,6 +118,7 @@ if(CANVAS_HAVE_WAYLAND OR CANVAS_HAVE_X11)
             src/display/x11/X11Connection.cpp
             src/display/x11/X11DesktopOutput.cpp
             src/display/x11/X11Platform.cpp
+            src/display/x11/X11Toplevels.cpp
             src/input/X11PointerPoller.cpp
         )
         target_link_libraries(canvas_display PUBLIC
@@ -145,6 +148,7 @@ add_library(canvas_daemon STATIC
     src/process/HelperLocator.cpp
     src/process/SceneHelperInstance.cpp
     src/render/NativeSupportCache.cpp
+    src/desktop/FullscreenPolicy.cpp
     src/ipc/IpcServer.cpp
     src/control/Controller.cpp
     src/http/HttpServer.cpp
@@ -155,7 +159,28 @@ target_link_libraries(canvas_daemon PUBLIC canvas_core)
 # source tree path lets a development build serve them without installing.
 target_compile_definitions(canvas_daemon PRIVATE
     CANVAS_UI_INSTALL_DIR="${CMAKE_INSTALL_PREFIX}/share/desktop-canvas/ui"
-    CANVAS_UI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data/ui")
+    CANVAS_UI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data/ui"
+    CANVAS_APP_ID="${CANVAS_APP_ID}"
+    CANVAS_KWIN_INSTALL_DIR="${CMAKE_INSTALL_PREFIX}/share/desktop-canvas/kwin")
+
+# KDE bridge (desktop/KdeBridge): sd-bus from libsystemd, optional. Without
+# it Plasma gets no fullscreen pause and no cursor under the desktop icons.
+pkg_check_modules(LIBSYSTEMD IMPORTED_TARGET libsystemd)
+if(LIBSYSTEMD_FOUND)
+    target_sources(canvas_daemon PRIVATE src/desktop/KdeBridge.cpp)
+    target_link_libraries(canvas_daemon PUBLIC PkgConfig::LIBSYSTEMD)
+    target_compile_definitions(canvas_daemon PUBLIC CANVAS_HAVE_SDBUS=1)
+else()
+    message(WARNING "libsystemd not found: no KDE bridge (fullscreen pause "
+                    "and cursor on Plasma Wayland)")
+endif()
+# The KWin script the bridge loads, with the bus names filled in. It lives
+# next to the daemon binary in the build tree (KdeBridge::findScript).
+string(REPLACE "." "/" CANVAS_BRIDGE_PATH "/${CANVAS_APP_ID}")
+configure_file(data/kwin/desktop-canvas-bridge.js.in
+               ${CMAKE_CURRENT_BINARY_DIR}/kwin/desktop-canvas-bridge.js @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kwin/desktop-canvas-bridge.js
+        DESTINATION share/desktop-canvas/kwin)
 
 add_executable(desktop-canvas src/main.cpp)
 target_link_libraries(desktop-canvas PRIVATE canvas_daemon)

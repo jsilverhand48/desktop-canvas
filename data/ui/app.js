@@ -133,7 +133,8 @@ function thumb(item, onOpen) {
 function renderStatus() {
   const s = state.status;
   if (!s) return;
-  const showing = s.outputs.map(o => `${o.name}: ${o.title || o.id || 'nothing'}`).join(' | ');
+  const showing = s.outputs.map(o => `${o.name}: ${o.title || o.id || 'nothing'}`
+    + (o.covered ? ' (paused, fullscreen app)' : '')).join(' | ');
   const r = s.rotation;
   const rotation = r.active
     ? `rotating ${r.enabled} enabled, next in ${formatDuration(r.next_in)}`
@@ -520,6 +521,14 @@ function renderSettings() {
 
   const roots = el('textarea', { value: s.content_roots.join('\n'), placeholder: 'autodetect Steam libraries' });
   const web = el('input', { type: 'checkbox', checked: s.web.enabled });
+  const fsPause = el('input', { type: 'checkbox', checked: s.fullscreen_pause.enabled });
+  const fsActive = el('input', { type: 'checkbox', checked: s.fullscreen_pause.only_active });
+  const fsIgnore = el('textarea', { value: s.fullscreen_pause.ignore_app_ids.join('\n'), placeholder: 'e.g. mpv' });
+  const kdeBridge = el('input', { type: 'checkbox', checked: s.kde_bridge });
+  const spans = el('textarea', {
+    value: s.spans.map(span => span.join(', ')).join('\n'),
+    placeholder: outputs.length > 1 ? outputs.slice(0, 2).join(', ') : 'DP-1, DP-2',
+  });
   const uiEnabled = el('input', { type: 'checkbox', checked: s.ui.enabled });
   const port = el('input', { type: 'number', min: 1024, max: 65535, value: s.ui.port });
   const blur = el('input', { type: 'checkbox', checked: s.ui.blur_mature });
@@ -564,6 +573,13 @@ function renderSettings() {
     el('fieldset', {}, el('legend', { text: 'Assignments' }),
       el('div', { class: 'help full', text: 'Wallpaper id shown on each output when rotation is off or not covering it. Leave blank for none.' }),
       ...assignmentRows.flatMap(r => r.nodes)),
+    el('fieldset', {}, el('legend', { text: 'Fullscreen apps' }),
+      ...field('Pause under fullscreen apps', fsPause, 'Wallpapers on a monitor covered by a fullscreen window pause until it leaves.'),
+      ...field('Only while focused', fsActive),
+      ...field('Ignore apps', fsIgnore, 'One app id fragment per line (case insensitive), for fullscreen apps that should not pause wallpapers.'),
+      ...field('KDE bridge', kdeBridge, 'Plasma: loads a small KWin script while the daemon runs, so fullscreen detection and scene parallax under the desktop icons work. Applies after a daemon restart.')),
+    el('fieldset', {}, el('legend', { text: 'Screen spans' }),
+      ...field('Spans', spans, 'One span per line: outputs separated by commas that show one scene as a single stretched canvas when they are all showing it.')),
     el('fieldset', {}, el('legend', { text: 'Library' }),
       ...field('Content roots', roots, 'One steamapps/workshop/content/431960 folder per line.'),
       ...field('', el('button', { text: 'Rescan library', onclick: async e => {
@@ -606,6 +622,15 @@ function renderSettings() {
       assignments,
       content_roots: roots.value.split('\n').map(v => v.trim()).filter(Boolean),
       web: { enabled: web.checked },
+      fullscreen_pause: {
+        enabled: fsPause.checked,
+        only_active: fsActive.checked,
+        ignore_app_ids: fsIgnore.value.split('\n').map(v => v.trim()).filter(Boolean),
+      },
+      kde_bridge: kdeBridge.checked,
+      spans: spans.value.split('\n')
+        .map(line => line.split(',').map(v => v.trim()).filter(Boolean))
+        .filter(span => span.length > 0),
       ui: { enabled: uiEnabled.checked, port: Number(port.value), blur_mature: blur.checked },
       broken: s.broken.filter(id => !removedBroken.has(id)),
     };

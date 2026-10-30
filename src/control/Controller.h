@@ -15,6 +15,9 @@
 //   a wallpaper's engine, retry_native
 //                                    -> restartWallpaper(id) (retry_native
 //                                       first forgets the native verdict)
+//   fullscreen_pause rules           -> InstanceManager::refreshCoverage()
+//   spans                            -> restartAll()
+//   kde_bridge                       -> next daemon start (reported back)
 //   assignments                      -> InstanceManager::setAssignment()
 //   broken (ids removed)             -> InstanceManager::clearBroken()
 //   enabled wallpapers               -> Rotator::refresh()

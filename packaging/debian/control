@@ -14,7 +14,8 @@ Build-Depends: debhelper-compat (= 13),
                libx11-dev,
                libxrandr-dev,
                libepoxy-dev,
-               libpng-dev
+               libpng-dev,
+               libsystemd-dev
 Standards-Version: 4.6.2
 
 Package: desktop-canvas

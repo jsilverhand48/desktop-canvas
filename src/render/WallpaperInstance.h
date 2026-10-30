@@ -41,6 +41,12 @@ public:
     virtual void setPointer(const std::string& /*output*/, double /*x*/,
                             double /*y*/) {}
 
+    // A fullscreen application covers (or uncovers) one of this instance's
+    // outputs. InstanceManager already pauses an instance whose outputs are
+    // all covered; backends that can skip single outputs (the native
+    // helper) use this for partly covered groups. Default: ignored.
+    virtual void setCovered(const std::string& /*output*/, bool /*covered*/) {}
+
     virtual const std::string& wallpaperId() const = 0;
     virtual const std::string& outputName() const = 0;
 };

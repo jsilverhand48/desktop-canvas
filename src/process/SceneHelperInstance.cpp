@@ -54,6 +54,7 @@ std::vector<std::string> SceneHelperInstance::buildArgv(const Launch& launch,
     argv.push_back("--volume");
     argv.push_back(std::to_string(volume));
     if (launch.strict) argv.push_back("--strict");
+    if (launch.span) argv.push_back("--span");
     argv.push_back(launch.wallpaperDir);
     return argv;
 }
@@ -161,7 +162,14 @@ void SceneHelperInstance::sendState() {
     send({{"type", "mute"}, {"muted", muted_}});
     send({{"type", "volume"}, {"volume", volume_}});
     if (paused_) send({{"type", "pause"}});
+    for (const auto& [output, covered] : covered_)
+        send({{"type", "covered"}, {"output", output}, {"covered", covered}});
     flushPointer();
+}
+
+void SceneHelperInstance::setCovered(const std::string& output, bool covered) {
+    covered_[output] = covered;
+    send({{"type", "covered"}, {"output", output}, {"covered", covered}});
 }
 
 void SceneHelperInstance::pause() {

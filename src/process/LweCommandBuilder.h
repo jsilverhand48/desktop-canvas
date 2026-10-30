@@ -4,7 +4,9 @@
 //   --screen-root <name> --bg <id>   per output rendering (Wayland and X11);
 //                                    repeated per output so one process
 //                                    can drive several screens
-//   --window WxHxXxY                 windowed rendering (X11 reparent path)
+//   --screen-span <a,b,...> --bg <id> one canvas over several screens
+//                                    (LweOptions::span, config "spans")
+//   --window XxYxWxH                 windowed rendering (X11 reparent path)
 //   --silent / --volume N            audio policy
 //   --scaling <mode>                 per screen, applies to the preceding
 //                                    --screen-root or --window
@@ -33,6 +35,9 @@ struct LweOptions {
     // Empty for window mode.
     std::vector<std::string> screenRoots;
     std::string windowGeometry;  // "XxYxWxH" when screenRoots is empty
+    // Stretch one canvas over screenRoots (two or more) with --screen-span
+    // instead of rendering each screen on its own.
+    bool span = false;
     std::string wallpaperDir;    // absolute path of the workshop item
     std::string assetsDir;       // empty = let lwe autodetect
     int fps = 30;

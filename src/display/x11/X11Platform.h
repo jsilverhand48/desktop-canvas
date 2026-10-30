@@ -12,6 +12,7 @@
 
 #include "display/Platform.h"
 #include "display/x11/X11Connection.h"
+#include "display/x11/X11Toplevels.h"
 #include "gl/EglContext.h"
 #include "input/X11PointerPoller.h"
 
@@ -38,6 +39,12 @@ public:
             poller_ = std::make_unique<X11PointerPoller>(*loop_, conn_);
         poller_->setCallback(std::move(cb));
     }
+    // EWMH client list and states (X11Toplevels).
+    bool watchToplevels(ToplevelsCallback cb) override {
+        if (!toplevels_)
+            toplevels_ = std::make_unique<X11Toplevels>(conn_, *loop_);
+        return toplevels_->start(std::move(cb));
+    }
 
     X11Connection& connection() { return conn_; }
     EglContext& egl() { return egl_; }
@@ -48,6 +55,7 @@ private:
     X11Connection conn_;
     EglContext egl_;
     std::unique_ptr<X11PointerPoller> poller_;
+    std::unique_ptr<X11Toplevels> toplevels_;
     int fps_;
 };
 

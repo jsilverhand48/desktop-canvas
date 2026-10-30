@@ -146,6 +146,8 @@ int main(int argc, char** argv) {
     app.add_flag("--muted", muted, "Start muted");
     app.add_option("--volume", volume, "Volume 0..100")->check(CLI::Range(0, 100));
     app.add_flag("--strict", strict, "Exit 3 when anything is unsupported");
+    bool span = false;
+    app.add_flag("--span", span, "Stretch one canvas over every --output");
     app.add_flag("--check", check, "Print the support report and exit");
     app.add_option("--screenshot", screenshot, "Render headless into this PNG");
     app.add_option("--size", size, "Screenshot size WxH");
@@ -254,6 +256,7 @@ int main(int argc, char** argv) {
     options.outputs = outputs;
     options.layer = layer;
     options.fps = fps;
+    options.span = span;
     scenehost::SceneHost host(loop, *platform, renderer, options);
     if (channel) host.attachChannel(std::move(channel));
     loop.onTerminate([&] { loop.quit(helper::kExitClean); });

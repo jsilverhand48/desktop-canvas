@@ -20,6 +20,19 @@ Platform and surface abstractions.
 Scene wallpapers bypass RenderSurface entirely; their child process creates
 its own surface (see src/process/).
 
+Beyond outputs and surfaces a Platform reports, where it can:
+- output positions in the global logical layout (Wayland through
+  xdg-output, X11 through XRandR), used for spans and for mapping the KDE
+  bridge's global cursor to an output;
+- pointer motion and buttons over our own surfaces (`setOnPointer`,
+  `setOnPointerButton`; buttons on Wayland only);
+- other clients' toplevel windows (`watchToplevels`): EWMH on X11
+  (`x11/X11Toplevels`), wlr-foreign-toplevel on wlroots compositors
+  (`wayland/WaylandToplevels`); false on KWin Wayland, where the KDE bridge
+  (`src/desktop/`) fills in.
+`OutputGeometry.h` holds the pure helpers over the layout (`outputAt`,
+`outputsCoveredBy` with its "at least half of the output" rule).
+
 Build: the backends here, `src/gl/` and `src/input/X11PointerPoller` form
 the `canvas_display` static library. Each backend needs only EGL plus its
 own libraries (wayland-client and wayland-egl, or x11 and xrandr); libmpv is

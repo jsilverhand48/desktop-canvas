@@ -20,8 +20,11 @@ HTML, CSS and JavaScript: no framework, no build step.
     now, and when the native renderer has given up on them, why, with a
     "Retry native" button.
   - Settings: every global setting grouped (display, audio, rotation,
-    scenes including the scene engine, assignments, library folders, web,
+    scenes including the scene engine, fullscreen apps (pause, only while
+    focused, ignored app ids, KDE bridge), screen spans (one comma
+    separated output list per line), assignments, library folders, web,
     UI, broken list).
+  - The status line marks outputs a fullscreen app has paused.
   - Status refreshes every 5 seconds. When its `library_revision` changes
     (the daemon rescanned because wallpaper folders were added to or
     removed from the Steam library) the grid reloads by itself and a toast

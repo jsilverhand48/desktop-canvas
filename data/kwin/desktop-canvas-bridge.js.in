@@ -1,0 +1,62 @@
+// desktop-canvas KWin bridge.
+//
+// Loaded into KWin at runtime by the desktop-canvas daemon when its config
+// has "kde_bridge": true, and unloaded again when the daemon exits; it is
+// never installed as a permanent KWin script. It reports to the daemon over
+// the session bus:
+//   Cursor("x y")     the cursor in global logical coordinates, at most once
+//                     every CURSOR_INTERVAL_MS, so scene parallax and cursor
+//                     effects keep working while the Plasma desktop surface
+//                     (with the icons) sits above the wallpaper and takes the
+//                     pointer;
+//   Windows("[...]")  the fullscreen normal windows as JSON objects
+//                     {"app", "output", "active"}, whenever that may have
+//                     changed, for the fullscreen pause.
+// Arguments are strings so JavaScript number types cannot break the D-Bus
+// signature. The daemon only accepts calls from KWin's own bus connection.
+// Generated from desktop-canvas-bridge.js.in by CMake.
+"use strict";
+
+const SERVICE = "@CANVAS_APP_ID@";
+const PATH = "@CANVAS_BRIDGE_PATH@";
+const IFACE = "@CANVAS_APP_ID@.Bridge";
+const CURSOR_INTERVAL_MS = 8;
+
+let lastCursor = 0;
+
+function sendCursor() {
+    const now = Date.now();
+    if (now - lastCursor < CURSOR_INTERVAL_MS) return;
+    lastCursor = now;
+    const p = workspace.cursorPos;
+    callDBus(SERVICE, PATH, IFACE, "Cursor", Math.round(p.x) + " " + Math.round(p.y));
+}
+
+function sendWindows() {
+    const list = [];
+    for (const w of workspace.windowList()) {
+        if (!w.normalWindow || !w.fullScreen) continue;
+        list.push({
+            app: w.desktopFileName || w.resourceClass || "",
+            output: w.output ? w.output.name : "",
+            active: w === workspace.activeWindow,
+        });
+    }
+    callDBus(SERVICE, PATH, IFACE, "Windows", JSON.stringify(list));
+}
+
+function watch(w) {
+    w.fullScreenChanged.connect(sendWindows);
+    w.outputChanged.connect(sendWindows);
+}
+
+workspace.windowList().forEach(watch);
+workspace.windowAdded.connect(function (w) {
+    watch(w);
+    sendWindows();
+});
+workspace.windowRemoved.connect(sendWindows);
+workspace.windowActivated.connect(sendWindows);
+workspace.cursorPosChanged.connect(sendCursor);
+sendWindows();
+sendCursor();

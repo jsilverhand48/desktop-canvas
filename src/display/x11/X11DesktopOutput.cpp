@@ -18,7 +18,8 @@ X11DesktopOutput::X11DesktopOutput(EventLoop& loop, X11Connection& conn,
       name_(info.name),
       width_(info.width),
       height_(info.height),
-      frame_interval_ms_(fps > 0 ? 1000 / fps : 33) {
+      frame_period_(std::chrono::nanoseconds(1000000000LL /
+                                             (fps > 0 ? fps : 30))) {
     Display* dpy = conn.display();
     // The window visual must match the EGL config's native visual, or
     // eglCreateWindowSurface fails with EGL_BAD_MATCH.
@@ -100,7 +101,11 @@ void X11DesktopOutput::swapBuffers() { egl_.swapBuffers(egl_surface_); }
 
 void X11DesktopOutput::requestFrame(std::function<void()> cb) {
     if (frame_timer_) loop_.cancelTimer(frame_timer_);
-    frame_timer_ = loop_.addTimer(frame_interval_ms_, [this, cb = std::move(cb)] {
+    auto now = std::chrono::steady_clock::now();
+    next_frame_ += frame_period_;
+    // First frame, or more than a period behind: start over from now.
+    if (next_frame_ + frame_period_ < now) next_frame_ = now;
+    frame_timer_ = loop_.addTimerAt(next_frame_, [this, cb = std::move(cb)] {
         frame_timer_ = 0;
         cb();
     });

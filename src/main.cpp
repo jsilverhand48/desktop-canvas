@@ -48,6 +48,9 @@
 #ifdef CANVAS_HAVE_VIDEO
 #include "render/VideoBackend.h"
 #endif
+#ifdef CANVAS_HAVE_SDBUS
+#include "desktop/KdeBridge.h"
+#endif
 
 using nlohmann::json;
 
@@ -82,6 +85,52 @@ void printList(const std::vector<WallpaperInfo>& items, bool asJson) {
               << " unsupported\n";
 }
 
+// True on a Plasma session (XDG_CURRENT_DESKTOP is a ':' list, e.g. "KDE").
+bool onPlasma() {
+    const char* desktop = std::getenv("XDG_CURRENT_DESKTOP");
+    if (!desktop) return false;
+    std::string list = std::string(":") + desktop + ":";
+    return list.find(":KDE:") != std::string::npos;
+}
+
+#ifdef CANVAS_HAVE_SDBUS
+// --probe-kde-bridge N: runs only the KDE bridge for N seconds and prints
+// what KWin reports (every 20th cursor update and every window list), to
+// check the Plasma integration without starting any wallpaper. Needs the
+// bus name, so the running daemon must not hold it.
+int probeKdeBridge(int seconds) {
+    EventLoop loop;
+    std::string script = KdeBridge::findScript();
+    if (script.empty()) {
+        std::cerr << "KDE bridge script not found\n";
+        return 1;
+    }
+    int cursorUpdates = 0;
+    KdeBridge bridge(
+        loop,
+        KdeBridge::Handlers{
+            [&](double x, double y) {
+                if (cursorUpdates++ % 20 == 0)
+                    std::cout << "cursor " << x << " " << y << std::endl;
+            },
+            [&](std::vector<ToplevelInfo> windows) {
+                std::cout << "fullscreen windows: " << windows.size();
+                for (const auto& w : windows)
+                    std::cout << " [" << w.appId << " on "
+                              << (w.outputs.empty() ? "?" : w.outputs.front())
+                              << (w.active ? ", active" : "") << "]";
+                std::cout << std::endl;
+            }});
+    if (!bridge.start(script)) return 1;
+    loop.addTimer(static_cast<uint64_t>(seconds) * 1000, [&] { loop.quit(0); });
+    loop.onTerminate([&] { loop.quit(0); });
+    int code = loop.run();
+    std::cout << cursorUpdates << " cursor updates in " << seconds << " s"
+              << std::endl;
+    return code;
+}
+#endif
+
 int runDaemon(Config& config) {
     // Qt child processes (web helper) route their warnings to journald when
     // stderr is not a tty; force them onto stderr so the daemon log has
@@ -109,7 +158,8 @@ int runDaemon(Config& config) {
 #endif
 #ifdef CANVAS_HAVE_X11
     if (!platform && x11 && *x11) {
-        auto p = std::make_unique<X11Platform>();
+        // X11 has no frame callbacks: surfaces pace at the configured fps.
+        auto p = std::make_unique<X11Platform>(EglContext::Options{}, config.fps);
         if (p->init(loop)) platform = std::move(p);
     }
 #endif
@@ -178,6 +228,39 @@ int runDaemon(Config& config) {
         controller.setUiUrl("http://127.0.0.1:" +
                             std::to_string(config.uiPort) + "/");
 
+    // Fullscreen pause, and the cursor under the Plasma desktop icons: the
+    // platform's own window list where it has one (X11, wlroots); on Plasma
+    // Wayland the KDE bridge supplies windows and the cursor.
+    bool platformToplevels = platform->watchToplevels(
+        [&manager](const std::vector<ToplevelInfo>& windows) {
+            manager.setToplevels(windows);
+        });
+#ifdef CANVAS_HAVE_SDBUS
+    std::unique_ptr<KdeBridge> kdeBridge;
+    if (config.kdeBridge && platform->isWayland() && onPlasma()) {
+        kdeBridge = std::make_unique<KdeBridge>(
+            loop,
+            KdeBridge::Handlers{
+                [&manager](double x, double y) { manager.pointerAtGlobal(x, y); },
+                [&manager, platformToplevels](std::vector<ToplevelInfo> windows) {
+                    if (!platformToplevels) manager.setToplevels(std::move(windows));
+                }});
+        std::string script = KdeBridge::findScript();
+        if (script.empty()) {
+            log::warn() << "KDE bridge script not found: no fullscreen pause "
+                           "or cursor under the desktop icons on Plasma";
+            kdeBridge.reset();
+        } else if (!kdeBridge->start(script)) {
+            kdeBridge.reset();
+        }
+    }
+    if (!platformToplevels && !kdeBridge)
+#else
+    if (!platformToplevels)
+#endif
+        log::info() << "fullscreen pause unavailable: this desktop does not "
+                       "report other windows";
+
     platform->setOnOutputsChanged([&] { manager.apply(); });
     loop.onTerminate([&] {
         log::info() << "shutting down";
@@ -207,6 +290,10 @@ int main(int argc, char** argv) {
     std::string scaling, layer, engine, assets, playlist;
     std::vector<std::string> rotateOutputs;
 
+    int probeBridge = 0;
+    app.add_option("--probe-kde-bridge", probeBridge,
+                   "Run only the KDE bridge for N seconds, print what KWin "
+                   "reports, and exit");
     app.add_flag("--list", list, "Scan the wallpaper library and exit");
     app.add_flag("--json", asJson, "With --list, print JSON");
     app.add_option("--config", configPath, "Config file path");
@@ -260,6 +347,14 @@ int main(int argc, char** argv) {
             config.assignments[s.substr(0, eq)] = s.substr(eq + 1);
     }
 
+    if (probeBridge > 0) {
+#ifdef CANVAS_HAVE_SDBUS
+        return canvas::probeKdeBridge(probeBridge);
+#else
+        std::cerr << "built without the KDE bridge (needs libsystemd)\n";
+        return 1;
+#endif
+    }
     if (list) {
         auto scanRoots = config.contentRoots.empty()
                              ? canvas::WorkshopScanner::defaultRoots()

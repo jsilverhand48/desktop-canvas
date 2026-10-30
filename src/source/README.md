@@ -9,7 +9,13 @@ Workshop content scanning and the user's rotation playlist.
   tolerantly (case insensitive type, presets with a "dependency" key and
   malformed items become Unsupported entries, never errors), autodetects
   default Steam library locations and the Wallpaper Engine `assets`
-  directory required by scene rendering.
+  directory required by scene rendering. Library discovery
+  (`defaultRootsFor`): every Steam install (native `~/.local/share/Steam`
+  and `~/.steam/steam`, Flatpak `~/.var/app/com.valvesoftware.Steam/...`,
+  snap `~/snap/steam/common/...`), every library each install's
+  `steamapps/libraryfolders.vdf` lists (`parseLibraryFolders`), and the
+  `/run/media/$USER/*/SteamLibrary` heuristic; existing workshop dirs only,
+  duplicates through symlinks dropped.
 - `Playlist` the rotation pool: `setIds()` from the enabled wallpapers in
   config, or `load()` of a plain text ids file (one per line, `#` comments,
   blanks and whitespace ignored, duplicates collapsed) for importing the

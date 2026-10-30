@@ -41,10 +41,12 @@
 #include <memory>
 #include <optional>
 #include <random>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "config/Config.h"
+#include "display/Platform.h"
 #include "render/NativeSupportCache.h"
 #include "source/WallpaperInfo.h"
 
@@ -138,6 +140,20 @@ public:
     // (video, native scenes), otherwise by restarting unmuted instances.
     void setVolume(int volume);
 
+    // Fullscreen pause. setToplevels stores the desktop's latest window list
+    // (Platform::watchToplevels or the KDE bridge) and recomputes the
+    // covered outputs with the config rules (desktop/FullscreenPolicy.h);
+    // refreshCoverage() recomputes after the rules change. An instance whose
+    // outputs are all covered pauses exactly like a manual pause and resumes
+    // when uncovered (unless manually paused); every instance also hears
+    // setCovered() per output.
+    void setToplevels(std::vector<ToplevelInfo> windows);
+    void refreshCoverage();
+    const std::set<std::string>& coveredOutputs() const { return covered_; }
+    // Global logical cursor position (the KDE bridge reports it): routed to
+    // the instance on the output under it, in output local coordinates.
+    void pointerAtGlobal(double x, double y);
+
     // Status for IPC: output -> wallpaper id currently running.
     std::map<std::string, std::string> running() const;
 
@@ -155,7 +171,7 @@ private:
     // Starts the scene in group with the native helper or lwe.
     std::shared_ptr<WallpaperInstance> makeSceneInstance(
         const std::vector<std::string>& group, const WallpaperInfo& info,
-        bool muted, const std::string& geometry);
+        bool muted, const std::string& geometry, bool span);
     // A strict native helper could not show id: remember it and relaunch
     // the wallpaper (now resolving to lwe).
     void handleUnsupported(const std::string& id,
@@ -167,8 +183,9 @@ private:
     bool lweLayerSupported();
     // Starts one instance covering every output in group (size 1 unless
     // mergeable) and records a slot for each of them.
+    // span: group is a configured span (one canvas over all of it).
     void startInstance(const std::vector<std::string>& group,
-                       const WallpaperInfo& info);
+                       const WallpaperInfo& info, bool span = false);
     // Surface for outputName, created on first use or when the previous one
     // reports closed() (compositor closed it, or a used Wayland surface).
     // Null on failure.
@@ -179,6 +196,9 @@ private:
     // Each running instance once, even when shared by several outputs, so
     // pause/resume/mute act (and mute restarts) a merged process only once.
     std::vector<WallpaperInstance*> instances() const;
+    // Pauses or resumes each instance to match paused_ or full coverage of
+    // its outputs; transitions only, tracked in pauseApplied_.
+    void updatePause();
     // A supervised child failed too often. lwe and web: blacklist the
     // wallpaper (config "broken"). Native helper under "auto": record a
     // "crash" verdict and relaunch with lwe instead.
@@ -200,6 +220,9 @@ private:
     std::string sceneHelper_;       // desktop-canvas-scene, empty if missing
     std::unique_ptr<NativeSupportCache> nativeSupport_;
     bool paused_ = false;
+    std::vector<ToplevelInfo> toplevels_;
+    std::set<std::string> covered_;
+    std::map<const WallpaperInstance*, bool> pauseApplied_;
     // Draws random scene variants when config_.sceneRandomizeOptions is on.
     std::mt19937 optionRng_{std::random_device{}()};
     // Declared before slots_ so instances, which borrow these surfaces, are

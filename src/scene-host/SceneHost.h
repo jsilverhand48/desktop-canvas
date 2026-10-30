@@ -51,6 +51,10 @@ struct SceneHostOptions {
     std::vector<std::string> outputs;
     std::string layer = "background";
     int fps = 30;
+    // One canvas stretched over all outputs (config "spans"). Until the
+    // engine composes scenes (plan phase P4) each output still renders the
+    // whole frame; the flag is carried so the daemon side is complete.
+    bool span = false;
 };
 
 class SceneHost {

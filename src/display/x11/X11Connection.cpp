@@ -32,7 +32,7 @@ bool X11Connection::connect(EventLoop& loop) {
     XRRSelectInput(display_, root_, RRScreenChangeNotifyMask);
     // SubstructureNotify lets us see MapNotify for new top level windows
     // (used by demoteWindowsOf for scene children).
-    XSelectInput(display_, root_, SubstructureNotifyMask);
+    XSelectInput(display_, root_, root_mask_);
     refreshOutputs();
 
     loop.addFd(ConnectionNumber(display_), EPOLLIN, [this](uint32_t) {
@@ -69,7 +69,13 @@ void X11Connection::refreshOutputs() {
     log::info() << "x11: " << outputs_.size() << " connected output(s)";
 }
 
+void X11Connection::addRootEventMask(long mask) {
+    root_mask_ |= mask;
+    if (display_) XSelectInput(display_, root_, root_mask_);
+}
+
 void X11Connection::handleEvent(const XEvent& ev) {
+    for (const auto& observer : observers_) observer(ev);
     if (ev.type == randr_event_base_ + RRScreenChangeNotify) {
         XRRUpdateConfiguration(const_cast<XEvent*>(&ev));
         refreshOutputs();

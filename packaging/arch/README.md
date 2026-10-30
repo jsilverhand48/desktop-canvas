@@ -92,8 +92,9 @@ is untracked and therefore absent from release tarballs. If that directory is
 ever tracked, add a `check()` running `ctest --test-dir build`.
 
 `desktop-canvas-scene` (the native scene renderer helper) is part of the
-base package and adds `libepoxy` and `libpng` to `depends`; `.SRCINFO`
-lists them too.
+base package and adds `libepoxy` and `libpng` to `depends`; `systemd-libs`
+(sd-bus) backs the KDE bridge, whose KWin script installs to
+`share/desktop-canvas/kwin/`. `.SRCINFO` lists them too.
 
 Scene wallpapers need linux-wallpaperengine, which exists in the AUR only as
 `linux-wallpaperengine-git`. That package declares

@@ -21,9 +21,16 @@ std::vector<OutputDesc> WaylandPlatform::outputs() const {
     for (const auto& info : conn_.outputs()) {
         if (info->name.empty()) continue;
         result.push_back(OutputDesc{info->name, info->logical_width,
-                                    info->logical_height, 0, 0});
+                                    info->logical_height, info->logical_x,
+                                    info->logical_y});
     }
     return result;
+}
+
+bool WaylandPlatform::watchToplevels(ToplevelsCallback cb) {
+    if (!conn_.toplevelManagerName()) return false;
+    if (!toplevels_) toplevels_ = std::make_unique<WaylandToplevels>(conn_);
+    return toplevels_->start(std::move(cb));
 }
 
 std::unique_ptr<RenderSurface> WaylandPlatform::createSurface(

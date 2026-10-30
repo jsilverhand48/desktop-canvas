@@ -16,7 +16,9 @@ Supervised child processes: linux-wallpaperengine (lwe) for scenes on the
   lwe's own default has been `bottom` since r598, which KWin stacks above
   the Plasma desktop icons, so the daemon passes its configured layer.
   `LweOptions::properties` adds one `--set-property name=value` per entry
-  (random scene variants, see `source/SceneOptions`).
+  (random scene variants, see `source/SceneOptions`). `LweOptions::span`
+  turns two or more screen roots into one `--screen-span a,b --bg <dir>
+  --scaling <mode>` (config spans).
 - `ChildSupervisor` fork/exec, pidfd based exit notification on the event
   loop, respawn with exponential backoff (1s..60s), give up after 5 rapid
   failures within 2 minutes and report through onBroken. Children start
@@ -40,9 +42,11 @@ Supervised child processes: linux-wallpaperengine (lwe) for scenes on the
   is a command line flag (--silent) in linux-wallpaperengine. A scene merged
   across outputs is tagged `scene:<first output>`.
 - `SceneHelperInstance` WallpaperInstance for desktop-canvas-scene, tagged
-  `native:<first output>`. Pause, resume, mute, volume and pointer are live
-  messages (pointer coalesced to one update per 16 ms); state is re-sent
-  after every hello, so respawned helpers pick it up. No message for 10 s
-  means the helper hung: SIGKILL, which the supervisor counts as a crash.
+  `native:<first output>`. Pause, resume, mute, volume, pointer and
+  per output coverage by fullscreen windows are live messages (pointer
+  coalesced to one update per 16 ms); state is re-sent after every hello,
+  so respawned helpers pick it up. `Launch::span` adds `--span`. No
+  message for 10 s means the helper hung: SIGKILL, which the supervisor
+  counts as a crash.
   A strict helper's unsupported report fires `onUnsupported` (deferred one
   loop iteration) so InstanceManager can fall back to lwe.

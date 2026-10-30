@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <iterator>
+#include <regex>
 
 #include <nlohmann/json.hpp>
 
@@ -108,25 +110,67 @@ std::vector<WallpaperInfo> WorkshopScanner::scan(
 }
 
 std::vector<fs::path> WorkshopScanner::defaultRoots() {
-    std::vector<fs::path> candidates;
     const char* home = std::getenv("HOME");
     const char* user = std::getenv("USER");
-    const std::string tail = "steamapps/workshop/content/431960";
-    if (home) {
-        candidates.push_back(fs::path(home) / ".local/share/Steam" / tail);
-        candidates.push_back(fs::path(home) / ".steam/steam" / tail);
+    return defaultRootsFor(home ? fs::path(home) : fs::path(),
+                           user ? std::string(user) : std::string());
+}
+
+std::vector<fs::path> WorkshopScanner::steamInstalls(const fs::path& home) {
+    if (home.empty()) return {};
+    return {home / ".local/share/Steam", home / ".steam/steam",
+            home / ".var/app/com.valvesoftware.Steam/.local/share/Steam",
+            home / "snap/steam/common/.local/share/Steam"};
+}
+
+std::vector<fs::path> WorkshopScanner::parseLibraryFolders(const std::string& vdf) {
+    // Lines look like:   "path"   "/run/media/user/disk/SteamLibrary"
+    // Values escape backslashes and quotes with a backslash.
+    std::vector<fs::path> folders;
+    static const std::regex kPath("\"path\"\\s+\"((?:[^\"\\\\]|\\\\.)*)\"",
+                                  std::regex::icase);
+    for (auto it = std::sregex_iterator(vdf.begin(), vdf.end(), kPath);
+         it != std::sregex_iterator(); ++it) {
+        std::string raw = (*it)[1].str();
+        std::string value;
+        for (size_t i = 0; i < raw.size(); i++) {
+            if (raw[i] == '\\' && i + 1 < raw.size()) i++;
+            value += raw[i];
+        }
+        if (!value.empty()) folders.emplace_back(value);
     }
-    if (user) {
+    return folders;
+}
+
+std::vector<fs::path> WorkshopScanner::defaultRootsFor(const fs::path& home,
+                                                       const std::string& user) {
+    const std::string tail = "steamapps/workshop/content/431960";
+    std::vector<fs::path> candidates;
+    for (const auto& install : steamInstalls(home)) {
+        candidates.push_back(install / tail);
+        std::ifstream vdf(install / "steamapps/libraryfolders.vdf");
+        if (!vdf) continue;
+        std::string text((std::istreambuf_iterator<char>(vdf)),
+                         std::istreambuf_iterator<char>());
+        for (const auto& library : parseLibraryFolders(text))
+            candidates.push_back(library / tail);
+    }
+    if (!user.empty()) {
         std::error_code ec;
         fs::path media = fs::path("/run/media") / user;
-        for (const auto& mount : fs::directory_iterator(media, ec)) {
+        for (const auto& mount : fs::directory_iterator(media, ec))
             candidates.push_back(mount.path() / "SteamLibrary" / tail);
-        }
     }
     std::vector<fs::path> roots;
+    std::vector<fs::path> seen;  // canonical forms
     for (const auto& c : candidates) {
         std::error_code ec;
-        if (fs::is_directory(c, ec)) roots.push_back(c);
+        if (!fs::is_directory(c, ec)) continue;
+        fs::path canonical = fs::weakly_canonical(c, ec);
+        if (ec) canonical = c;
+        if (std::find(seen.begin(), seen.end(), canonical) != seen.end()) continue;
+        seen.push_back(canonical);
+        roots.push_back(c);
     }
     return roots;
 }

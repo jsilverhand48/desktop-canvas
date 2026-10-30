@@ -111,9 +111,13 @@ json Controller::status() const {
             outputs.push_back({{"name", o.name},
                                {"width", o.width},
                                {"height", o.height},
+                               {"x", o.x},
+                               {"y", o.y},
                                {"id", id},
                                {"title", info ? info->title : ""},
-                               {"assigned", config_.wallpaperFor(o.name)}});
+                               {"assigned", config_.wallpaperFor(o.name)},
+                               {"covered",
+                                manager_.coveredOutputs().count(o.name) > 0}});
         }
     }
     return {{"outputs", outputs},
@@ -159,6 +163,12 @@ json Controller::settings() const {
               {"randomize_options", config_.sceneRandomizeOptions},
               {"include_nsfw_options", config_.sceneIncludeNsfwOptions}}},
             {"web", {{"enabled", config_.webEnabled}}},
+            {"fullscreen_pause",
+             {{"enabled", config_.fullscreenPauseEnabled},
+              {"only_active", config_.fullscreenPauseOnlyActive},
+              {"ignore_app_ids", config_.fullscreenIgnoreAppIds}}},
+            {"kde_bridge", config_.kdeBridge},
+            {"spans", config_.spans},
             {"content_roots", roots},
             {"assignments", config_.assignments},
             {"playlist",
@@ -181,6 +191,7 @@ bool Controller::updateSettings(const json& patch, std::string& error,
     Config next = config_;
     bool restart = false, rescan = false, rotation = false, rearm = false;
     bool volumeChanged = false;
+    bool coverage = false;
     std::vector<std::string> unbroken;
     std::map<std::string, std::string> assignmentChanges;  // "" = remove
     try {
@@ -259,6 +270,55 @@ bool Controller::updateSettings(const json& patch, std::string& error,
             if (s.contains("include_nsfw_options"))
                 next.sceneIncludeNsfwOptions =
                     s["include_nsfw_options"].get<bool>();
+        }
+        if (patch.contains("fullscreen_pause")) {
+            const auto& f = patch["fullscreen_pause"];
+            if (!f.is_object()) {
+                error = "fullscreen_pause must be an object";
+                return false;
+            }
+            if (f.contains("enabled"))
+                next.fullscreenPauseEnabled = f["enabled"].get<bool>();
+            if (f.contains("only_active"))
+                next.fullscreenPauseOnlyActive = f["only_active"].get<bool>();
+            std::vector<std::string> ignore = next.fullscreenIgnoreAppIds;
+            if (!stringList(f, "ignore_app_ids", ignore, error)) return false;
+            std::erase(ignore, std::string());
+            next.fullscreenIgnoreAppIds = ignore;
+            coverage = true;
+        }
+        if (patch.contains("kde_bridge")) {
+            bool v = patch["kde_bridge"].get<bool>();
+            if (v != next.kdeBridge)
+                notes.push_back("the KDE bridge setting takes effect after "
+                                "the daemon restarts");
+            next.kdeBridge = v;
+        }
+        if (patch.contains("spans")) {
+            const auto& s = patch["spans"];
+            if (!s.is_array()) {
+                error = "spans must be a list of output lists";
+                return false;
+            }
+            std::vector<std::vector<std::string>> spans;
+            for (const auto& span : s) {
+                if (!span.is_array()) {
+                    error = "each span must be a list of output names";
+                    return false;
+                }
+                std::vector<std::string> outputs;
+                for (const auto& o : span) {
+                    if (!o.is_string()) {
+                        error = "span outputs must be strings";
+                        return false;
+                    }
+                    outputs.push_back(o.get<std::string>());
+                }
+                spans.push_back(std::move(outputs));
+            }
+            if (!Config::validSpans(spans, &error)) return false;
+            restart |= spans != next.spans;
+            next.spans = std::move(spans);
         }
         if (patch.contains("web") && patch["web"].contains("enabled")) {
             bool v = patch["web"]["enabled"].get<bool>();
@@ -364,6 +424,7 @@ bool Controller::updateSettings(const json& patch, std::string& error,
 
     if (volumeChanged) manager_.setVolume(config_.audioVolume);
     if (mutedChanged) manager_.setMuted(newMuted);
+    if (coverage) manager_.refreshCoverage();
     for (const auto& id : unbroken) manager_.clearBroken(id);
     for (const auto& [output, id] : assignmentChanges) {
         std::string e;

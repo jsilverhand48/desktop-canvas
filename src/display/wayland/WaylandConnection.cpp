@@ -35,7 +35,12 @@ const wl_output_listener kOutputListener = {
     outputName, outputDescription,
 };
 
-void xdgOutputLogicalPosition(void*, zxdg_output_v1*, int32_t, int32_t) {}
+void xdgOutputLogicalPosition(void* data, zxdg_output_v1*, int32_t x,
+                              int32_t y) {
+    auto* info = static_cast<OutputInfo*>(data);
+    info->logical_x = x;
+    info->logical_y = y;
+}
 void xdgOutputLogicalSize(void* data, zxdg_output_v1*, int32_t w, int32_t h) {
     auto* info = static_cast<OutputInfo*>(data);
     info->logical_width = w;
@@ -79,8 +84,18 @@ struct PointerListenerAccess {
             }
         }
     }
-    static void button(void*, wl_pointer*, uint32_t, uint32_t, uint32_t,
-                       uint32_t) {}
+    static void button(void* data, wl_pointer*, uint32_t, uint32_t,
+                       uint32_t button, uint32_t state) {
+        auto* self = static_cast<WaylandConnection*>(data);
+        if (!self->pointer_focus_ || !self->pointer_button_cb_) return;
+        for (const auto& [surf, name] : self->registered_surfaces_) {
+            if (surf == self->pointer_focus_) {
+                self->pointer_button_cb_(
+                    name, button, state == WL_POINTER_BUTTON_STATE_PRESSED);
+                return;
+            }
+        }
+    }
     static void axis(void*, wl_pointer*, uint32_t, uint32_t, wl_fixed_t) {}
     static void frame(void*, wl_pointer*) {}
     static void axisSource(void*, wl_pointer*, uint32_t) {}
@@ -142,6 +157,10 @@ void WaylandConnection::registryGlobal(void* data, wl_registry* registry,
             wl_registry_bind(registry, name,
                              &zxdg_output_manager_v1_interface,
                              std::min(version, 3u)));
+    } else if (strcmp(interface, "zwlr_foreign_toplevel_manager_v1") == 0) {
+        // Bound later, and only if the fullscreen pause asks for it.
+        self->toplevel_manager_name_ = name;
+        self->toplevel_manager_version_ = version;
     } else if (strcmp(interface, wl_output_interface.name) == 0) {
         auto info = std::make_unique<OutputInfo>();
         info->registry_name = name;

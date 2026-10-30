@@ -18,6 +18,11 @@
 //             "randomize_options": false,     // random dropdown values
 //             "include_nsfw_options": false}, // ...including NSFW ones
 //   "web": {"enabled": false},
+//   "fullscreen_pause": {"enabled": true,         // pause under fullscreen apps
+//                        "only_active": false,    // ...only while focused
+//                        "ignore_app_ids": []},   // app id substrings to ignore
+//   "kde_bridge": true,                           // KWin script on Plasma
+//   "spans": [["DP-5", "DP-6"]],                  // outputs sharing one canvas
 //   "broken": ["<wallpaper id>", ...],            // auto blacklist
 //   "playlist": {
 //     "interval": 900,                              // seconds, 0 = no rotation
@@ -46,6 +51,18 @@
 // falls back to lwe for content it reports unsupported (verdicts cached, see
 // render/NativeSupportCache.h). Unknown values read as "lwe", and an empty
 // per wallpaper value means "use scene.engine".
+//
+// Fullscreen pause: wallpapers on outputs a fullscreen application covers
+// pause (desktop/FullscreenPolicy.h). Windows come from the platform (EWMH on
+// X11, wlr-foreign-toplevel on wlroots) or, on Plasma, from the KDE bridge:
+// a KWin script the daemon loads at runtime when "kde_bridge" is true, which
+// also reports the cursor so scene parallax works under the desktop icons.
+// "kde_bridge" changes apply at the next daemon start.
+//
+// Spans: each entry lists two or more outputs that show one wallpaper as a
+// single canvas stretched over them, when every listed output resolves to
+// the same scene wallpaper. An output belongs to at most one span; invalid
+// entries are dropped on load.
 //
 // The playlist block holds rotation *settings* only. The wallpaper a
 // rotation tick picks is deliberately not written here: it lives in
@@ -78,6 +95,15 @@ struct Config {
     // Let those random picks include options labelled NSFW / nude.
     bool sceneIncludeNsfwOptions = false;
     bool webEnabled = false;
+    bool fullscreenPauseEnabled = true;
+    bool fullscreenPauseOnlyActive = false;
+    std::vector<std::string> fullscreenIgnoreAppIds;
+    bool kdeBridge = true;
+    std::vector<std::vector<std::string>> spans;
+    // True when spans is well formed: every entry has two or more distinct
+    // non empty outputs and no output appears in two entries.
+    static bool validSpans(const std::vector<std::vector<std::string>>& spans,
+                           std::string* error = nullptr);
     std::vector<std::string> broken;  // wallpaper ids marked broken
 
     // Per wallpaper choices made in the settings UI (or by hand).

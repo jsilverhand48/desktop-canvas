@@ -4,8 +4,11 @@
 // the scene helper asks for a GL 3.3 core context).
 #pragma once
 
+#include <memory>
+
 #include "display/Platform.h"
 #include "display/wayland/WaylandConnection.h"
+#include "display/wayland/WaylandToplevels.h"
 #include "gl/EglContext.h"
 
 namespace canvas {
@@ -26,6 +29,11 @@ public:
     void setOnPointer(PointerCallback cb) override {
         conn_.setOnPointer(std::move(cb));
     }
+    void setOnPointerButton(PointerButtonCallback cb) override {
+        conn_.setOnPointerButton(std::move(cb));
+    }
+    // Needs zwlr_foreign_toplevel_manager_v1 (not offered by KWin).
+    bool watchToplevels(ToplevelsCallback cb) override;
 
     EglContext& egl() { return egl_; }
 
@@ -33,6 +41,7 @@ private:
     EglContext::Options eglOptions_;
     WaylandConnection conn_;
     EglContext egl_;
+    std::unique_ptr<WaylandToplevels> toplevels_;  // after conn_: uses it
 };
 
 }  // namespace canvas

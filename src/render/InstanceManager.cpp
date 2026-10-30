@@ -8,6 +8,8 @@
 #include "audio/AudioPolicy.h"
 #include "core/EventLoop.h"
 #include "core/Log.h"
+#include "desktop/FullscreenPolicy.h"
+#include "display/OutputGeometry.h"
 #include "display/Platform.h"
 #include "process/ChildSupervisor.h"
 #include "process/ExternalProcessInstance.h"
@@ -113,9 +115,32 @@ void InstanceManager::apply() {
         desired[out.name] = info;
     }
 
-    // Which outputs each output's instance should cover.
+    // Which outputs each output's instance should cover. Configured spans
+    // come first: when every output of a span is present and shows the same
+    // mergeable scene, they become one span group (config order).
     std::map<std::string, std::vector<std::string>> groups;
+    std::set<std::string> spanned;
+    for (const auto& span : config_.spans) {
+        const WallpaperInfo* first = nullptr;
+        bool active = !span.empty();
+        for (const auto& name : span) {
+            auto d = desired.find(name);
+            const WallpaperInfo* info = d == desired.end() ? nullptr : d->second;
+            if (!info || info->type != WallpaperType::Scene || !mergeable(*info) ||
+                (first && info->id != first->id)) {
+                active = false;
+                break;
+            }
+            first = info;
+        }
+        if (!active) continue;
+        for (const auto& name : span) {
+            groups[name] = span;
+            spanned.insert(name);
+        }
+    }
     for (const auto& out : outputs) {
+        if (spanned.count(out.name)) continue;
         const WallpaperInfo* info = desired[out.name];
         if (!info) continue;
         auto& group = groups[out.name];
@@ -124,7 +149,8 @@ void InstanceManager::apply() {
             continue;
         }
         for (const auto& [name, other] : desired)  // map order: sorted
-            if (other && other->id == info->id) group.push_back(name);
+            if (other && other->id == info->id && !spanned.count(name))
+                group.push_back(name);
     }
 
     // Stop instances that no longer match; this drops every output sharing
@@ -142,7 +168,7 @@ void InstanceManager::apply() {
     for (const auto& out : outputs) {
         const WallpaperInfo* info = desired[out.name];
         if (!info || slots_.count(out.name)) continue;
-        startInstance(groups[out.name], *info);
+        startInstance(groups[out.name], *info, spanned.count(out.name) > 0);
     }
 }
 
@@ -197,7 +223,7 @@ bool InstanceManager::lweLayerSupported() {
 }
 
 void InstanceManager::startInstance(const std::vector<std::string>& group,
-                                    const WallpaperInfo& info) {
+                                    const WallpaperInfo& info, bool span) {
     // Only merged scenes cover more than one output; everything else
     // (video, web, X11 lwe scenes) targets group.front() alone.
     const std::string& outputName = group.front();
@@ -217,7 +243,7 @@ void InstanceManager::startInstance(const std::vector<std::string>& group,
     std::shared_ptr<WallpaperInstance> instance;
     switch (info.type) {
         case WallpaperType::Scene:
-            instance = makeSceneInstance(group, info, muted, geometry);
+            instance = makeSceneInstance(group, info, muted, geometry, span);
             break;
         case WallpaperType::Video: {
             // The factory comes from main.cpp, which owns the libmpv
@@ -269,13 +295,17 @@ void InstanceManager::startInstance(const std::vector<std::string>& group,
     log::info() << "starting " << toString(info.type) << " wallpaper "
                 << info.id << " (" << info.title << ") on " << where;
     instance->start();
-    if (paused_) instance->pause();
-    for (const auto& name : group) slots_[name] = Slot{instance, group};
+    for (const auto& name : group) {
+        slots_[name] = Slot{instance, group};
+        if (covered_.count(name)) instance->setCovered(name, true);
+    }
+    pauseApplied_[instance.get()] = false;
+    updatePause();  // starts paused when paused or fully covered
 }
 
 std::shared_ptr<WallpaperInstance> InstanceManager::makeSceneInstance(
     const std::vector<std::string>& group, const WallpaperInfo& info,
-    bool muted, const std::string& geometry) {
+    bool muted, const std::string& geometry, bool span) {
     const std::string& outputName = group.front();
     // Per wallpaper property values: pinned ones always, plus (with
     // scene.randomize_options) a random pick per dropdown, drawn once per
@@ -304,6 +334,7 @@ std::shared_ptr<WallpaperInstance> InstanceManager::makeSceneInstance(
         launch.assetsDir = assetsDir_;
         launch.properties = properties;
         launch.strict = engine == SceneEngine::NativeStrict;
+        launch.span = span;
         auto instance = std::make_shared<SceneHelperInstance>(
             loop_, supervisor_, "native:" + outputName, info.id, muted,
             audio_.volume(), std::move(launch));
@@ -326,6 +357,7 @@ std::shared_ptr<WallpaperInstance> InstanceManager::makeSceneInstance(
     opts.properties = properties;
     if (mergeable(info)) {
         opts.screenRoots = group;
+        opts.span = span;
         if (lweLayerSupported()) opts.layer = config_.layer;
     } else {
         opts.windowGeometry = geometry;
@@ -382,6 +414,7 @@ void InstanceManager::stopInstance(const std::string& outputName) {
     std::erase_if(slots_, [&](const auto& entry) {
         return entry.second.instance == instance;
     });
+    pauseApplied_.erase(instance.get());
 }
 
 std::vector<WallpaperInstance*> InstanceManager::instances() const {
@@ -496,12 +529,66 @@ void InstanceManager::clearBroken(const std::string& id) {
 
 void InstanceManager::pauseAll() {
     paused_ = true;
-    for (auto* instance : instances()) instance->pause();
+    updatePause();
+}
+
+void InstanceManager::updatePause() {
+    // An instance is "covered" when every output it shows on is covered.
+    std::map<WallpaperInstance*, bool> allCovered;
+    for (const auto& [name, slot] : slots_) {
+        if (!slot.instance) continue;
+        bool here = covered_.count(name) > 0;
+        auto [it, inserted] = allCovered.emplace(slot.instance.get(), here);
+        if (!inserted) it->second = it->second && here;
+    }
+    for (const auto& [instance, covered] : allCovered) {
+        bool pause = paused_ || covered;
+        bool& applied = pauseApplied_[instance];
+        if (pause == applied) continue;
+        applied = pause;
+        if (pause)
+            instance->pause();
+        else
+            instance->resume();
+    }
+}
+
+void InstanceManager::setToplevels(std::vector<ToplevelInfo> windows) {
+    toplevels_ = std::move(windows);
+    refreshCoverage();
+}
+
+void InstanceManager::refreshCoverage() {
+    FullscreenRules rules;
+    rules.enabled = config_.fullscreenPauseEnabled;
+    rules.onlyActive = config_.fullscreenPauseOnlyActive;
+    rules.ignoreAppIds = config_.fullscreenIgnoreAppIds;
+    auto covered = canvas::coveredOutputs(toplevels_, rules);
+    if (covered == covered_) return;
+    std::string list;
+    for (const auto& name : covered) list += (list.empty() ? "" : ", ") + name;
+    log::info() << "fullscreen windows cover: "
+                << (list.empty() ? std::string("nothing") : list);
+    covered_ = std::move(covered);
+    for (const auto& [name, slot] : slots_)
+        if (slot.instance) slot.instance->setCovered(name, covered_.count(name) > 0);
+    updatePause();
+}
+
+void InstanceManager::pointerAtGlobal(double x, double y) {
+    if (!platform_) return;
+    auto outputs = platform_->outputs();
+    const OutputDesc* output = geometry::outputAt(outputs, x, y);
+    if (!output) return;
+    auto it = slots_.find(output->name);
+    if (it != slots_.end() && it->second.instance)
+        it->second.instance->setPointer(output->name, x - output->x,
+                                        y - output->y);
 }
 
 void InstanceManager::resumeAll() {
     paused_ = false;
-    for (auto* instance : instances()) instance->resume();
+    updatePause();  // covered instances stay paused
 }
 
 void InstanceManager::setMuted(bool muted) {

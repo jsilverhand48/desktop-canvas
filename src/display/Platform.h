@@ -3,11 +3,18 @@
 // A Platform enumerates outputs (monitors) and creates RenderSurfaces for in
 // process backends. Two implementations exist: WaylandPlatform (layer shell)
 // and X11Platform (DESKTOP type windows). main.cpp picks one based on
-// WAYLAND_DISPLAY/DISPLAY. Scene wallpapers do not use RenderSurfaces; the
-// linux-wallpaperengine child creates its own surface, so it only needs the
-// output name (Wayland) or geometry (X11) exposed here.
+// WAYLAND_DISPLAY/DISPLAY. Scene wallpapers do not use RenderSurfaces; their
+// child process (linux-wallpaperengine or desktop-canvas-scene) creates its
+// own surface, so it only needs the output name (Wayland) or geometry (X11)
+// exposed here.
+//
+// Besides outputs and surfaces a platform may report other clients'
+// toplevel windows (watchToplevels, used for the fullscreen pause) and
+// pointer input over our own surfaces (setOnPointer, setOnPointerButton).
+// Output positions are in the global logical layout on both backends.
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -18,6 +25,16 @@
 namespace canvas {
 
 class EventLoop;
+
+// Another client's top level (application) window, as far as the platform
+// can see it. Feeds desktop/FullscreenPolicy.
+struct ToplevelInfo {
+    std::string appId;                 // Wayland app_id, X11 WM_CLASS class,
+                                       // KWin desktop file or resource class
+    std::vector<std::string> outputs;  // connector names it is shown on
+    bool fullscreen = false;
+    bool active = false;               // has the keyboard focus
+};
 
 struct OutputDesc {
     std::string name;      // connector name, e.g. "DP-1"
@@ -54,6 +71,21 @@ public:
     using PointerCallback =
         std::function<void(const std::string& output, double x, double y)>;
     virtual void setOnPointer(PointerCallback /*cb*/) {}
+
+    // Pointer buttons over our own surfaces: Linux input event codes
+    // (BTN_LEFT = 272), pressed or released. Wayland only for now; the
+    // position is the last one reported through setOnPointer.
+    using PointerButtonCallback = std::function<void(
+        const std::string& output, uint32_t button, bool pressed)>;
+    virtual void setOnPointerButton(PointerButtonCallback /*cb*/) {}
+
+    // Reports the complete list of other clients' toplevel windows whenever
+    // it changes (wlr-foreign-toplevel-management on wlroots compositors,
+    // EWMH on X11). Returns false when the platform cannot see them, as on
+    // KWin Wayland, where the KDE bridge (desktop/KdeBridge) supplies them.
+    using ToplevelsCallback =
+        std::function<void(const std::vector<ToplevelInfo>& windows)>;
+    virtual bool watchToplevels(ToplevelsCallback /*cb*/) { return false; }
 };
 
 }  // namespace canvas

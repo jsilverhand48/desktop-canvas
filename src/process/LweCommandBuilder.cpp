@@ -11,7 +11,14 @@ std::vector<std::string> LweCommandBuilder::build(const LweOptions& opts) {
     std::vector<std::string> argv;
     argv.push_back(opts.enginePath.empty() ? "linux-wallpaperengine"
                                            : opts.enginePath);
-    if (!opts.screenRoots.empty()) {
+    if (opts.span && opts.screenRoots.size() >= 2) {
+        // One canvas stretched over every listed screen.
+        std::string list;
+        for (const auto& root : opts.screenRoots)
+            list += (list.empty() ? "" : ",") + root;
+        argv.insert(argv.end(), {"--screen-span", list, "--bg",
+                                 opts.wallpaperDir, "--scaling", opts.scaling});
+    } else if (!opts.screenRoots.empty()) {
         // Each screen gets its own --bg and --scaling; lwe binds both to
         // the preceding --screen-root.
         for (const auto& root : opts.screenRoots) {

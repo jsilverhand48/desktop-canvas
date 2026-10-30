@@ -32,5 +32,12 @@ overrides it; `engineFor(id)` resolves the two and `validEngine()` is the
 accepted set. Unknown names load as the default, and a wallpaper entry
 whose only setting is its engine is still written.
 
+`fullscreen_pause` (enabled, default true; `only_active`; `ignore_app_ids`
+substrings) feeds `desktop/FullscreenPolicy`. `kde_bridge` (default true)
+lets main.cpp start the KDE bridge on Plasma Wayland; it applies at the next
+daemon start. `spans` lists output groups that share one canvas;
+`validSpans()` requires two or more distinct non empty outputs per entry and
+no output in two entries, and `load()` drops any entry that breaks that.
+
 `Config::expandUser` expands a leading `~/` against `$HOME` for hand written
 paths (used for `playlist.file` and `--playlist`). `~user` is not expanded.
