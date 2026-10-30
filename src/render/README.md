@@ -24,6 +24,17 @@ Wallpaper instance orchestration and in-process backends.
   startup probe found the flag (`setSceneLayerSupported`), so they share
   the video surfaces' layer instead of lwe's `bottom` default, which covers
   the Plasma desktop icons.
+  Every scene launch passes the wallpaper's pinned property values, and with
+  `scene.randomize_options` on one random value per other dropdown (limited
+  to its allowed list), via `source/SceneOptions`, as `--set-property`. The
+  values are logged and captured in the instance's argv builder, so an
+  audio restart keeps the same variant. `restartAll()` relaunches every
+  instance (after fps / scaling / engine changes), `restartWallpaper(id)`
+  relaunches one (new random variant, new pinned values), and
+  `clearBroken(id)` removes an id from the blacklist. `rescan()` records the
+  scanned `roots()`, bumps `libraryRevision()` (the settings UI reloads its
+  grid when it changes) and calls the `setOnRescan` listener, which main
+  uses to keep `source/LibraryWatcher` pointed at the current roots.
   Video RenderSurfaces live in a per output map, separate from instance
   slots: created on the first video for an output, hidden between videos,
   and replaced when the output disappears or the surface reports
@@ -32,14 +43,17 @@ Wallpaper instance orchestration and in-process backends.
   switching back to a video), so each video gets a fresh surface; X11
   windows are reused. The per video leak once blamed on surface churn came
   from freeing mpv without its GL context current (see VideoBackend below).
-- `Rotator` timed rotation over a playlist file: every `playlist.interval`
-  seconds it draws a random id (skipping ids missing from the library,
+- `Rotator` timed rotation over the enabled wallpapers in config: every
+  `playlist.interval` seconds it draws a random id (skipping ids missing from the library,
   unsupported, or blacklisted) and installs it as a runtime override on
   InstanceManager, which reconciles as usual. All rotating outputs show the
   same pick; `playlist.outputs` narrows which outputs rotate, and an empty
   list installs the override under `*` so hotplugged outputs join
   immediately. Picks are never written to config.json, so stopping rotation
-  restores the user's own assignments.
+  restores the user's own assignments. `refresh()` rebuilds the pool after
+  wallpapers are enabled or disabled without forcing a pick (a running
+  rotation keeps its schedule). With one usable wallpaper and random
+  variants on, a tick relaunches it so a new variant shows.
 - `VideoBackend` (`VideoInstance`) libmpv render API into a RenderSurface:
   update callback bridged via eventfd, frames rendered only when both mpv
   has a new frame and the compositor signaled readiness. Mute toggles live

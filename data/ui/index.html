@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>desktop-canvas</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">desktop-canvas</div>
+  <nav>
+    <button class="tab active" data-tab="library">Library</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </nav>
+  <div id="status" class="status"></div>
+  <div class="actions">
+    <button id="btn-next" title="Show the next wallpaper in the rotation">Next</button>
+    <button id="btn-pause"></button>
+    <button id="btn-mute"></button>
+    <button id="btn-restart" title="Relaunch every running wallpaper">Restart</button>
+  </div>
+</header>
+
+<main>
+  <section id="tab-library" class="tab-page">
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Search title, id or tag">
+      <select id="filter-type">
+        <option value="">All types</option>
+        <option value="scene">Scene</option>
+        <option value="video">Video</option>
+        <option value="web">Web</option>
+        <option value="unsupported">Unsupported</option>
+      </select>
+      <select id="filter-state">
+        <option value="">Any state</option>
+        <option value="enabled">Enabled</option>
+        <option value="disabled">Disabled</option>
+        <option value="customized">Customized</option>
+        <option value="broken">Broken</option>
+      </select>
+      <select id="filter-rating">
+        <option value="">Any rating</option>
+        <option value="Everyone">Everyone</option>
+        <option value="Questionable">Questionable</option>
+        <option value="Mature">Mature</option>
+      </select>
+      <span id="count" class="muted"></span>
+      <span class="spacer"></span>
+      <button id="enable-shown">Enable shown</button>
+      <button id="disable-shown">Disable shown</button>
+    </div>
+    <div id="grid" class="grid"></div>
+  </section>
+
+  <section id="tab-settings" class="tab-page hidden">
+    <form id="settings-form" autocomplete="off"></form>
+  </section>
+</main>
+
+<aside id="drawer" class="drawer hidden" aria-hidden="true">
+  <div class="drawer-head">
+    <h2 id="d-title"></h2>
+    <button id="d-close" title="Close">&times;</button>
+  </div>
+  <div id="d-body" class="drawer-body"></div>
+</aside>
+
+<div id="toast" class="toast hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>

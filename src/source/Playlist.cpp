@@ -50,4 +50,12 @@ void Playlist::clear() {
     path_.clear();
 }
 
+void Playlist::setIds(const std::vector<std::string>& ids) {
+    ids_.clear();
+    path_.clear();
+    for (const auto& id : ids)
+        if (!id.empty() && std::find(ids_.begin(), ids_.end(), id) == ids_.end())
+            ids_.push_back(id);
+}
+
 }  // namespace canvas

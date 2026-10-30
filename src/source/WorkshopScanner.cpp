@@ -58,6 +58,11 @@ std::optional<WallpaperInfo> WorkshopScanner::scanItem(const fs::path& itemDir) 
     info.title = project.value("title", "");
     info.file = project.value("file", "");
     info.preview = project.value("preview", "");
+    if (project.contains("contentrating") && project["contentrating"].is_string())
+        info.contentRating = project["contentrating"].get<std::string>();
+    if (project.contains("tags") && project["tags"].is_array())
+        for (const auto& t : project["tags"])
+            if (t.is_string()) info.tags.push_back(t.get<std::string>());
 
     if (project.contains("dependency"))
         return unsupported(itemDir, "preset (depends on another wallpaper)",

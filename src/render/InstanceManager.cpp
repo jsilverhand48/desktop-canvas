@@ -13,6 +13,7 @@
 #include "process/ExternalProcessInstance.h"
 #include "process/LweCommandBuilder.h"
 #include "render/WallpaperInstance.h"
+#include "source/SceneOptions.h"
 #include "source/WorkshopScanner.h"
 
 #if defined(CANVAS_HAVE_WAYLAND) || defined(CANVAS_HAVE_X11)
@@ -49,7 +50,9 @@ InstanceManager::~InstanceManager() = default;
 void InstanceManager::rescan() {
     auto roots = config_.contentRoots.empty() ? WorkshopScanner::defaultRoots()
                                               : config_.contentRoots;
+    roots_ = roots;
     items_ = WorkshopScanner::scan(roots);
+    ++libraryRevision_;
     if (!config_.sceneAssetsDir.empty()) {
         assetsDir_ = config_.sceneAssetsDir;
     } else if (auto assets = WorkshopScanner::findAssetsDir(roots)) {
@@ -176,6 +179,21 @@ void InstanceManager::startInstance(const std::vector<std::string>& group,
             opts.scaling = config_.scaling;
             opts.volume = audio_.volume();
             opts.disableMouse = config_.sceneDisableMouse;
+            // Per wallpaper property values: pinned ones always, plus (with
+            // scene.randomize_options) a random pick per dropdown, drawn
+            // once per launch (each rotation relaunches) and captured below
+            // so an audio restart of the same instance keeps the variant.
+            static const Config::WallpaperSettings kNoSettings;
+            auto ws = config_.wallpapers.find(info.id);
+            const auto& settings =
+                ws != config_.wallpapers.end() ? ws->second : kNoSettings;
+            opts.properties = resolveSceneProperties(
+                readUserProperties(info.dir), settings.properties,
+                settings.allowed, config_.sceneRandomizeOptions,
+                config_.sceneIncludeNsfwOptions, optionRng_);
+            for (const auto& [name, value] : opts.properties)
+                log::info() << "scene " << info.id << ": " << name << "="
+                            << value;
             if (mergeable(info)) {
                 opts.screenRoots = group;
                 if (sceneLayerSupported_) opts.layer = config_.layer;
@@ -365,6 +383,26 @@ bool InstanceManager::setAssignment(const std::string& output,
     setOverride(output, id);
     apply();
     return true;
+}
+
+void InstanceManager::restartAll() {
+    while (!slots_.empty()) stopInstance(slots_.begin()->first);
+    apply();
+}
+
+void InstanceManager::restartWallpaper(const std::string& id) {
+    std::vector<std::string> outputs;
+    for (const auto& [name, slot] : slots_)
+        if (slot.instance && slot.instance->wallpaperId() == id)
+            outputs.push_back(name);
+    for (const auto& name : outputs) stopInstance(name);  // no-op if shared
+    apply();
+}
+
+void InstanceManager::clearBroken(const std::string& id) {
+    if (std::erase(config_.broken, id) == 0) return;
+    config_.save(config_.sourcePath);
+    apply();
 }
 
 void InstanceManager::pauseAll() {

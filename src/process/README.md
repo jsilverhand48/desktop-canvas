@@ -12,6 +12,8 @@ Scene wallpapers run as supervised linux-wallpaperengine child processes.
   `supportsLayer()` checks the `--help` probe for it; lwe r611+ has the flag.
   lwe's own default has been `bottom` since r598, which KWin stacks above
   the Plasma desktop icons, so the daemon passes its configured layer.
+  `LweOptions::properties` adds one `--set-property name=value` per entry
+  (random scene variants, see `source/SceneOptions`).
 - `ChildSupervisor` fork/exec, pidfd based exit notification on the event
   loop, respawn with exponential backoff (1s..60s), give up after 5 rapid
   failures within 2 minutes and report through onBroken.

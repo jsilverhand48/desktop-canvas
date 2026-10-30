@@ -23,6 +23,9 @@ public:
         return it != overrides_.end() ? it->second : default_muted_;
     }
     int volume() const { return volume_; }
+    // Takes effect for instances started afterwards (the settings UI
+    // restarts running ones).
+    void setVolume(int volume) { volume_ = volume; }
 
     void setDefaultMuted(bool muted) { default_muted_ = muted; }
     bool defaultMuted() const { return default_muted_; }

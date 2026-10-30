@@ -34,18 +34,15 @@ bool Rotator::start() {
         loop_.cancelTimer(timer_);
         timer_ = 0;
     }
-    if (config_.playlistFile.empty()) {
-        playlist_.clear();
-        return true;
-    }
-    if (!playlist_.load(config_.playlistFile)) return false;
+    dueAtMs_ = 0;
+    playlist_.setIds(config_.enabledIds());
     if (config_.playlistInterval <= 0) {
-        log::info() << "playlist loaded but rotation is off (interval 0)";
+        log::info() << playlist_.size()
+                    << " wallpaper(s) enabled; rotation is off (interval 0)";
         return true;
     }
     if (playlist_.empty()) {
-        log::warn() << "playlist " << config_.playlistFile
-                    << " has no ids; rotation not started";
+        log::info() << "no wallpapers enabled; rotation not started";
         return true;
     }
     log::info() << "rotating " << playlist_.size() << " wallpaper(s) every "
@@ -58,6 +55,23 @@ bool Rotator::start() {
     // anything changes makes a fresh --rotate look broken.
     tick();
     return true;
+}
+
+void Rotator::refresh(bool rearm) {
+    playlist_.setIds(config_.enabledIds());
+    if (config_.playlistInterval <= 0 || playlist_.empty()) {
+        if (timer_) {
+            loop_.cancelTimer(timer_);
+            timer_ = 0;
+        }
+        dueAtMs_ = 0;
+        return;
+    }
+    if (!timer_ && current_.empty()) {
+        tick();  // first pick of a rotation that was idle
+    } else if (!timer_ || rearm) {
+        arm();
+    }
 }
 
 void Rotator::stop() {
@@ -95,9 +109,8 @@ void Rotator::tick() {
     std::string id = playlist_.pick(
         current_, [this](const std::string& c) { return manager_.usable(c); });
     if (id.empty()) {
-        log::warn() << "no usable wallpaper in playlist "
-                    << config_.playlistFile << " (" << playlist_.size()
-                    << " id(s) checked against the library)";
+        log::warn() << "no usable wallpaper among " << playlist_.size()
+                    << " enabled id(s) (checked against the library)";
     } else if (id != current_) {
         current_ = id;
         // Every rotating output shows the same pick. With no explicit output
@@ -111,6 +124,11 @@ void Rotator::tick() {
         }
         log::info() << "rotated to wallpaper " << id;
         manager_.apply();
+    } else if (config_.sceneRandomizeOptions) {
+        // Only one usable wallpaper: relaunch it so a fresh random variant
+        // (pose, mode) is drawn instead of the tick doing nothing.
+        log::info() << "rotation relaunching " << id << " for a new variant";
+        manager_.restartWallpaper(id);
     }
     // Re-arm even when the pick failed so a library that appears later (or a
     // reload that fixes the ids) resumes rotating on its own.

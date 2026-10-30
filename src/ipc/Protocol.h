@@ -10,7 +10,10 @@
 //            {"cmd": "pause"} {"cmd": "resume"}
 //            {"cmd": "mute"} {"cmd": "unmute"}
 //            {"cmd": "reload"}   rescan the workshop directories
-//            {"cmd": "playlist", "file": "<path>"|""}  ids file for rotation
+//            {"cmd": "enable"|"disable", "ids": ["<id>", ...]}  rotation pool
+//            {"cmd": "playlist", "file": "<path>"|""}  import ids into the
+//                                pool | "" disables every wallpaper
+//            {"cmd": "restart"}  relaunch every running wallpaper
 //            {"cmd": "rotate", "interval": <seconds>,  0 stops rotation
 //                              "outputs": ["DP-1", ...]}   optional, [] = all
 //            {"cmd": "next"}     apply the next random pick immediately

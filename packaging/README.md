@@ -37,6 +37,9 @@ and those three file names in one go.
   them: `plasma/setup-plasma-icons.sh` (or the desktop settings) still has
   to select them, and the script remains the per user path for source
   builds.
+- Settings UI: `data/ui/` is installed to `share/desktop-canvas/ui` by the
+  same `cmake --install`, so every recipe here carries it. The daemon serves
+  it on http://127.0.0.1:8765/ (loopback only, config `ui.port`).
 
 ## Distribution recipes
 

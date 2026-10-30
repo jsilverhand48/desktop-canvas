@@ -21,8 +21,12 @@
 // surface; X11 windows are reused.
 #pragma once
 
+#include <cstdint>
+#include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -44,8 +48,16 @@ public:
                     AudioPolicy& audio, ChildSupervisor& supervisor);
     ~InstanceManager();
 
-    // Re-runs the workshop scanner over the configured/auto roots.
+    // Re-runs the workshop scanner over the configured/auto roots, bumps
+    // libraryRevision() and calls the onRescan listener (main.cpp points the
+    // LibraryWatcher at roots() there, so changed content_roots are
+    // followed too).
     void rescan();
+    const std::vector<std::filesystem::path>& roots() const { return roots_; }
+    // Increments on every rescan; the settings UI reloads its library grid
+    // when the value it sees in /api/status changes.
+    uint64_t libraryRevision() const { return libraryRevision_; }
+    void setOnRescan(std::function<void()> cb) { onRescan_ = std::move(cb); }
     const std::vector<WallpaperInfo>& items() const { return items_; }
     const WallpaperInfo* find(const std::string& id) const;
 
@@ -76,6 +88,14 @@ public:
     void clearOverrides();
     // Resolved id for an output: override (exact, then "*"), else config.
     std::string resolve(const std::string& output) const;
+    // Stops every running instance and re-applies, so settings read at
+    // launch (fps, scaling, layer, engine/assets paths) take effect.
+    void restartAll();
+    // Stops the instances showing id and re-applies: a scene relaunches
+    // with freshly drawn random options and its current pinned values.
+    void restartWallpaper(const std::string& id);
+    // Removes id from the broken blacklist (persisted) and re-applies.
+    void clearBroken(const std::string& id);
     void pauseAll();
     void resumeAll();
     void setMuted(bool muted);  // global default; propagates to instances
@@ -119,8 +139,13 @@ private:
     AudioPolicy& audio_;
     ChildSupervisor& supervisor_;
     std::vector<WallpaperInfo> items_;
+    std::vector<std::filesystem::path> roots_;
+    uint64_t libraryRevision_ = 0;
+    std::function<void()> onRescan_;
     std::string assetsDir_;
     bool sceneLayerSupported_ = false;
+    // Draws random scene variants when config_.sceneRandomizeOptions is on.
+    std::mt19937 optionRng_{std::random_device{}()};
     // Declared before slots_ so instances, which borrow these surfaces, are
     // destroyed first.
     std::map<std::string, std::unique_ptr<RenderSurface>> surfaces_;

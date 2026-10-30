@@ -54,6 +54,8 @@ set(CANVAS_SOURCES
     src/config/Config.cpp
     src/source/WorkshopScanner.cpp
     src/source/Playlist.cpp
+    src/source/SceneOptions.cpp
+    src/source/LibraryWatcher.cpp
     src/render/Rotator.cpp
     src/audio/AudioPolicy.cpp
     src/process/ChildSupervisor.cpp
@@ -61,6 +63,9 @@ set(CANVAS_SOURCES
     src/process/ExternalProcessInstance.cpp
     src/render/InstanceManager.cpp
     src/ipc/IpcServer.cpp
+    src/control/Controller.cpp
+    src/http/HttpServer.cpp
+    src/http/WebApi.cpp
 )
 
 set(CANVAS_HAVE_WAYLAND FALSE)
@@ -93,6 +98,11 @@ if(CANVAS_HAVE_WAYLAND OR CANVAS_HAVE_X11)
 endif()
 
 add_executable(desktop-canvas ${CANVAS_SOURCES})
+# Settings UI files (data/ui): installed under share/desktop-canvas/ui; the
+# source tree path lets a development build serve them without installing.
+target_compile_definitions(desktop-canvas PRIVATE
+    CANVAS_UI_INSTALL_DIR="${CMAKE_INSTALL_PREFIX}/share/desktop-canvas/ui"
+    CANVAS_UI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data/ui")
 target_include_directories(desktop-canvas PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
@@ -165,6 +175,8 @@ install(FILES packaging/metainfo/${CANVAS_APP_ID}.metainfo.xml
 install(FILES packaging/icons/${CANVAS_APP_ID}.svg
         DESTINATION share/icons/hicolor/scalable/apps)
 install(FILES LICENSE DESTINATION share/doc/${PROJECT_NAME})
+install(DIRECTORY data/ui/ DESTINATION share/desktop-canvas/ui
+        PATTERN "README.md" EXCLUDE)
 
 # KDE Plasma integration: a transparent wallpaper plugin plus the KWin script
 # that keeps the desktop containment above wallpaper layer surfaces. Installed

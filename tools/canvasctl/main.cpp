@@ -8,10 +8,14 @@
 //   desktop-canvasctl status
 //   desktop-canvasctl list [--json]
 //   desktop-canvasctl set <output|*> <wallpaper id|none>
-//   desktop-canvasctl playlist <file|none>
+//   desktop-canvasctl enable <id ...> | disable <id ...>
+//   desktop-canvasctl playlist <file|none>   import ids file / disable all
 //   desktop-canvasctl rotate <seconds|off> [output ...]
 //   desktop-canvasctl next
-//   desktop-canvasctl pause | resume | mute | unmute | reload | quit
+//   desktop-canvasctl pause | resume | mute | unmute | reload | restart | quit
+//
+// The rotation pool is the enabled wallpapers in config.json; the browser
+// settings UI (address shown by `status`) edits the same state.
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -31,10 +35,13 @@ using nlohmann::json;
 namespace {
 
 int usage() {
-    std::cerr << "usage: desktop-canvasctl <status|list|set|playlist|rotate|"
-                 "next|pause|resume|mute|unmute|reload|quit> [args] [--json]\n"
+    std::cerr << "usage: desktop-canvasctl <status|list|set|enable|disable|"
+                 "playlist|rotate|next|pause|resume|mute|unmute|reload|"
+                 "restart|quit> [args] [--json]\n"
                  "       desktop-canvasctl set <output|*> <wallpaper id|none>\n"
-                 "       desktop-canvasctl playlist <file|none>\n"
+                 "       desktop-canvasctl enable <id ...> | disable <id ...>\n"
+                 "       desktop-canvasctl playlist <file|none>  "
+                 "(import ids into the enabled set | disable all)\n"
                  "       desktop-canvasctl rotate <seconds|off> [output ...]\n"
                  "       desktop-canvasctl next\n";
     return 2;
@@ -112,6 +119,9 @@ int main(int argc, char** argv) {
         if (args.size() != 3) return usage();
         request["output"] = args[1];
         request["id"] = args[2] == "none" ? "" : args[2];
+    } else if (cmd == "enable" || cmd == "disable") {
+        if (args.size() < 2) return usage();
+        request["ids"] = std::vector<std::string>(args.begin() + 1, args.end());
     } else if (cmd == "playlist") {
         if (args.size() != 2) return usage();
         request["file"] = args[1] == "none" ? "" : args[1];
@@ -133,7 +143,7 @@ int main(int argc, char** argv) {
     } else if (cmd != "status" && cmd != "list" && cmd != "next" &&
                cmd != "pause" &&
                cmd != "resume" && cmd != "mute" && cmd != "unmute" &&
-               cmd != "reload" && cmd != "quit") {
+               cmd != "reload" && cmd != "restart" && cmd != "quit") {
         return usage();
     }
 
@@ -159,10 +169,9 @@ int main(int argc, char** argv) {
             for (const auto& [output, id] : j["running"].items())
                 std::cout << output << ": " << id.get<std::string>() << "\n";
         }
-        std::string playlist = j.value("playlist", "");
-        if (!playlist.empty()) {
-            std::cout << "playlist: " << playlist << " ("
-                      << j.value("playlist_size", 0) << " ids)\n";
+        std::cout << "enabled for rotation: " << j.value("enabled", 0)
+                  << " wallpaper(s)\n";
+        {
             if (j.value("rotating", false)) {
                 auto outputs = j.value("rotate_outputs",
                                        std::vector<std::string>{});
@@ -179,8 +188,13 @@ int main(int argc, char** argv) {
                 std::cout << "rotating: off\n";
             }
         }
+        std::string ui = j.value("ui", "");
+        std::cout << "settings UI: " << (ui.empty() ? "off" : ui) << "\n";
     } else if (cmd == "next") {
         std::cout << "rotated to " << j.value("id", "") << "\n";
+    } else if (cmd == "playlist" && j.contains("imported")) {
+        std::cout << "enabled " << j.value("imported", 0)
+                  << " wallpaper(s) from the file\n";
     } else if (cmd == "list") {
         for (const auto& item : j.value("items", json::array())) {
             std::cout << std::left << std::setw(12)

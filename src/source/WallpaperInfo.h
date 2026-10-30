@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace canvas {
 
@@ -31,6 +32,9 @@ struct WallpaperInfo {
     std::string title;
     std::string file;             // "file" from project.json, relative to dir
     std::string preview;          // preview image name, may be empty
+    std::string contentRating;    // "Everyone" | "Questionable" | "Mature"
+                                  // (project.json "contentrating"), may be ""
+    std::vector<std::string> tags;  // project.json "tags"
     std::string unsupportedReason;  // set when type == Unsupported
 
     // Absolute path of the payload file (scene.pkg, mp4, index.html).

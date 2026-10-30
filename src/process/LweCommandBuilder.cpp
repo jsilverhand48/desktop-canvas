@@ -47,6 +47,10 @@ std::vector<std::string> LweCommandBuilder::build(const LweOptions& opts) {
         argv.push_back(opts.assetsDir);
     }
     if (opts.disableMouse) argv.push_back("--disable-mouse");
+    for (const auto& [name, value] : opts.properties) {
+        argv.push_back("--set-property");
+        argv.push_back(name + "=" + value);
+    }
     // Window mode takes the wallpaper as the positional default background.
     if (opts.screenRoots.empty()) argv.push_back(opts.wallpaperDir);
     return argv;

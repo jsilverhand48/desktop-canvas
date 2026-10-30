@@ -64,49 +64,83 @@ Config lives at `~/.config/desktop-canvas/config.json` (schema documented in
 `src/config/Config.h`). Scene wallpapers that crash repeatedly are added to
 the `broken` list there and skipped; remove the id to retry.
 
-### Rotating through a list of wallpapers
+### Settings UI
 
-Keep the ids you like in a text file, one per line (`#` starts a comment):
+The daemon serves a settings page at **http://127.0.0.1:8765/** (this
+computer only; `desktop-canvasctl status` prints the address). From it you
+can:
+
+- browse every wallpaper in your Steam library (previews of Mature and
+  Questionable items are blurred until clicked) and enable or disable each
+  one for rotation, singly or in bulk for the current filter
+- per scene: pin any user property (dropdowns, sliders, toggles, colours,
+  text) and choose which dropdown options random picks may use
+- edit every other setting: FPS, scaling, layer, audio, rotation interval
+  and outputs, per output assignments, engine and assets paths, library
+  folders, the broken list
+- show a wallpaper now, skip to the next one, pause, mute, restart
+
+The library follows the Steam folder on its own: wallpapers you subscribe
+to appear (once their download finishes) and removed ones disappear within
+a few seconds, and a library drive plugged in later is picked up within
+about 30 seconds. No reload needed.
+
+Changes are saved to `config.json` and take effect immediately (port and
+UI on/off after a daemon restart). Disable the page with `"ui":
+{"enabled": false}`.
+
+### Rotating through wallpapers
+
+The rotation pool is every wallpaper marked **enabled** (in the settings UI,
+or `"wallpapers": {"<id>": {"enabled": true}}` in `config.json`). Give
+rotation an interval in seconds:
 
 ```
-# ~/.config/wallpaper-engine/ids.txt
-2895407554
-1767354809
-2404179953
+desktop-canvas --rotate 900
 ```
 
-Point the daemon at it and give it an interval in seconds:
-
-```
-desktop-canvas --playlist ~/.config/wallpaper-engine/ids.txt --rotate 900
-```
-
-Every 900 seconds a random id from the file is picked. **All screens show the
+Every 900 seconds a random enabled wallpaper is picked. **All screens show the
 same wallpaper** unless you name the outputs to rotate:
 
 ```
-desktop-canvas --playlist ~/.config/wallpaper-engine/ids.txt --rotate 900 \
-    --rotate-output DP-5 --rotate-output DP-6   # only these two rotate
+desktop-canvas --rotate 900 --rotate-output DP-5 --rotate-output DP-6
 ```
 
 The same controls are available at runtime, and persist to the config:
 
 ```
-desktop-canvasctl playlist ~/.config/wallpaper-engine/ids.txt
+desktop-canvasctl enable 2895407554 1767354809   # add to the pool
+desktop-canvasctl disable 2404179953             # remove from the pool
+desktop-canvasctl playlist ids.txt    # enable every id listed in a file
+desktop-canvasctl playlist none       # disable every wallpaper
 desktop-canvasctl rotate 15m          # seconds, or 30s / 15m / 2h
 desktop-canvasctl rotate 15m DP-5     # limit rotation to one output
-desktop-canvasctl rotate off          # stop, keep the playlist
+desktop-canvasctl rotate off          # stop, keep the enabled set
 desktop-canvasctl next                # skip to the next wallpaper now
-desktop-canvasctl playlist none       # forget the playlist entirely
-desktop-canvasctl status              # shows interval and seconds remaining
+desktop-canvasctl status              # interval, seconds remaining, UI address
 ```
 
-Ids in the file that are not in your library, are an unsupported type, or are
-on the `broken` list are skipped when picking, so a stale entry costs one
+Older versions kept the ids in a separate file (`playlist.file`, typically
+`~/.config/wallpaper-engine/ids.txt`). On first start the daemon imports it
+into the enabled set and stops referring to it; the file itself is left in
+place. `--playlist <file>` imports a file the same way.
+
+Enabled ids that are not in your library, are an unsupported type, or are on
+the `broken` list are skipped when picking, so a stale entry costs one
 candidate rather than a blank screen. The wallpaper a rotation picks is not
 written to `config.json`: your `assignments` stay untouched, and turning
 rotation off restores them. A manual `set` during rotation shows immediately
 and holds until the next tick reclaims that output.
+
+### Random scene variants
+
+Many scenes offer poses, outfits or layouts as dropdowns. With **Random
+dropdown values** on (Settings > Scenes, `scene.randomize_options`), each
+launch picks a random value for every dropdown that is not pinned, limited to
+the options you ticked for that wallpaper. Options labelled NSFW or nude are
+skipped unless you allow them globally (`scene.include_nsfw_options`) or tick
+them for a specific wallpaper. With a single wallpaper enabled, each rotation
+tick relaunches it so a new variant shows.
 
 Autostart: `systemctl --user enable --now desktop-canvas` after install.
 
@@ -134,6 +168,7 @@ config (`scene.disable_mouse`).
 
 - `src/` daemon sources (see `src/README.md` for the module map)
 - `tools/canvasctl/` control CLI
+- `data/ui/` settings UI (HTML/CSS/JS served by the daemon)
 - `protocol/` vendored Wayland protocol XML (generated at build time)
 - `third_party/` vendored single header libraries (nlohmann json, CLI11)
 - `packaging/` desktop entry, AppStream metainfo, icon, systemd unit, Plasma

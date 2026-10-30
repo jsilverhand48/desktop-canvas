@@ -5,8 +5,9 @@
 // A missing trailing newline on the last line is fine. Duplicate ids are
 // collapsed so a repeated entry does not bias the random draw.
 //
-// The file is the user's own curated list (typically
-// ~/.config/wallpaper-engine/ids.txt); it is read, never written. Ids that
+// The daemon's rotation pool now comes from config "wallpapers" (setIds);
+// load() remains for importing a legacy ids file (Config::load, --playlist).
+// A file is read, never written. Ids that
 // are not present in the scanned library are kept here and filtered at pick
 // time by the caller, so a typo in the file is visible as a skip rather
 // than silently dropping the entry on load.
@@ -27,6 +28,9 @@ public:
     bool load(const std::filesystem::path& path);
 
     void clear();
+    // Replaces the contents with ids (duplicates collapsed, order kept);
+    // used for the rotation pool built from config "wallpapers".
+    void setIds(const std::vector<std::string>& ids);
     bool empty() const { return ids_.empty(); }
     size_t size() const { return ids_.size(); }
     const std::vector<std::string>& ids() const { return ids_; }

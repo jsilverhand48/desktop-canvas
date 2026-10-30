@@ -21,15 +21,20 @@
 
 #include "audio/AudioPolicy.h"
 #include "config/Config.h"
+#include "control/Controller.h"
 #include "core/EventLoop.h"
 #include "core/Log.h"
 #include "display/Platform.h"
+#include "http/HttpServer.h"
+#include "http/WebApi.h"
 #include "ipc/IpcServer.h"
 #include "ipc/Protocol.h"
 #include "process/ChildSupervisor.h"
 #include "process/LweCommandBuilder.h"
 #include "render/InstanceManager.h"
 #include "render/Rotator.h"
+#include "source/LibraryWatcher.h"
+#include "source/Playlist.h"
 #include "source/WorkshopScanner.h"
 
 #ifdef CANVAS_HAVE_WAYLAND
@@ -70,96 +75,6 @@ void printList(const std::vector<WallpaperInfo>& items, bool asJson) {
     std::cout << "total " << items.size() << ": " << counts[0] << " scene, "
               << counts[1] << " video, " << counts[2] << " web, " << counts[3]
               << " unsupported\n";
-}
-
-std::string handleIpc(const std::string& line, EventLoop& loop,
-                      InstanceManager& mgr, Rotator& rotator, Config& config) {
-    json req = json::parse(line, nullptr, false);
-    if (req.is_discarded() || !req.is_object())
-        return R"({"ok": false, "error": "malformed request"})";
-    std::string cmd = req.value("cmd", "");
-    json reply = {{"ok", true}};
-    if (cmd == "status") {
-        reply["running"] = mgr.running();
-        reply["playlist"] = config.playlistFile.string();
-        reply["playlist_size"] = rotator.size();
-        reply["interval"] = config.playlistInterval;
-        reply["rotating"] = rotator.active();
-        reply["next_in"] = rotator.secondsRemaining();
-        reply["rotate_outputs"] = config.playlistOutputs;
-    } else if (cmd == "list") {
-        json items = json::array();
-        for (const auto& item : mgr.items())
-            items.push_back({{"id", item.id},
-                             {"type", toString(item.type)},
-                             {"title", item.title},
-                             {"reason", item.unsupportedReason}});
-        reply["items"] = items;
-    } else if (cmd == "set") {
-        std::string error;
-        if (!mgr.setAssignment(req.value("output", "*"), req.value("id", ""),
-                               error))
-            reply = {{"ok", false}, {"error", error}};
-    } else if (cmd == "pause") {
-        mgr.pauseAll();
-    } else if (cmd == "resume") {
-        mgr.resumeAll();
-    } else if (cmd == "mute") {
-        mgr.setMuted(true);
-    } else if (cmd == "unmute") {
-        mgr.setMuted(false);
-    } else if (cmd == "reload") {
-        mgr.rescan();
-        mgr.apply();
-    } else if (cmd == "playlist") {
-        // "" clears the playlist and stops rotation.
-        std::string file = req.value("file", "");
-        config.playlistFile = Config::expandUser(file);
-        config.save(config.sourcePath);
-        if (config.playlistFile.empty()) {
-            rotator.stop();
-        } else if (!rotator.start()) {
-            reply = {{"ok", false},
-                     {"error", "cannot read playlist " + file}};
-        }
-    } else if (cmd == "rotate") {
-        // Interval in seconds; 0 stops rotation but keeps the playlist.
-        int interval = req.value("interval", config.playlistInterval);
-        if (interval < 0) {
-            reply = {{"ok", false}, {"error", "interval must be >= 0"}};
-        } else {
-            config.playlistInterval = interval;
-            if (req.contains("outputs") && req["outputs"].is_array()) {
-                config.playlistOutputs.clear();
-                for (const auto& o : req["outputs"])
-                    if (o.is_string())
-                        config.playlistOutputs.push_back(o.get<std::string>());
-            }
-            config.save(config.sourcePath);
-            if (interval == 0) {
-                rotator.stop();
-            } else if (config.playlistFile.empty()) {
-                reply = {{"ok", false},
-                         {"error", "no playlist set (use: playlist <file>)"}};
-            } else if (!rotator.start()) {
-                reply = {{"ok", false},
-                         {"error", "cannot read playlist " +
-                                       config.playlistFile.string()}};
-            }
-        }
-    } else if (cmd == "next") {
-        if (!rotator.active()) {
-            reply = {{"ok", false}, {"error", "rotation is not running"}};
-        } else {
-            rotator.advance();
-            reply["id"] = rotator.current();
-        }
-    } else if (cmd == "quit") {
-        loop.quit(0);
-    } else {
-        reply = {{"ok", false}, {"error", "unknown command " + cmd}};
-    }
-    return reply.dump();
 }
 
 int runDaemon(Config& config) {
@@ -224,10 +139,42 @@ int runDaemon(Config& config) {
 
     Rotator rotator(loop, manager, config);
 
+    // Library auto refresh: wallpapers added to or removed from the Steam
+    // library (or its drive mounted / unmounted) trigger a rescan, which the
+    // settings UI notices through status.library_revision. Every rescan
+    // (also from settings or `reload`) re-points the watcher, and with
+    // autodetected roots it also polls for libraries appearing later.
+    LibraryWatcher libraryWatcher(loop, [&] {
+        manager.rescan();
+        manager.apply();  // drops wallpapers whose folder vanished
+    });
+    auto followLibrary = [&] {
+        libraryWatcher.watch(manager.roots());
+        if (config.contentRoots.empty())
+            libraryWatcher.setRootsProvider(&WorkshopScanner::defaultRoots);
+        else
+            libraryWatcher.setRootsProvider(nullptr);
+    };
+    manager.setOnRescan(followLibrary);
+    followLibrary();
+
+    Controller controller(loop, platform.get(), manager, rotator, audio,
+                          config);
+
     IpcServer ipc(loop, [&](const std::string& line) {
-        return handleIpc(line, loop, manager, rotator, config);
+        return controller.handleIpc(line);
     });
     ipc.listen(ipc::socketPath());
+
+    // Browser settings UI on 127.0.0.1 (http/HttpServer.h). A taken port is
+    // logged and the daemon carries on without the UI.
+    WebApi webApi(controller, manager, WebApi::findUiDir());
+    HttpServer http(loop, [&](const HttpRequest& request) {
+        return webApi.handle(request);
+    });
+    if (config.uiEnabled && http.listen(config.uiPort))
+        controller.setUiUrl("http://127.0.0.1:" +
+                            std::to_string(config.uiPort) + "/");
 
     platform->setOnOutputsChanged([&] { manager.apply(); });
     loop.onTerminate([&] {
@@ -238,8 +185,8 @@ int runDaemon(Config& config) {
 
     manager.apply();
     // After the first apply so a rotation pick replaces the config wallpaper
-    // rather than racing it; start() is a no op unless a playlist and a
-    // positive interval are both configured.
+    // rather than racing it; start() is a no op unless some wallpaper is
+    // enabled and the interval is positive.
     rotator.start();
     return loop.run();
 }
@@ -272,7 +219,8 @@ int main(int argc, char** argv) {
     app.add_option("--engine", engine, "linux-wallpaperengine binary path");
     app.add_option("--assets", assets, "Wallpaper Engine assets directory");
     app.add_option("--playlist", playlist,
-                   "File of wallpaper ids, one per line, to rotate through");
+                   "Import a file of wallpaper ids (one per line) into the "
+                   "enabled wallpapers rotated through");
     app.add_option("--rotate", rotate,
                    "Seconds each wallpaper shows before a new random one is "
                    "picked (0 disables rotation)");
@@ -284,6 +232,9 @@ int main(int argc, char** argv) {
     auto path = configPath.empty() ? canvas::Config::defaultPath()
                                    : std::filesystem::path(configPath);
     canvas::Config config = canvas::Config::load(path);
+    // A legacy ids file was folded into "wallpapers": write it back once so
+    // the import is not repeated and "playlist.file" disappears.
+    if (!config.importedPlaylistFrom.empty() && !list) config.save(path);
     for (const auto& r : roots) config.contentRoots.emplace_back(r);
     if (fps > 0) config.fps = fps;
     if (!scaling.empty()) config.scaling = scaling;
@@ -291,7 +242,12 @@ int main(int argc, char** argv) {
     if (unmute) config.audioMuted = false;
     if (!engine.empty()) config.sceneEnginePath = engine;
     if (!assets.empty()) config.sceneAssetsDir = assets;
-    if (!playlist.empty()) config.playlistFile = canvas::Config::expandUser(playlist);
+    if (!playlist.empty()) {
+        canvas::Playlist imported;
+        if (!imported.load(canvas::Config::expandUser(playlist))) return 1;
+        for (const auto& id : imported.ids())
+            config.wallpapers[id].enabled = true;
+    }
     if (rotate >= 0) config.playlistInterval = rotate;
     if (!rotateOutputs.empty()) config.playlistOutputs = rotateOutputs;
     for (const auto& s : sets) {

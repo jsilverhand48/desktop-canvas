@@ -14,11 +14,14 @@
 //                                    "bottom" since r598, which KWin stacks
 //                                    above the Plasma desktop icons, so the
 //                                    daemon passes its own layer instead.
+//   --set-property <name>=<value>    user property override, repeated per
+//                                    LweOptions::properties entry
 // If upstream changes flags, probeSupportedFlags() (which runs --help) lets
 // the daemon detect skew at startup and log a clear error.
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace canvas {
@@ -39,6 +42,9 @@ struct LweOptions {
     // Layer shell layer for screen-root mode ("background" | "bottom").
     // Empty = omit --layer (window mode, or an lwe without the flag).
     std::string layer;
+    // User property overrides, each emitted as `--set-property name=value`
+    // (e.g. random scene variants from source/SceneOptions).
+    std::vector<std::pair<std::string, std::string>> properties;
 };
 
 class LweCommandBuilder {
