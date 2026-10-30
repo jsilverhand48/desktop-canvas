@@ -42,6 +42,7 @@ public:
     void pause() override;
     void resume() override;
     void setMuted(bool muted) override;
+    bool setVolume(int percent) override;  // live through mpv's property
 
     const std::string& wallpaperId() const override { return wallpaper_id_; }
     const std::string& outputName() const override;

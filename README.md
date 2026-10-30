@@ -7,7 +7,7 @@ Supported wallpaper types:
 
 | Type | How it renders | Notes |
 |---|---|---|
-| scene (scene.pkg) | supervised linux-wallpaperengine child process | needs linux-wallpaperengine installed (or bundled) |
+| scene (scene.pkg) | supervised linux-wallpaperengine child process, or desktop-canvas-scene (the native renderer, in development) | `scene.engine`: `lwe` (default), `native` or `auto` (native where it can, linux-wallpaperengine for the rest); the native renderer does not draw scenes yet, so `lwe` needs linux-wallpaperengine installed (or bundled) |
 | video (mp4 etc.) | in process via libmpv into a layer shell surface | hardware decoded when available |
 | web (HTML/JS) | supervised Qt6 WebEngine (Quick) child process | build with -DDESKTOP_CANVAS_WEB=ON; audio reactive visualizers render their static state (no spectrum feed yet) |
 | presets | not supported | items whose project.json has a "dependency" key |
@@ -21,7 +21,8 @@ Audio from wallpapers is muted by default; unmute with
   Sway, and other wlroots compositors), or X11 (backend in progress).
   GNOME Wayland is not supported (Mutter lacks layer-shell).
 - wayland (or X11) and EGL at runtime; libmpv for video wallpapers;
-  linux-wallpaperengine for scene wallpapers.
+  libepoxy and libpng for desktop-canvas-scene; linux-wallpaperengine for
+  scene wallpapers on the `lwe` engine.
 - Wallpaper Engine workshop content, e.g. a Steam library containing
   `steamapps/workshop/content/431960`. Content roots are autodetected from
   `~/.local/share/Steam`, `~/.steam/steam`, and
@@ -42,7 +43,8 @@ linux-wallpaperengine), `-DDESKTOP_CANVAS_TESTS=OFF`. Tests build by default
 when `claude_tests/` is present and are skipped when it is not. libmpv is
 optional at build time: without its development files configure warns and
 the daemon is built without video support, while scene and web wallpapers
-still work.
+still work. `-DDESKTOP_CANVAS_SCENE=OFF` skips desktop-canvas-scene (built
+by default when libepoxy and libpng development files are present).
 
 Installing places the `desktop-canvas` daemon and `desktop-canvasctl` in
 `bin`, plus a systemd user unit, an XDG desktop entry, AppStream metainfo, an

@@ -13,7 +13,8 @@
 //   "scaling": "fill",                            // fill | fit | stretch
 //   "layer": "background",                        // background | bottom
 //   "audio": {"muted": true, "volume": 15},
-//   "scene": {"engine_path": "", "assets_dir": "", "disable_mouse": false,
+//   "scene": {"engine": "lwe",                // lwe | native | auto
+//             "engine_path": "", "assets_dir": "", "disable_mouse": false,
 //             "randomize_options": false,     // random dropdown values
 //             "include_nsfw_options": false}, // ...including NSFW ones
 //   "web": {"enabled": false},
@@ -26,7 +27,8 @@
 //     "3826693905": {
 //       "enabled": true,                          // in the rotation pool
 //       "properties": {"mode_combo": "dual"},     // pinned --set-property
-//       "allowed": {"style_left": ["valueA", "valueB"]}  // random pool
+//       "allowed": {"style_left": ["valueA", "valueB"]}, // random pool
+//       "engine": "native"                        // overrides scene.engine
 //     }
 //   },
 //   "ui": {"enabled": true, "port": 8765,         // http://127.0.0.1:port
@@ -37,6 +39,13 @@
 // pointed "playlist.file" at an external ids list; load() imports it once
 // into "wallpapers" (see importedPlaylistFrom) and the key is not written
 // back.
+//
+// Scene engine ("scene.engine", per wallpaper "engine"): "lwe" runs the
+// external linux-wallpaperengine; "native" runs desktop-canvas-scene and
+// shows whatever it supports; "auto" tries desktop-canvas-scene strictly and
+// falls back to lwe for content it reports unsupported (verdicts cached, see
+// render/NativeSupportCache.h). Unknown values read as "lwe", and an empty
+// per wallpaper value means "use scene.engine".
 //
 // The playlist block holds rotation *settings* only. The wallpaper a
 // rotation tick picks is deliberately not written here: it lives in
@@ -59,6 +68,7 @@ struct Config {
     std::string layer = "background";
     bool audioMuted = true;   // requirement: audio defaults to muted
     int audioVolume = 15;
+    std::string sceneEngine = "lwe";  // lwe | native | auto
     std::string sceneEnginePath;  // empty = search PATH
     std::string sceneAssetsDir;   // empty = autodetect from content roots
     bool sceneDisableMouse = false;
@@ -80,7 +90,16 @@ struct Config {
         // Per dropdown, the option values random picks may use. A dropdown
         // missing here uses every option (minus NSFW unless allowed).
         std::map<std::string, std::vector<std::string>> allowed;
+        // Scene engine for this wallpaper; empty uses sceneEngine.
+        std::string engine;
     };
+
+    // True for the scene engine names the config accepts.
+    static bool validEngine(const std::string& engine) {
+        return engine == "lwe" || engine == "native" || engine == "auto";
+    }
+    // The engine configured for a wallpaper: its override, else sceneEngine.
+    std::string engineFor(const std::string& id) const;
     std::map<std::string, WallpaperSettings> wallpapers;  // key: workshop id
 
     // Ids with enabled == true, sorted: the rotation pool.

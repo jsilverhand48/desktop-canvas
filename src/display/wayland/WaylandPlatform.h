@@ -1,5 +1,7 @@
 // Platform implementation for Wayland compositors with wlr layer shell.
-// Owns the WaylandConnection and the shared EglContext.
+// Owns the WaylandConnection and the shared EglContext, created with the
+// EglContext::Options given at construction (the daemon uses the defaults;
+// the scene helper asks for a GL 3.3 core context).
 #pragma once
 
 #include "display/Platform.h"
@@ -10,6 +12,9 @@ namespace canvas {
 
 class WaylandPlatform : public Platform {
 public:
+    explicit WaylandPlatform(EglContext::Options eglOptions = {})
+        : eglOptions_(eglOptions) {}
+
     bool init(EventLoop& loop) override;
     std::vector<OutputDesc> outputs() const override;
     std::unique_ptr<RenderSurface> createSurface(
@@ -22,7 +27,10 @@ public:
         conn_.setOnPointer(std::move(cb));
     }
 
+    EglContext& egl() { return egl_; }
+
 private:
+    EglContext::Options eglOptions_;
     WaylandConnection conn_;
     EglContext egl_;
 };

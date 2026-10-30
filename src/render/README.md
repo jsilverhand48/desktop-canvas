@@ -3,7 +3,10 @@
 Wallpaper instance orchestration and in-process backends.
 
 - `WallpaperInstance` per (output, wallpaper) lifecycle interface:
-  start/stop/pause/resume/setMuted/setPointer.
+  start/stop/pause/resume/setMuted/setVolume/setPointer. `setVolume`
+  returns false when the backend only takes volume at launch (the owner
+  then restarts it); `setPointer` names the output, since one instance may
+  cover a merged group.
 - `InstanceManager` owns scan results and running instances; reconciles
   config assignments against present outputs (apply()), services IPC
   commands, persists changes, and blacklists scene wallpapers whose child
@@ -20,10 +23,24 @@ Wallpaper instance orchestration and in-process backends.
   vanishing) restarts the whole group with the new split, and a crash
   blanks every output in it. pause/resume/mute act once per instance.
   Video, web, and X11 scene instances stay one per output.
-  Wayland scenes are started with `--layer <config.layer>` when main's
-  startup probe found the flag (`setSceneLayerSupported`), so they share
-  the video surfaces' layer instead of lwe's `bottom` default, which covers
-  the Plasma desktop icons.
+  Wayland lwe scenes are started with `--layer <config.layer>` when lwe's
+  `--help` lists the flag, so they share the video surfaces' layer instead
+  of lwe's `bottom` default, which covers the Plasma desktop icons. That
+  probe runs lazily, the first time an lwe scene starts, and again after
+  `restartAll()` (the engine path may have changed).
+  Scene engine (`sceneEngineFor`): config `scene.engine` or the wallpaper's
+  own `engine` decides between lwe and desktop-canvas-scene
+  (`SceneHelperInstance`, tag `native:<first output>`; found through
+  `process/HelperLocator`, and every scene falls back to lwe when it is
+  missing). "native" runs the helper and shows what it supports. "auto"
+  runs it with `--strict`; when it reports unsupported content
+  (`handleUnsupported`) or keeps crashing (`handleBroken` on a `native:`
+  tag), the wallpaper gets a `NativeSupportCache` verdict and is relaunched
+  on lwe; lwe crashing as well blacklists as usual. Native groups merge on
+  X11 too, since the helper creates its own desktop windows.
+  Pause is remembered (`paused()`): instances started while paused (a
+  rotation tick, a fallback, a hotplug) start paused. `setVolume` applies
+  volume live where possible and restarts only unmuted launch-time backends.
   Every scene launch passes the wallpaper's pinned property values, and with
   `scene.randomize_options` on one random value per other dropdown (limited
   to its allowed list), via `source/SceneOptions`, as `--set-property`. The
@@ -50,6 +67,13 @@ Wallpaper instance orchestration and in-process backends.
   display or video library and lives in the `canvas_daemon` library;
   `claude_tests/test_video_factory` drives its apply() against
   `claude_tests/fakes/FakePlatform.h`.
+- `NativeSupportCache` the "auto" engine's memory of wallpapers
+  desktop-canvas-scene could not render (reason "unsupported" with the
+  listed features, or "crash"). A verdict is valid only while the
+  wallpaper's scene.pkg (else project file) and the helper binary keep the
+  same mtime and size, so new content or a rebuilt helper is retried.
+  Stored atomically in `$XDG_CACHE_HOME/desktop-canvas/native-support.json`;
+  the settings UI shows verdicts and can forget one ("Retry native").
 - `Rotator` timed rotation over the enabled wallpapers in config: every
   `playlist.interval` seconds it draws a random id (skipping ids missing from the library,
   unsupported, or blacklisted) and installs it as a runtime override on

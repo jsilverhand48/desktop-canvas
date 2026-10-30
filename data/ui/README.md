@@ -15,9 +15,13 @@ HTML, CSS and JavaScript: no framework, no build step.
     and for scenes one editor per user property: dropdowns can be pinned or
     limited to the options random picks may use (NSFW options marked);
     sliders, toggles, colours and text can be overridden. Save can relaunch
-    the wallpaper if it is showing.
+    the wallpaper if it is showing. Scenes also get an engine choice
+    (global, linux-wallpaperengine, auto, native), the renderer they use
+    now, and when the native renderer has given up on them, why, with a
+    "Retry native" button.
   - Settings: every global setting grouped (display, audio, rotation,
-    scenes, assignments, library folders, web, UI, broken list).
+    scenes including the scene engine, assignments, library folders, web,
+    UI, broken list).
   - Status refreshes every 5 seconds. When its `library_revision` changes
     (the daemon rescanned because wallpaper folders were added to or
     removed from the Steam library) the grid reloads by itself and a toast

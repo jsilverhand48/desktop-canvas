@@ -8,7 +8,10 @@ Wayland implementation of the display abstractions.
 - `WaylandLayerOutput` RenderSurface on a background layer surface:
   anchored to all edges, exclusive zone -1, keyboard interactivity none,
   integer buffer scale, frame callback based pacing.
-- `WaylandPlatform` ties both together and owns the shared EglContext.
+- `WaylandPlatform` ties both together and owns the shared EglContext,
+  created with the `EglContext::Options` passed to its constructor (the
+  daemon uses the defaults, desktop-canvas-scene a GL 3.3 core context
+  without alpha). `egl()` exposes the context.
 
 Requires a compositor with wlr-layer-shell (KWin, wlroots family). Protocol
 headers are generated at build time from XML vendored in protocol/ (the

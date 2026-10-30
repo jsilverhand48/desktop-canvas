@@ -6,13 +6,17 @@
 #   DESKTOP_CANVAS_BUNDLE_LWE Download and install a pinned linux-wallpaperengine
 #                             release for "scene" wallpapers (default OFF; scenes
 #                             otherwise use the binary found on PATH at runtime).
+#   DESKTOP_CANVAS_SCENE      Build desktop-canvas-scene, the native scene
+#                             renderer helper (default ON; skipped with a
+#                             warning without libepoxy and libpng).
 #   DESKTOP_CANVAS_TESTS      Build the test binaries under claude_tests/
 #                             (default ON, skipped automatically when the
 #                             directory is absent, as in release tarballs).
 #
 # Code is split into static libraries so the daemon, helper binaries and
 # tests share it without relisting sources:
-#   canvas_core     core/: the epoll event loop everything else runs on.
+#   canvas_core     core/: the epoll event loop everything else runs on and
+#                   the SEQPACKET control channel used with helpers.
 #   canvas_display  gl/ EGL helpers, the display/ Wayland and X11 backends
 #                   and the X11 pointer poller. Built when EGL plus Wayland
 #                   (wayland-client, wayland-egl) or X11 (x11, xrandr) are
@@ -44,6 +48,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(DESKTOP_CANVAS_WEB "Enable Qt6 WebEngine backend for web wallpapers" OFF)
 option(DESKTOP_CANVAS_BUNDLE_LWE "Bundle a pinned linux-wallpaperengine release" OFF)
+option(DESKTOP_CANVAS_SCENE "Build the native scene helper desktop-canvas-scene" ON)
 option(DESKTOP_CANVAS_TESTS "Build tests in claude_tests/" ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -59,9 +64,13 @@ pkg_check_modules(XRANDR IMPORTED_TARGET xrandr)
 
 include(WaylandProtocols)
 
-# canvas_core: the event loop. Its public include path (src, third_party) is
-# inherited by every target that links a canvas_* library.
-add_library(canvas_core STATIC src/core/EventLoop.cpp)
+# canvas_core: the event loop and the helper control channel. Its public
+# include path (src, third_party) is inherited by every target that links a
+# canvas_* library.
+add_library(canvas_core STATIC
+    src/core/EventLoop.cpp
+    src/core/ControlChannel.cpp
+)
 target_include_directories(canvas_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
@@ -133,6 +142,9 @@ add_library(canvas_daemon STATIC
     src/process/ChildSupervisor.cpp
     src/process/LweCommandBuilder.cpp
     src/process/ExternalProcessInstance.cpp
+    src/process/HelperLocator.cpp
+    src/process/SceneHelperInstance.cpp
+    src/render/NativeSupportCache.cpp
     src/ipc/IpcServer.cpp
     src/control/Controller.cpp
     src/http/HttpServer.cpp
@@ -157,6 +169,31 @@ if(TARGET canvas_display)
     else()
         message(WARNING "libmpv not found: video wallpapers will not play")
     endif()
+endif()
+
+# Native scene helper (src/scene-host). canvas_scene_host holds the GL free
+# part (pacing, surfaces, daemon protocol) so tests can link it; the
+# executable adds the GL renderer, headless screenshots and the sandbox.
+pkg_check_modules(EPOXY IMPORTED_TARGET epoxy)
+pkg_check_modules(LIBPNG IMPORTED_TARGET libpng)
+if(DESKTOP_CANVAS_SCENE AND TARGET canvas_display AND EPOXY_FOUND AND LIBPNG_FOUND)
+    add_library(canvas_scene_host STATIC
+        src/scene-host/FrameClock.cpp
+        src/scene-host/SceneHost.cpp
+    )
+    target_link_libraries(canvas_scene_host PUBLIC canvas_core)
+    add_executable(desktop-canvas-scene
+        src/scene-host/main.cpp
+        src/scene-host/PlaceholderRenderer.cpp
+        src/scene-host/Screenshot.cpp
+        src/scene-host/Sandbox.cpp
+    )
+    target_link_libraries(desktop-canvas-scene PRIVATE
+        canvas_scene_host canvas_display PkgConfig::EPOXY PkgConfig::LIBPNG)
+    install(TARGETS desktop-canvas-scene RUNTIME DESTINATION bin)
+elseif(DESKTOP_CANVAS_SCENE)
+    message(WARNING "desktop-canvas-scene not built: it needs a display "
+                    "backend, libepoxy and libpng development files")
 endif()
 
 # Control CLI. Talks to the daemon over its unix socket.

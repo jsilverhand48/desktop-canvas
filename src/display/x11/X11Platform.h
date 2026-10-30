@@ -3,6 +3,9 @@
 // get their windows demoted to the desktop layer via
 // X11Connection::demoteWindowsOf, driven by InstanceManager registering the
 // supervised pids.
+//
+// X11 has no frame callbacks, so surfaces pace requestFrame() with a timer
+// at the fps given at construction (30 unless the caller says otherwise).
 #pragma once
 
 #include <memory>
@@ -16,6 +19,9 @@ namespace canvas {
 
 class X11Platform : public Platform {
 public:
+    explicit X11Platform(EglContext::Options eglOptions = {}, int fps = 30)
+        : eglOptions_(eglOptions), fps_(fps > 0 ? fps : 30) {}
+
     bool init(EventLoop& loop) override;
     std::vector<OutputDesc> outputs() const override;
     std::unique_ptr<RenderSurface> createSurface(
@@ -34,13 +40,15 @@ public:
     }
 
     X11Connection& connection() { return conn_; }
+    EglContext& egl() { return egl_; }
 
 private:
+    EglContext::Options eglOptions_;
     EventLoop* loop_ = nullptr;
     X11Connection conn_;
     EglContext egl_;
     std::unique_ptr<X11PointerPoller> poller_;
-    int fps_ = 30;
+    int fps_;
 };
 
 }  // namespace canvas

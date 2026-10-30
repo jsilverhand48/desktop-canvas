@@ -2,12 +2,16 @@
 //
 // Implementations:
 //   ExternalProcessInstance (src/process/): scene wallpapers rendered by a
-//     supervised linux-wallpaperengine child process.
+//     supervised linux-wallpaperengine child, and web wallpapers rendered by
+//     the desktop-canvas-web helper.
+//   SceneHelperInstance (src/process/): scene wallpapers rendered by
+//     desktop-canvas-scene, the project's own helper, driven live over its
+//     control channel (process/HelperProtocol.h).
 //   VideoInstance (src/render/VideoBackend.h): video wallpapers rendered in
 //     process with libmpv into the output's GL surface.
-//   WebInstance (src/render/web/, optional build): web wallpapers.
 // InstanceManager owns instances and translates config/IPC changes into
-// start/stop/setMuted calls.
+// start/stop/pause/setMuted/setVolume calls. One instance may cover several
+// outputs (a merged scene group); outputName() is the first of them.
 #pragma once
 
 #include <string>
@@ -24,12 +28,18 @@ public:
     virtual void resume() {}
 
     // May restart the instance when the backend cannot change mute live
-    // (scene wallpapers use the --silent flag of their child process).
+    // (linux-wallpaperengine uses the --silent flag of its child process).
     virtual void setMuted(bool muted) = 0;
 
-    // Pointer position in output local logical coordinates. Backends that do
-    // not use input ignore it.
-    virtual void setPointer(double /*x*/, double /*y*/) {}
+    // Applies a new volume (0..100) live and returns true, or returns false
+    // when the backend can only take it at launch; the owner then restarts
+    // the instance.
+    virtual bool setVolume(int /*percent*/) { return false; }
+
+    // Pointer position on output, in output local logical coordinates.
+    // Backends that do not use input ignore it.
+    virtual void setPointer(const std::string& /*output*/, double /*x*/,
+                            double /*y*/) {}
 
     virtual const std::string& wallpaperId() const = 0;
     virtual const std::string& outputName() const = 0;

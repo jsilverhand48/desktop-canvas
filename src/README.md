@@ -23,8 +23,13 @@ Daemon source tree. Module map:
   the executable only)
 - `web-helper/` desktop-canvas-web, the optional Qt6 WebEngine child
   process for web wallpapers (DESKTOP_CANVAS_WEB=ON)
-- `process/` child process supervision and linux-wallpaperengine command
-  construction for scene wallpapers
+- `scene-host/` desktop-canvas-scene, the native scene renderer helper
+  (engines "native" and "auto"; the engine itself arrives with plan phases
+  P1 onward, until then a placeholder colour), DESKTOP_CANVAS_SCENE=ON
+- `process/` child process supervision (process groups, death signal,
+  control channel on fd 3, exit policies), the daemon/helper protocol,
+  helper lookup, linux-wallpaperengine command construction, and the
+  instance types for lwe/web children and the native helper
 - `input/` pointer forwarding (X11 poller lands with M4/M5)
 - `audio/` mute/volume policy (muted by default)
 - `ipc/` unix socket control protocol shared with tools/canvasctl
@@ -41,6 +46,8 @@ is `config/`, `source/`, `render/` except VideoBackend, `process/`, `audio/`,
 `ipc/`, `control/` and `http/`, and links no display or video library. The
 `desktop-canvas` executable is `main.cpp` plus those, with
 `render/VideoBackend.cpp` and libmpv added when mpv is found.
+`canvas_scene_host` (scene-host pacing and protocol, no GL) plus the GL
+parts, canvas_display, libepoxy and libpng make `desktop-canvas-scene`.
 
 Data flow: main.cpp builds Config, picks a Platform, constructs
 InstanceManager, which scans wallpapers (source/), reconciles config

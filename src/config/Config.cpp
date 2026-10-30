@@ -74,6 +74,8 @@ Config Config::load(const fs::path& path) {
         cfg.audioVolume = j["audio"].value("volume", cfg.audioVolume);
     }
     if (j.contains("scene") && j["scene"].is_object()) {
+        std::string engine = j["scene"].value("engine", cfg.sceneEngine);
+        cfg.sceneEngine = validEngine(engine) ? engine : "lwe";
         cfg.sceneEnginePath = j["scene"].value("engine_path", "");
         cfg.sceneAssetsDir = j["scene"].value("assets_dir", "");
         cfg.sceneDisableMouse =
@@ -109,6 +111,8 @@ Config Config::load(const fs::path& path) {
                     auto& list = s.allowed[name];
                     for (const auto& v : values) list.push_back(scalarText(v));
                 }
+            std::string engine = w.value("engine", "");
+            if (validEngine(engine)) s.engine = engine;
             cfg.wallpapers[id] = std::move(s);
         }
     }
@@ -133,6 +137,13 @@ Config Config::load(const fs::path& path) {
     return cfg;
 }
 
+std::string Config::engineFor(const std::string& id) const {
+    auto it = wallpapers.find(id);
+    if (it != wallpapers.end() && !it->second.engine.empty())
+        return it->second.engine;
+    return sceneEngine;
+}
+
 std::vector<std::string> Config::enabledIds() const {
     std::vector<std::string> ids;
     for (const auto& [id, w] : wallpapers)  // map order: sorted
@@ -149,7 +160,8 @@ bool Config::save(const fs::path& path) const {
     j["scaling"] = scaling;
     j["layer"] = layer;
     j["audio"] = {{"muted", audioMuted}, {"volume", audioVolume}};
-    j["scene"] = {{"engine_path", sceneEnginePath},
+    j["scene"] = {{"engine", sceneEngine},
+                  {"engine_path", sceneEnginePath},
                   {"assets_dir", sceneAssetsDir},
                   {"disable_mouse", sceneDisableMouse},
                   {"randomize_options", sceneRandomizeOptions},
@@ -162,10 +174,13 @@ bool Config::save(const fs::path& path) const {
     for (const auto& [id, w] : wallpapers) {
         // Untouched entries (not enabled, nothing pinned or restricted) are
         // not worth persisting; dropping them keeps the file readable.
-        if (!w.enabled && w.properties.empty() && w.allowed.empty()) continue;
+        if (!w.enabled && w.properties.empty() && w.allowed.empty() &&
+            w.engine.empty())
+            continue;
         j["wallpapers"][id] = {{"enabled", w.enabled},
                                {"properties", w.properties},
                                {"allowed", w.allowed}};
+        if (!w.engine.empty()) j["wallpapers"][id]["engine"] = w.engine;
     }
     j["ui"] = {{"enabled", uiEnabled},
                {"port", uiPort},

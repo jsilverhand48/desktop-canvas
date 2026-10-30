@@ -18,6 +18,8 @@ pkgbase = desktop-canvas
 	depends = mpv
 	depends = libx11
 	depends = libxrandr
+	depends = libepoxy
+	depends = libpng
 	source = desktop-canvas-1.0.0.tar.gz::https://github.com/jsilverhand48/desktop-canvas/archive/refs/tags/v1.0.0.tar.gz
 	sha256sums = SKIP
 

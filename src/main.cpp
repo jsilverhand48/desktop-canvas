@@ -33,7 +33,6 @@
 #include "ipc/IpcServer.h"
 #include "ipc/Protocol.h"
 #include "process/ChildSupervisor.h"
-#include "process/LweCommandBuilder.h"
 #include "render/InstanceManager.h"
 #include "render/Rotator.h"
 #include "source/LibraryWatcher.h"
@@ -121,27 +120,13 @@ int runDaemon(Config& config) {
         return 1;
     }
 
-    // Verify the scene engine is reachable; scenes are 72 percent of a
-    // typical Wallpaper Engine library so a missing binary deserves a loud
-    // warning (but not a fatal error; video/web still work).
-    std::string help = LweCommandBuilder::probeHelp(config.sceneEnginePath);
-    if (help.empty()) {
-        log::warn() << "linux-wallpaperengine not found; scene wallpapers "
-                       "will not render (set scene.engine_path or install it)";
-    } else if (help.find("--screen-root") == std::string::npos ||
-               help.find("--silent") == std::string::npos) {
-        log::warn() << "installed linux-wallpaperengine has unexpected flags; "
-                       "scene control may misbehave";
-    }
-    bool lweLayer = LweCommandBuilder::supportsLayer(help);
-    if (!help.empty() && !lweLayer && platform->isWayland())
-        log::warn() << "linux-wallpaperengine has no --layer flag; scenes use "
-                       "its default layer and may cover desktop icons";
+    // linux-wallpaperengine is probed lazily by InstanceManager, the first
+    // time an lwe scene starts (and again after a settings restart), so a
+    // setup that only uses the native helper never runs it.
 
     AudioPolicy audio(config.audioMuted, config.audioVolume);
     ChildSupervisor supervisor(loop);
     InstanceManager manager(loop, platform.get(), config, audio, supervisor);
-    manager.setSceneLayerSupported(lweLayer);
 #ifdef CANVAS_HAVE_VIDEO
     // Video plays in process through libmpv. Injecting it here keeps that
     // dependency out of InstanceManager and the libraries tests link.

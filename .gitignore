@@ -3,3 +3,6 @@ claude_tests/
 /*.qml
 .serena/
 .cache/
+# Local Claude Code settings and the clean-room guard hook (not shared)
+.claude/settings.local.json
+.claude/hooks/

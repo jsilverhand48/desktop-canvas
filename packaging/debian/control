@@ -12,7 +12,9 @@ Build-Depends: debhelper-compat (= 13),
                libgl-dev,
                libmpv-dev,
                libx11-dev,
-               libxrandr-dev
+               libxrandr-dev,
+               libepoxy-dev,
+               libpng-dev
 Standards-Version: 4.6.2
 
 Package: desktop-canvas

@@ -11,7 +11,9 @@ X11 implementation of the display abstractions.
   skip taskbar/pager states, timer based frame pacing (no compositor
   callbacks on X11).
 - `X11Platform` ties everything together, owns the shared EglContext and
-  the pointer poller.
+  the pointer poller. Its constructor takes the `EglContext::Options` and
+  the frame rate for the timer pacing (default 30; desktop-canvas-scene
+  passes its --fps). `egl()` exposes the context.
 
 Note: on DEs whose icon component is itself an opaque DESKTOP window
 (xfdesktop, plasmashell, caja, nemo), disable the DE's desktop drawing to

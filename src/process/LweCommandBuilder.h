@@ -16,8 +16,9 @@
 //                                    daemon passes its own layer instead.
 //   --set-property <name>=<value>    user property override, repeated per
 //                                    LweOptions::properties entry
-// If upstream changes flags, probeSupportedFlags() (which runs --help) lets
-// the daemon detect skew at startup and log a clear error.
+// If upstream changes flags, probeHelp() (which runs --help) lets the daemon
+// detect skew and log a clear error; InstanceManager runs it lazily, the
+// first time an lwe scene starts.
 #pragma once
 
 #include <string>
@@ -53,7 +54,8 @@ public:
     static std::vector<std::string> build(const LweOptions& opts);
 
     // Runs "<engine> --help" and returns its stdout+stderr, empty on failure.
-    // Used at startup to verify the flags above still exist.
+    // Used (lazily, see InstanceManager) to verify the flags above still
+    // exist.
     static std::string probeHelp(const std::string& enginePath);
 
     // True when probeHelp output lists --layer.

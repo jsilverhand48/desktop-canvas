@@ -13,6 +13,15 @@ IPC socket (`handleIpc`, desktop-canvasctl) and the browser settings UI
   Config before committing, so a bad field changes nothing. `updateWallpaper`,
   `setEnabled` (bulk), `show` (temporary override, not persisted) and
   `action` (next, pause, resume, mute, unmute, reload, restart).
+- Scene engine: `settings()` reports `scene.engine` and
+  `scene.native_available` (desktop-canvas-scene found); changing the engine
+  restarts every instance. `wallpaper(id)` adds the wallpaper's own
+  `engine`, `engine_effective`, the native helper's recorded verdict
+  (`native`: reason and features, or null) and `renderer` (what it would
+  run on now). `updateWallpaper` accepts `engine` and `retry_native`
+  (forget the verdict); either relaunches the wallpaper.
+- Volume changes apply live (InstanceManager::setVolume); only backends that
+  take volume at launch (lwe, web) are restarted, and only when unmuted.
 - Every write persists config.json and triggers the live effect it needs;
   the mapping is documented at the top of `Controller.h` (instance
   restarts, rescans, `Rotator::refresh`, mute, assignments, blacklist).

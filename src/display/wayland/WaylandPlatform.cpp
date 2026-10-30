@@ -11,7 +11,8 @@ namespace canvas {
 
 bool WaylandPlatform::init(EventLoop& loop) {
     if (!conn_.connect(loop)) return false;
-    if (!egl_.init(EGL_PLATFORM_WAYLAND_KHR, conn_.display())) return false;
+    if (!egl_.init(EGL_PLATFORM_WAYLAND_KHR, conn_.display(), eglOptions_))
+        return false;
     return true;
 }
 

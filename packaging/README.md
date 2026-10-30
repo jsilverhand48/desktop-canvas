@@ -66,7 +66,11 @@ published.
 ## Notes for packagers
 
 Scene wallpapers depend on linux-wallpaperengine at runtime; distro packages
-should Recommend/Suggest it. `-DDESKTOP_CANVAS_BUNDLE_LWE=ON` (see
+should Recommend/Suggest it. The native replacement, desktop-canvas-scene,
+is built from this repository (libepoxy and libpng at build and run time,
+listed in the Arch `depends` and Debian `Build-Depends`) and installed into
+the main package; once it renders scenes (plan phases P1 to P9) the
+linux-wallpaperengine dependency goes away. `-DDESKTOP_CANVAS_BUNDLE_LWE=ON` (see
 `cmake/BundleLwe.cmake`) exists for cases where no package is available, but
 it downloads sources at build time, so it cannot be used by Debian, Fedora
 or OBS, which build without network access. In practice that means scene

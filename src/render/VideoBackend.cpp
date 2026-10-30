@@ -176,6 +176,13 @@ void VideoInstance::setMuted(bool muted) {
     if (mpv_) mpv_set_option_string(mpv_, "mute", muted ? "yes" : "no");
 }
 
+bool VideoInstance::setVolume(int percent) {
+    volume_ = percent;
+    if (mpv_)
+        mpv_set_option_string(mpv_, "volume", std::to_string(volume_).c_str());
+    return true;  // live, like mute
+}
+
 void VideoInstance::handleWakeup() {
     uint64_t count;
     while (read(wakeup_fd_, &count, sizeof(count)) == sizeof(count)) {

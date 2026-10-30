@@ -5,19 +5,27 @@
 // readable the child has exited and is reaped with waitpid(WNOHANG); the
 // blocking form is never used on the loop thread. Outgoing children
 // (replaced or stopped) live in the dying_ table until their exit arrives.
+//
+// Between fork and exec the child only makes async signal safe calls (the
+// daemon has libmpv threads): signal mask reset, setpgid, prctl, dup2,
+// fcntl and close_range. argv is built before forking.
 #include "process/ChildSupervisor.h"
 
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/epoll.h>
+#include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <climits>
 #include <cstring>
 
+#include "core/ControlChannel.h"
 #include "core/EventLoop.h"
 #include "core/Log.h"
+#include "process/HelperProtocol.h"
 
 namespace canvas {
 
@@ -25,19 +33,50 @@ namespace {
 int pidfdOpen(pid_t pid) {
     return static_cast<int>(syscall(SYS_pidfd_open, pid, 0));
 }
+
+// Every child leads its own process group (pgid == pid); signal the group,
+// falling back to the process if the group is already gone.
+void killGroup(pid_t pid, int sig) {
+    if (kill(-pid, sig) < 0) kill(pid, sig);
+}
+
+ExitKind classify(ExitPolicy policy, int status) {
+    if (policy != ExitPolicy::HelperProtocol || !WIFEXITED(status))
+        return ExitKind::Crash;
+    switch (WEXITSTATUS(status)) {
+        case helper::kExitClean: return ExitKind::Clean;
+        case helper::kExitUsage: return ExitKind::Usage;
+        case helper::kExitUnsupported: return ExitKind::Unsupported;
+        default: return ExitKind::Crash;
+    }
+}
+
+std::string describe(int status) {
+    if (WIFEXITED(status))
+        return "exit code " + std::to_string(WEXITSTATUS(status));
+    if (WIFSIGNALED(status))
+        return std::string("signal ") + strsignal(WTERMSIG(status));
+    return "unknown status";
+}
 }  // namespace
 
 ChildSupervisor::ChildSupervisor(EventLoop& loop) : loop_(loop) {}
 
 ChildSupervisor::~ChildSupervisor() { stopAll(); }
 
-void ChildSupervisor::start(const std::string& tag,
-                            std::vector<std::string> argv) {
+void ChildSupervisor::start(const std::string& tag, ChildSpec spec) {
     stop(tag);
     Child child;
-    child.argv = std::move(argv);
+    child.spec = std::move(spec);
     children_[tag] = std::move(child);
     spawn(tag);
+}
+
+void ChildSupervisor::start(const std::string& tag,
+                            std::vector<std::string> argv) {
+    ChildSpec spec;
+    spec.argv = std::move(argv);
+    start(tag, std::move(spec));
 }
 
 void ChildSupervisor::spawn(const std::string& tag) {
@@ -46,33 +85,68 @@ void ChildSupervisor::spawn(const std::string& tag) {
     Child& child = it->second;
 
     std::vector<char*> argv;
-    for (auto& a : child.argv) argv.push_back(a.data());
+    for (auto& a : child.spec.argv) argv.push_back(a.data());
     argv.push_back(nullptr);
 
+    // fds[0] stays with us, fds[1] becomes the child's fd 3. Both are
+    // CLOEXEC; the child clears the flag on its copy only.
+    int fds[2] = {-1, -1};
+    if (child.spec.controlChannel && !ControlChannel::makePair(fds)) {
+        log::error() << "no control channel for " << tag << ", not starting";
+        return;
+    }
+
+    pid_t parent = getpid();
     pid_t pid = fork();
     if (pid < 0) {
         log::error() << "fork failed for " << tag << ": " << strerror(errno);
+        if (fds[0] >= 0) close(fds[0]);
+        if (fds[1] >= 0) close(fds[1]);
         return;
     }
     if (pid == 0) {
-        // Child: detach from our signal mask and exec.
+        // Child: detach from our signal mask, lead a process group, die with
+        // the daemon, keep only stdio (+ the control socket) and exec.
         sigset_t mask;
         sigemptyset(&mask);
         sigprocmask(SIG_SETMASK, &mask, nullptr);
+        setpgid(0, 0);
+        prctl(PR_SET_PDEATHSIG, SIGKILL);
+        if (getppid() != parent) _exit(127);  // daemon already gone
+        int keep = 2;
+        if (fds[1] >= 0) {
+            if (fds[1] != helper::kControlFd &&
+                dup2(fds[1], helper::kControlFd) < 0)
+                _exit(127);
+            fcntl(helper::kControlFd, F_SETFD, 0);
+            keep = helper::kControlFd;
+        }
+        close_range(static_cast<unsigned>(keep + 1), UINT_MAX, 0);
         execvp(argv[0], argv.data());
         _exit(127);
     }
+    // Also set the group from this side so it exists before we might signal
+    // it, whichever process runs first.
+    setpgid(pid, pid);
+    if (fds[1] >= 0) close(fds[1]);
     child.pid = pid;
     child.pidfd = pidfdOpen(pid);
-    log::info() << "spawned " << tag << " pid " << pid << " (" << child.argv[0]
-                << ")";
+    log::info() << "spawned " << tag << " pid " << pid << " ("
+                << child.spec.argv[0] << ")";
     if (child.pidfd < 0) {
         log::error() << "pidfd_open failed for " << tag;
+        if (fds[0] >= 0) close(fds[0]);
         return;
     }
     loop_.addFd(child.pidfd, EPOLLIN, [this, tag](uint32_t) {
         handleExit(tag);
     });
+    if (child.spec.onSpawn) {
+        auto cb = child.spec.onSpawn;  // copy: the callback may restart tag
+        cb(pid, fds[0]);
+    } else if (fds[0] >= 0) {
+        close(fds[0]);
+    }
 }
 
 void ChildSupervisor::handleExit(std::string tag) {
@@ -84,37 +158,63 @@ void ChildSupervisor::handleExit(std::string tag) {
         close(child.pidfd);
         child.pidfd = -1;
     }
+    int status = 0;
     if (child.pid > 0) {
-        int status = 0;
-        waitpid(child.pid, &status, WNOHANG);
+        if (waitpid(child.pid, &status, WNOHANG) <= 0)
+            status = W_EXITCODE(127, 0);  // unknown: treat as a crash
         child.pid = -1;
     }
 
-    auto now = std::chrono::steady_clock::now();
-    if (now - child.window_start > kFailureWindow) {
-        child.window_start = now;
-        child.failures = 0;
-        child.backoff = std::chrono::milliseconds(1000);
+    ExitKind kind = classify(child.spec.exitPolicy, status);
+    auto onExit = child.spec.onExit;  // copy: may stop or restart this tag
+    if (kind != ExitKind::Crash) {
+        if (kind == ExitKind::Usage)
+            log::error() << tag << " rejected its command line ("
+                         << describe(status) << "), not respawning";
+        else
+            log::info() << tag << " finished ("
+                        << (kind == ExitKind::Clean ? "clean exit"
+                                                    : "unsupported content")
+                        << "), not respawning";
+        children_.erase(it);
+        if (onExit) onExit(kind, status);
+        return;
     }
-    child.failures++;
-    if (child.failures > kMaxFailuresInWindow) {
-        log::error() << tag << " failed " << child.failures
+    if (onExit) {
+        onExit(kind, status);
+        it = children_.find(tag);
+        if (it == children_.end()) return;  // the callback stopped it
+        // The callback started a replacement under this tag.
+        if (it->second.pid > 0 || it->second.respawn_timer) return;
+    }
+    Child& crashed = it->second;
+
+    auto now = std::chrono::steady_clock::now();
+    if (now - crashed.window_start > kFailureWindow) {
+        crashed.window_start = now;
+        crashed.failures = 0;
+        crashed.backoff = std::chrono::milliseconds(1000);
+    }
+    crashed.failures++;
+    if (crashed.failures > kMaxFailuresInWindow) {
+        log::error() << tag << " failed " << crashed.failures
                      << " times, marking broken";
         auto cb = broken_cb_;
         children_.erase(it);
         if (cb) cb(tag);
         return;
     }
-    log::warn() << tag << " exited, respawning in " << child.backoff.count()
-                << "ms (failure " << child.failures << ")";
-    child.respawn_timer = loop_.addTimer(child.backoff.count(), [this, tag] {
+    log::warn() << tag << " exited (" << describe(status) << "), respawning in "
+                << crashed.backoff.count() << "ms (failure " << crashed.failures
+                << ")";
+    crashed.respawn_timer = loop_.addTimer(crashed.backoff.count(), [this, tag] {
         auto it2 = children_.find(tag);
         if (it2 == children_.end()) return;
         it2->second.respawn_timer = 0;
         spawn(tag);
     });
-    child.backoff =
-        std::min(child.backoff * 2, std::chrono::milliseconds(60000));
+    crashed.backoff =
+        std::min(crashed.backoff * 2, std::chrono::milliseconds(60000));
 }
 
 void ChildSupervisor::stop(const std::string& tag) {
@@ -130,7 +230,7 @@ void ChildSupervisor::stop(const std::string& tag) {
         int pidfd = child.pidfd;
         pid_t pid = child.pid;
         loop_.removeFd(pidfd);
-        kill(pid, SIGTERM);
+        killGroup(pid, SIGTERM);
         Dying dying;
         dying.pid = pid;
         dying.kill_timer = loop_.addTimer(3000, [this, pidfd] {
@@ -138,7 +238,7 @@ void ChildSupervisor::stop(const std::string& tag) {
             if (d != dying_.end()) {
                 log::warn() << "child pid " << d->second.pid
                             << " ignored SIGTERM, sending SIGKILL";
-                kill(d->second.pid, SIGKILL);
+                killGroup(d->second.pid, SIGKILL);
             }
         });
         dying_[pidfd] = dying;
@@ -168,7 +268,7 @@ void ChildSupervisor::stopAll() {
         if (dying.kill_timer) loop_.cancelTimer(dying.kill_timer);
         loop_.removeFd(pidfd);
         close(pidfd);
-        kill(dying.pid, SIGKILL);
+        killGroup(dying.pid, SIGKILL);
         waitpid(dying.pid, nullptr, 0);
     }
     dying_.clear();

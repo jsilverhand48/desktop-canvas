@@ -151,7 +151,9 @@ json Controller::settings() const {
             {"audio",
              {{"muted", config_.audioMuted}, {"volume", config_.audioVolume}}},
             {"scene",
-             {{"engine_path", config_.sceneEnginePath},
+             {{"engine", config_.sceneEngine},
+              {"native_available", !manager_.sceneHelperPath().empty()},
+              {"engine_path", config_.sceneEnginePath},
               {"assets_dir", config_.sceneAssetsDir},
               {"disable_mouse", config_.sceneDisableMouse},
               {"randomize_options", config_.sceneRandomizeOptions},
@@ -178,6 +180,7 @@ bool Controller::updateSettings(const json& patch, std::string& error,
     // Validate and stage into a copy first so a bad field changes nothing.
     Config next = config_;
     bool restart = false, rescan = false, rotation = false, rearm = false;
+    bool volumeChanged = false;
     std::vector<std::string> unbroken;
     std::map<std::string, std::string> assignmentChanges;  // "" = remove
     try {
@@ -216,7 +219,9 @@ bool Controller::updateSettings(const json& patch, std::string& error,
                     error = "volume must be 0..100";
                     return false;
                 }
-                restart |= v != next.audioVolume && !next.audioMuted;
+                // Applied live after the commit (InstanceManager::setVolume
+                // restarts only backends that cannot change it live).
+                volumeChanged = v != next.audioVolume;
                 next.audioVolume = v;
             }
             if (a.contains("muted")) next.audioMuted = a["muted"].get<bool>();
@@ -229,6 +234,15 @@ bool Controller::updateSettings(const json& patch, std::string& error,
                 restart |= v != field;
                 field = v;
             };
+            if (s.contains("engine")) {
+                auto v = s["engine"].get<std::string>();
+                if (!Config::validEngine(v)) {
+                    error = "scene.engine must be lwe, native or auto";
+                    return false;
+                }
+                restart |= v != next.sceneEngine;
+                next.sceneEngine = v;
+            }
             text("engine_path", next.sceneEnginePath);
             if (s.contains("assets_dir")) {
                 auto v = s["assets_dir"].get<std::string>();
@@ -348,7 +362,7 @@ bool Controller::updateSettings(const json& patch, std::string& error,
     config_ = next;
     if (!save(error)) return false;
 
-    audio_.setVolume(config_.audioVolume);
+    if (volumeChanged) manager_.setVolume(config_.audioVolume);
     if (mutedChanged) manager_.setMuted(newMuted);
     for (const auto& id : unbroken) manager_.clearBroken(id);
     for (const auto& [output, id] : assignmentChanges) {
@@ -408,6 +422,23 @@ bool Controller::wallpaper(const std::string& id, json& out,
     out["allowed"] = ws != config_.wallpapers.end()
                          ? json(ws->second.allowed)
                          : json::object();
+    // Scene engine: the wallpaper's own choice ("" = global), what it
+    // resolves to, and the native helper's recorded verdict, if any.
+    out["engine"] = ws != config_.wallpapers.end() ? ws->second.engine : "";
+    out["engine_effective"] = config_.engineFor(id);
+    out["native"] = nullptr;
+    if (info->type == WallpaperType::Scene) {
+        const auto& verdicts = manager_.nativeSupport().all();
+        auto v = verdicts.find(id);
+        if (v != verdicts.end())
+            out["native"] = {{"reason", v->second.reason},
+                             {"features", v->second.features}};
+        out["renderer"] =
+            manager_.sceneEngineFor(*info) ==
+                    InstanceManager::SceneEngine::Lwe
+                ? "lwe"
+                : "native";
+    }
     std::vector<std::string> showingOn;
     for (const auto& [output, running] : manager_.running())
         if (running == id) showingOn.push_back(output);
@@ -427,12 +458,25 @@ bool Controller::updateWallpaper(const std::string& id, const json& patch,
     }
     Config::WallpaperSettings next = config_.wallpapers[id];
     bool enabledChanged = false;
+    bool engineChanged = false;
+    bool retryNative = false;
     try {
         if (patch.contains("enabled")) {
             bool v = patch["enabled"].get<bool>();
             enabledChanged = v != next.enabled;
             next.enabled = v;
         }
+        if (patch.contains("engine")) {
+            auto v = patch["engine"].get<std::string>();
+            if (!v.empty() && !Config::validEngine(v)) {
+                error = "engine must be empty, lwe, native or auto";
+                return false;
+            }
+            engineChanged = v != next.engine;
+            next.engine = v;
+        }
+        // Forget the native helper's verdict so "auto" tries it again.
+        retryNative = patch.value("retry_native", false);
         if (patch.contains("properties")) {
             if (!patch["properties"].is_object()) {
                 error = "properties must be an object";
@@ -474,7 +518,9 @@ bool Controller::updateWallpaper(const std::string& id, const json& patch,
     config_.wallpapers[id] = next;
     if (!save(error)) return false;
     if (enabledChanged) rotator_.refresh();
-    if (patch.value("apply", false)) manager_.restartWallpaper(id);
+    if (retryNative) manager_.nativeSupport().forget(id);
+    if (patch.value("apply", false) || engineChanged || retryNative)
+        manager_.restartWallpaper(id);
     return true;
 }
 

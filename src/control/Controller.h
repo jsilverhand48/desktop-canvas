@@ -5,10 +5,16 @@
 // implementation. Mutations update Config, persist it to
 // config.sourcePath, and trigger the live effect the change needs:
 //
-//   fps, scaling, layer, scene engine/assets/mouse, web.enabled,
-//   audio volume                     -> InstanceManager::restartAll()
+//   fps, scaling, layer, scene engine (lwe | native | auto),
+//   engine path, assets, mouse, web.enabled
+//                                    -> InstanceManager::restartAll()
 //   content_roots                    -> rescan, then restartAll()
+//   audio volume                     -> InstanceManager::setVolume() (live;
+//                                       restarts only unmuted lwe/web)
 //   audio muted                      -> InstanceManager::setMuted()
+//   a wallpaper's engine, retry_native
+//                                    -> restartWallpaper(id) (retry_native
+//                                       first forgets the native verdict)
 //   assignments                      -> InstanceManager::setAssignment()
 //   broken (ids removed)             -> InstanceManager::clearBroken()
 //   enabled wallpapers               -> Rotator::refresh()

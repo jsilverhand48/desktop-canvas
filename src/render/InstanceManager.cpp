@@ -11,7 +11,9 @@
 #include "display/Platform.h"
 #include "process/ChildSupervisor.h"
 #include "process/ExternalProcessInstance.h"
+#include "process/HelperLocator.h"
 #include "process/LweCommandBuilder.h"
+#include "process/SceneHelperInstance.h"
 #include "render/WallpaperInstance.h"
 #include "source/SceneOptions.h"
 #include "source/WorkshopScanner.h"
@@ -25,7 +27,11 @@ InstanceManager::InstanceManager(EventLoop& loop, Platform* platform,
       platform_(platform),
       config_(config),
       audio_(audio),
-      supervisor_(supervisor) {
+      supervisor_(supervisor),
+      sceneHelper_(HelperLocator::find("desktop-canvas-scene")),
+      nativeSupport_(std::make_unique<NativeSupportCache>(
+          NativeSupportCache::defaultPath())) {
+    nativeSupport_->load();
     supervisor_.onBroken([this](const std::string& tag) { handleBroken(tag); });
     if (platform_) {
         platform_->demoteWindowsOf(
@@ -34,7 +40,7 @@ InstanceManager::InstanceManager(EventLoop& loop, Platform* platform,
             [this](const std::string& output, double x, double y) {
                 auto it = slots_.find(output);
                 if (it != slots_.end() && it->second.instance)
-                    it->second.instance->setPointer(x, y);
+                    it->second.instance->setPointer(output, x, y);
             });
     }
     rescan();
@@ -141,14 +147,59 @@ void InstanceManager::apply() {
 }
 
 bool InstanceManager::mergeable(const WallpaperInfo& info) const {
-    return info.type == WallpaperType::Scene && platform_ &&
-           platform_->isWayland();
+    if (info.type != WallpaperType::Scene || !platform_) return false;
+    if (sceneEngineFor(info) != SceneEngine::Lwe) return true;
+    return platform_->isWayland();
+}
+
+InstanceManager::SceneEngine InstanceManager::sceneEngineFor(
+    const WallpaperInfo& info) const {
+    const std::string engine = config_.engineFor(info.id);
+    if (engine == "lwe" || sceneHelper_.empty()) return SceneEngine::Lwe;
+    if (engine == "native") return SceneEngine::Native;
+    // "auto": native unless it already said it cannot show this content.
+    if (nativeSupport_->find(info.id, contentStamp(info),
+                             NativeSupportCache::stampOf(sceneHelper_)))
+        return SceneEngine::Lwe;
+    return SceneEngine::NativeStrict;
+}
+
+void InstanceManager::useNativeSupportCache(const std::filesystem::path& file) {
+    nativeSupport_ = std::make_unique<NativeSupportCache>(file);
+    nativeSupport_->load();
+}
+
+std::string InstanceManager::contentStamp(const WallpaperInfo& info) {
+    auto pkg = info.dir / "scene.pkg";
+    std::string stamp = NativeSupportCache::stampOf(pkg);
+    return stamp.empty() ? NativeSupportCache::stampOf(info.filePath()) : stamp;
+}
+
+bool InstanceManager::lweLayerSupported() {
+    if (lweLayer_) return *lweLayer_;
+    // Blocking popen, once per restartAll(), and only when an lwe scene is
+    // actually about to start.
+    std::string help = LweCommandBuilder::probeHelp(config_.sceneEnginePath);
+    if (help.empty()) {
+        log::warn() << "linux-wallpaperengine not found; lwe scenes will not "
+                       "render (set scene.engine_path, install it, or use "
+                       "scene.engine native/auto)";
+    } else if (help.find("--screen-root") == std::string::npos ||
+               help.find("--silent") == std::string::npos) {
+        log::warn() << "installed linux-wallpaperengine has unexpected flags; "
+                       "scene control may misbehave";
+    }
+    lweLayer_ = LweCommandBuilder::supportsLayer(help);
+    if (!help.empty() && !*lweLayer_ && platform_ && platform_->isWayland())
+        log::warn() << "linux-wallpaperengine has no --layer flag; scenes use "
+                       "its default layer and may cover desktop icons";
+    return *lweLayer_;
 }
 
 void InstanceManager::startInstance(const std::vector<std::string>& group,
                                     const WallpaperInfo& info) {
     // Only merged scenes cover more than one output; everything else
-    // (video, web, X11 scenes) targets group.front() alone.
+    // (video, web, X11 lwe scenes) targets group.front() alone.
     const std::string& outputName = group.front();
     bool muted = audio_.effectiveMuted(info.id);
     // X11 children run windowed at the output geometry and get demoted to
@@ -165,46 +216,9 @@ void InstanceManager::startInstance(const std::vector<std::string>& group,
     }
     std::shared_ptr<WallpaperInstance> instance;
     switch (info.type) {
-        case WallpaperType::Scene: {
-            LweOptions opts;
-            opts.enginePath = config_.sceneEnginePath;
-            opts.wallpaperDir = info.dir.string();
-            opts.assetsDir = assetsDir_;
-            opts.fps = config_.fps;
-            opts.scaling = config_.scaling;
-            opts.volume = audio_.volume();
-            opts.disableMouse = config_.sceneDisableMouse;
-            // Per wallpaper property values: pinned ones always, plus (with
-            // scene.randomize_options) a random pick per dropdown, drawn
-            // once per launch (each rotation relaunches) and captured below
-            // so an audio restart of the same instance keeps the variant.
-            static const Config::WallpaperSettings kNoSettings;
-            auto ws = config_.wallpapers.find(info.id);
-            const auto& settings =
-                ws != config_.wallpapers.end() ? ws->second : kNoSettings;
-            opts.properties = resolveSceneProperties(
-                readUserProperties(info.dir), settings.properties,
-                settings.allowed, config_.sceneRandomizeOptions,
-                config_.sceneIncludeNsfwOptions, optionRng_);
-            for (const auto& [name, value] : opts.properties)
-                log::info() << "scene " << info.id << ": " << name << "="
-                            << value;
-            if (mergeable(info)) {
-                opts.screenRoots = group;
-                if (sceneLayerSupported_) opts.layer = config_.layer;
-            } else
-                opts.windowGeometry = geometry;
-            // The tag names the first output; handleBroken drops the whole
-            // group through it.
-            instance = std::make_shared<ExternalProcessInstance>(
-                supervisor_, "scene:" + outputName, outputName, info.id,
-                muted, [opts](bool m) {
-                    LweOptions o = opts;
-                    o.muted = m;
-                    return LweCommandBuilder::build(o);
-                });
+        case WallpaperType::Scene:
+            instance = makeSceneInstance(group, info, muted, geometry);
             break;
-        }
         case WallpaperType::Video: {
             // The factory comes from main.cpp, which owns the libmpv
             // backend; builds without libmpv install none.
@@ -215,11 +229,10 @@ void InstanceManager::startInstance(const std::vector<std::string>& group,
             RenderSurface* surface = surfaceFor(outputName);
             if (!surface) return;
             instance = videoFactory_(*surface, info, muted);
-            if (!instance) return;
             break;
         }
         case WallpaperType::Web: {
-            std::string helper = findWebHelper();
+            std::string helper = HelperLocator::find("desktop-canvas-web");
             if (helper.empty()) {
                 log::warn() << "web wallpaper " << info.id
                             << " needs desktop-canvas-web (build with "
@@ -250,12 +263,97 @@ void InstanceManager::startInstance(const std::vector<std::string>& group,
         case WallpaperType::Unsupported:
             return;
     }
+    if (!instance) return;
     std::string where;
     for (const auto& name : group) where += (where.empty() ? "" : ", ") + name;
     log::info() << "starting " << toString(info.type) << " wallpaper "
                 << info.id << " (" << info.title << ") on " << where;
     instance->start();
+    if (paused_) instance->pause();
     for (const auto& name : group) slots_[name] = Slot{instance, group};
+}
+
+std::shared_ptr<WallpaperInstance> InstanceManager::makeSceneInstance(
+    const std::vector<std::string>& group, const WallpaperInfo& info,
+    bool muted, const std::string& geometry) {
+    const std::string& outputName = group.front();
+    // Per wallpaper property values: pinned ones always, plus (with
+    // scene.randomize_options) a random pick per dropdown, drawn once per
+    // launch (each rotation relaunches) and captured below so a restart of
+    // the same instance keeps the variant.
+    static const Config::WallpaperSettings kNoSettings;
+    auto ws = config_.wallpapers.find(info.id);
+    const auto& settings =
+        ws != config_.wallpapers.end() ? ws->second : kNoSettings;
+    PropertyList properties = resolveSceneProperties(
+        readUserProperties(info.dir), settings.properties, settings.allowed,
+        config_.sceneRandomizeOptions, config_.sceneIncludeNsfwOptions,
+        optionRng_);
+    for (const auto& [name, value] : properties)
+        log::info() << "scene " << info.id << ": " << name << "=" << value;
+
+    SceneEngine engine = sceneEngineFor(info);
+    if (engine != SceneEngine::Lwe) {
+        SceneHelperInstance::Launch launch;
+        launch.helperPath = sceneHelper_;
+        launch.wallpaperDir = info.dir.string();
+        launch.outputs = group;
+        launch.layer = config_.layer;
+        launch.fps = config_.fps;
+        launch.scaling = config_.scaling;
+        launch.assetsDir = assetsDir_;
+        launch.properties = properties;
+        launch.strict = engine == SceneEngine::NativeStrict;
+        auto instance = std::make_shared<SceneHelperInstance>(
+            loop_, supervisor_, "native:" + outputName, info.id, muted,
+            audio_.volume(), std::move(launch));
+        std::string id = info.id;
+        instance->setOnUnsupported(
+            [this, id](const std::vector<std::string>& features) {
+                handleUnsupported(id, features);
+            });
+        return instance;
+    }
+
+    LweOptions opts;
+    opts.enginePath = config_.sceneEnginePath;
+    opts.wallpaperDir = info.dir.string();
+    opts.assetsDir = assetsDir_;
+    opts.fps = config_.fps;
+    opts.scaling = config_.scaling;
+    opts.volume = audio_.volume();
+    opts.disableMouse = config_.sceneDisableMouse;
+    opts.properties = properties;
+    if (mergeable(info)) {
+        opts.screenRoots = group;
+        if (lweLayerSupported()) opts.layer = config_.layer;
+    } else {
+        opts.windowGeometry = geometry;
+    }
+    // The tag names the first output; handleBroken drops the whole group
+    // through it.
+    return std::make_shared<ExternalProcessInstance>(
+        supervisor_, "scene:" + outputName, outputName, info.id, muted,
+        [opts](bool m) {
+            LweOptions o = opts;
+            o.muted = m;
+            return LweCommandBuilder::build(o);
+        });
+}
+
+void InstanceManager::handleUnsupported(
+    const std::string& id, const std::vector<std::string>& features) {
+    const WallpaperInfo* info = find(id);
+    if (!info) return;
+    NativeSupportCache::Verdict verdict;
+    verdict.reason = "unsupported";
+    verdict.features = features;
+    verdict.contentStamp = contentStamp(*info);
+    verdict.helperStamp = NativeSupportCache::stampOf(sceneHelper_);
+    nativeSupport_->record(id, std::move(verdict));
+    log::info() << "wallpaper " << id
+                << " falls back to linux-wallpaperengine";
+    restartWallpaper(id);
 }
 
 RenderSurface* InstanceManager::surfaceFor(const std::string& outputName) {
@@ -273,28 +371,6 @@ RenderSurface* InstanceManager::surfaceFor(const std::string& outputName) {
         it = surfaces_.emplace(outputName, std::move(created)).first;
     }
     return it->second.get();
-}
-
-std::string InstanceManager::findWebHelper() {
-    // Next to the daemon binary (build tree and install prefix both work).
-    std::error_code ec;
-    auto self = std::filesystem::read_symlink("/proc/self/exe", ec);
-    if (!ec) {
-        auto candidate = self.parent_path() / "desktop-canvas-web";
-        if (std::filesystem::exists(candidate, ec)) return candidate.string();
-    }
-    // PATH lookup.
-    const char* path = std::getenv("PATH");
-    if (path) {
-        std::istringstream stream(path);
-        std::string dir;
-        while (std::getline(stream, dir, ':')) {
-            auto candidate = std::filesystem::path(dir) / "desktop-canvas-web";
-            if (std::filesystem::exists(candidate, ec))
-                return candidate.string();
-        }
-    }
-    return "";
 }
 
 void InstanceManager::stopInstance(const std::string& outputName) {
@@ -318,13 +394,29 @@ std::vector<WallpaperInstance*> InstanceManager::instances() const {
 }
 
 void InstanceManager::handleBroken(const std::string& tag) {
-    // tag format: "scene:<output>"; for a merged scene, its first output.
+    // tag format: "<kind>:<output>"; for a merged scene, its first output.
     auto pos = tag.find(':');
     if (pos == std::string::npos) return;
+    std::string kind = tag.substr(0, pos);
     std::string output = tag.substr(pos + 1);
     auto it = slots_.find(output);
     if (it == slots_.end() || !it->second.instance) return;
     std::string id = it->second.instance->wallpaperId();
+    const WallpaperInfo* info = find(id);
+    // A crash looping native helper under "auto" hands the wallpaper to lwe
+    // instead of blacklisting it; lwe failing as well blacklists as usual.
+    if (kind == "native" && info && config_.engineFor(id) == "auto") {
+        NativeSupportCache::Verdict verdict;
+        verdict.reason = "crash";
+        verdict.contentStamp = contentStamp(*info);
+        verdict.helperStamp = NativeSupportCache::stampOf(sceneHelper_);
+        nativeSupport_->record(id, std::move(verdict));
+        log::error() << "native renderer keeps crashing on " << id
+                     << ", falling back to linux-wallpaperengine";
+        stopInstance(output);
+        apply();
+        return;
+    }
     log::error() << "marking wallpaper " << id << " broken";
     if (!isBroken(id)) {
         config_.broken.push_back(id);
@@ -382,6 +474,8 @@ bool InstanceManager::setAssignment(const std::string& output,
 
 void InstanceManager::restartAll() {
     while (!slots_.empty()) stopInstance(slots_.begin()->first);
+    lweLayer_.reset();  // engine_path may have changed: probe again
+    sceneHelper_ = HelperLocator::find("desktop-canvas-scene");
     apply();
 }
 
@@ -401,10 +495,12 @@ void InstanceManager::clearBroken(const std::string& id) {
 }
 
 void InstanceManager::pauseAll() {
+    paused_ = true;
     for (auto* instance : instances()) instance->pause();
 }
 
 void InstanceManager::resumeAll() {
+    paused_ = false;
     for (auto* instance : instances()) instance->resume();
 }
 
@@ -414,6 +510,18 @@ void InstanceManager::setMuted(bool muted) {
     config_.save(config_.sourcePath);
     for (auto* instance : instances())
         instance->setMuted(audio_.effectiveMuted(instance->wallpaperId()));
+}
+
+void InstanceManager::setVolume(int volume) {
+    audio_.setVolume(volume);
+    std::vector<std::string> relaunch;
+    for (auto* instance : instances()) {
+        if (instance->setVolume(volume)) continue;
+        // Launch time only (lwe, web): restart if the change is audible.
+        if (!audio_.effectiveMuted(instance->wallpaperId()))
+            relaunch.push_back(instance->wallpaperId());
+    }
+    for (const auto& id : relaunch) restartWallpaper(id);
 }
 
 std::map<std::string, std::string> InstanceManager::running() const {

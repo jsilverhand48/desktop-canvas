@@ -3,7 +3,9 @@
 // Owns the scan results, translates config assignments (output name to
 // wallpaper id) into running instances, and services IPC commands. Per
 // wallpaper type:
-//   scene -> ExternalProcessInstance (linux-wallpaperengine child)
+//   scene -> by sceneEngineFor(): SceneHelperInstance (desktop-canvas-scene,
+//            engines "native" and "auto") or ExternalProcessInstance
+//            (linux-wallpaperengine child, engine "lwe" and every fallback)
 //   video -> whatever the injected VideoFactory builds on a Platform
 //            RenderSurface (main.cpp installs the libmpv VideoInstance;
 //            without a factory video wallpapers are logged and left blank)
@@ -14,10 +16,16 @@
 // Wallpapers whose scene child keeps crashing are added to config.broken and
 // unassigned automatically.
 //
-// On Wayland, outputs showing the same scene wallpaper share one
-// linux-wallpaperengine process (one --screen-root per output), so assets
-// and the GL context are loaded once instead of per screen. Changing any
-// output of such a group restarts the whole group with the new split.
+// Outputs showing the same scene wallpaper share one process (one
+// --screen-root / --output per output), so assets and the GL context are
+// loaded once instead of per screen: on Wayland for lwe, everywhere for the
+// native helper. Changing any output of such a group restarts the whole
+// group with the new split.
+//
+// Engine "auto" fallback: a strict native helper that reports unsupported
+// content (exit 3), or keeps crashing, gets a NativeSupportCache verdict;
+// the wallpaper is relaunched and now resolves to lwe until the content or
+// the helper binary changes.
 //
 // Video RenderSurfaces are kept per output, created on the first video for
 // that output and reused (hidden in between) until the output disappears or
@@ -31,11 +39,13 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <random>
 #include <string>
 #include <vector>
 
 #include "config/Config.h"
+#include "render/NativeSupportCache.h"
 #include "source/WallpaperInfo.h"
 
 namespace canvas {
@@ -71,11 +81,19 @@ public:
     // entries instead of assigning them and blanking an output.
     bool usable(const std::string& id) const;
 
-    // Whether the scene engine accepts --layer (probed once at startup).
-    // When true, Wayland scenes are put on config.layer like video surfaces;
-    // otherwise lwe picks its own default ("bottom" on r598+, which covers
-    // the Plasma desktop icons). Takes effect on the next started scene.
-    void setSceneLayerSupported(bool supported) { sceneLayerSupported_ = supported; }
+    // Which renderer a scene wallpaper gets (config "scene.engine" or the
+    // wallpaper's own "engine"): Lwe for "lwe", Native for "native",
+    // NativeStrict for "auto" unless a still valid NativeSupportCache verdict
+    // says the native helper cannot show it (then Lwe). Native and
+    // NativeStrict fall back to Lwe when desktop-canvas-scene is not found.
+    enum class SceneEngine { Lwe, Native, NativeStrict };
+    SceneEngine sceneEngineFor(const WallpaperInfo& info) const;
+    // Path of desktop-canvas-scene (HelperLocator), empty when missing.
+    const std::string& sceneHelperPath() const { return sceneHelper_; }
+    NativeSupportCache& nativeSupport() { return *nativeSupport_; }
+    const NativeSupportCache& nativeSupport() const { return *nativeSupport_; }
+    // Points the verdict cache at another file and loads it (tests).
+    void useNativeSupportCache(const std::filesystem::path& file);
 
     // Builds the in-process instance for a video wallpaper on surface (one
     // output; video never merges). Returning null leaves the output blank.
@@ -110,9 +128,15 @@ public:
     void restartWallpaper(const std::string& id);
     // Removes id from the broken blacklist (persisted) and re-applies.
     void clearBroken(const std::string& id);
+    // Pause state is remembered: instances started while paused (rotation,
+    // hotplug, a fallback relaunch) start paused too.
     void pauseAll();
     void resumeAll();
+    bool paused() const { return paused_; }
     void setMuted(bool muted);  // global default; propagates to instances
+    // Applies a new volume to every instance: live where the backend can
+    // (video, native scenes), otherwise by restarting unmuted instances.
+    void setVolume(int volume);
 
     // Status for IPC: output -> wallpaper id currently running.
     std::map<std::string, std::string> running() const;
@@ -125,8 +149,22 @@ private:
         std::vector<std::string> group;
     };
 
-    // True when outputs showing info can share one process (Wayland scenes).
+    // True when outputs showing info can share one process: native scenes
+    // everywhere, lwe scenes on Wayland only (lwe's X11 mode is a window).
     bool mergeable(const WallpaperInfo& info) const;
+    // Starts the scene in group with the native helper or lwe.
+    std::shared_ptr<WallpaperInstance> makeSceneInstance(
+        const std::vector<std::string>& group, const WallpaperInfo& info,
+        bool muted, const std::string& geometry);
+    // A strict native helper could not show id: remember it and relaunch
+    // the wallpaper (now resolving to lwe).
+    void handleUnsupported(const std::string& id,
+                           const std::vector<std::string>& features);
+    // Stamp of the file whose change should retry the native helper.
+    static std::string contentStamp(const WallpaperInfo& info);
+    // Whether lwe accepts --layer; probes `lwe --help` once, lazily, the
+    // first time an lwe scene starts (re-probed after restartAll()).
+    bool lweLayerSupported();
     // Starts one instance covering every output in group (size 1 unless
     // mergeable) and records a slot for each of them.
     void startInstance(const std::vector<std::string>& group,
@@ -141,9 +179,9 @@ private:
     // Each running instance once, even when shared by several outputs, so
     // pause/resume/mute act (and mute restarts) a merged process only once.
     std::vector<WallpaperInstance*> instances() const;
-    // Locates the desktop-canvas-web helper: next to the daemon binary
-    // first, then PATH. Empty when unavailable.
-    static std::string findWebHelper();
+    // A supervised child failed too often. lwe and web: blacklist the
+    // wallpaper (config "broken"). Native helper under "auto": record a
+    // "crash" verdict and relaunch with lwe instead.
     void handleBroken(const std::string& tag);
     bool isBroken(const std::string& id) const;
 
@@ -157,8 +195,11 @@ private:
     uint64_t libraryRevision_ = 0;
     std::function<void()> onRescan_;
     std::string assetsDir_;
-    bool sceneLayerSupported_ = false;
     VideoFactory videoFactory_;
+    std::optional<bool> lweLayer_;  // lazy `lwe --help` probe result
+    std::string sceneHelper_;       // desktop-canvas-scene, empty if missing
+    std::unique_ptr<NativeSupportCache> nativeSupport_;
+    bool paused_ = false;
     // Draws random scene variants when config_.sceneRandomizeOptions is on.
     std::mt19937 optionRng_{std::random_device{}()};
     // Declared before slots_ so instances, which borrow these surfaces, are
