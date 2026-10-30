@@ -21,9 +21,9 @@ Audio from wallpapers is muted by default; unmute with
   Sway, and other wlroots compositors), or X11 (backend in progress).
   GNOME Wayland is not supported (Mutter lacks layer-shell).
 - wayland (or X11) and EGL at runtime; libmpv for video wallpapers;
-  libepoxy and libpng for desktop-canvas-scene; libsystemd (sd-bus) for the
-  KDE bridge; linux-wallpaperengine for scene wallpapers on the `lwe`
-  engine.
+  libepoxy, libpng, lz4 and libjpeg-turbo for desktop-canvas-scene;
+  libsystemd (sd-bus) for the KDE bridge; linux-wallpaperengine for scene
+  wallpapers on the `lwe` engine.
 - Wallpaper Engine workshop content, e.g. a Steam library containing
   `steamapps/workshop/content/431960`. Content roots are autodetected from
   `~/.local/share/Steam`, `~/.steam/steam`, and
@@ -45,7 +45,14 @@ when `claude_tests/` is present and are skipped when it is not. libmpv is
 optional at build time: without its development files configure warns and
 the daemon is built without video support, while scene and web wallpapers
 still work. `-DDESKTOP_CANVAS_SCENE=OFF` skips desktop-canvas-scene (built
-by default when libepoxy and libpng development files are present).
+by default when the libepoxy, libpng, lz4 and libjpeg-turbo development
+files are present). `-DDESKTOP_CANVAS_FUZZ=ON` (clang only, separate build
+directory) builds the sanitized libFuzzer targets in `claude_tests/fuzz/`.
+
+desktop-canvas-scene can also inspect a scene's files the way its renderer
+finds them: `desktop-canvas-scene --extract materials/x.tex x.png DIR`
+decodes one texture (or copies any other file) and
+`desktop-canvas-scene --dump OUT DIR` unpacks the item's scene.pkg.
 
 Installing places the `desktop-canvas` daemon and `desktop-canvasctl` in
 `bin`, plus a systemd user unit, an XDG desktop entry, AppStream metainfo, an

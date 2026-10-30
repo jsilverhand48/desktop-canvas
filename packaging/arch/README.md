@@ -92,7 +92,8 @@ is untracked and therefore absent from release tarballs. If that directory is
 ever tracked, add a `check()` running `ctest --test-dir build`.
 
 `desktop-canvas-scene` (the native scene renderer helper) is part of the
-base package and adds `libepoxy` and `libpng` to `depends`; `systemd-libs`
+base package and adds `libepoxy`, `libpng`, `lz4` and `libjpeg-turbo`
+(2.1 or later) to `depends`; `systemd-libs`
 (sd-bus) backs the KDE bridge, whose KWin script installs to
 `share/desktop-canvas/kwin/`. `.SRCINFO` lists them too.
 

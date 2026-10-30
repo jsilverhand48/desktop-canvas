@@ -37,9 +37,9 @@ Entries are served as views into a read only memory map of the file.
 A scene's paths (`scene.json`, `materials/x.json`, `shaders/y.frag`, ...)
 resolve through layers, first match wins:
 
-1. Wallpaper Engine compatibility overrides for this workshop item
+1. Wallpaper Engine compatibility overrides for shared workshop effects
    (section 2.1);
-2. the item's own files: its `scene.pkg` and loose files in its folder;
+2. the item's own files: loose files in its folder, then its `scene.pkg`;
 3. the Wallpaper Engine assets folder.
 
 Facts behind the order:
@@ -62,16 +62,42 @@ package names are.
 
 ### 2.1 Compatibility overrides
 
-`assets/zcompat/scene/shaders/<workshop id>/` holds replacement shader
-files for single workshop items plus a `config.json`
+Wallpapers embed effects published separately on the workshop under
+`<kind>/workshop/<effect id>/...` (`effects/`, `materials/`, `shaders/`,
+`particles/`, `models/`, `fonts/` all seen [corpus]). A material names its
+shader `workshop/<effect id>/effects/<Name>`, read from
+`shaders/workshop/<effect id>/effects/<Name>.frag` and `.vert`. Effects that
+embed other effects nest the path (`shaders/workshop/2779107487/workshop/
+2084198056/...`).
+
+`assets/zcompat/scene/shaders/<effect id>/` holds replacement shader files
+for one such effect plus a `config.json`
 `{"frag": "<file>", "vert": "<file>", "maximumprojectid": "<integer>"}`.
-[asset: entries for 2078835426 and 2084198056] Neither item is in the
-corpus, so the effect cannot be observed. Implemented as: for the item with
-that id, a request for `shaders/<file>` where `<file>` is the configured
-frag or vert name is served from the override folder. `maximumprojectid`
-(9223372036854775807 and 2638335396 seen) has no observable meaning yet and
-is ignored. `assets/zcompat/web/` holds text patches for web wallpapers
-(`actions` of file, replace, insert) and is out of scope here.
+[asset: 2078835426 pixelate, maximum 9223372036854775807; 2084198056
+Simple_Audio_Bars, maximum 2638335396] Evidence for the meaning [corpus]:
+8 scenes embed effect 2084198056, 5 directly and 3 nested (other ids,
+3021673417 and 3200298808, hold copies by other authors). The 3 direct ones
+with ids above 2638335396 ship a revision that differs from the override
+only in annotation key order and one compatibility `#define` (8 lines);
+2583042997, below it, ships a
+revision that differs in 109 lines, all strict GLSL fixes (float literals,
+explicit `float()` and `int()` casts, `mix` for `lerp`, `mod2` for `%` on
+uints); 2284874919, also below, ships a much older revision with other
+uniform names. So the override is the effect's strict GLSL revision and
+`maximumprojectid` is the newest wallpaper (by workshop id) still shipping
+an older one.
+
+Implemented as: when the wallpaper's workshop id is numeric and at most
+`maximumprojectid` (a missing value means no limit; an unparsable one
+disables the override), a request for
+`shaders/workshop/<effect id>/<path>` whose last segment is the configured
+frag or vert file name is served from the override folder. Nested copies
+are not matched (no scene below a maximum has one). Local projects without
+a numeric id are never overridden. Whether Wallpaper Engine also replaces a
+revision as old as 2284874919's cannot be observed; phase P3's corpus
+compile shows whether the packaged revisions need the override.
+`assets/zcompat/web/` holds text patches for web wallpapers (`actions` of
+file, replace, insert) and is out of scope here.
 
 ## 3. .tex textures
 
@@ -114,7 +140,7 @@ names of `.tex-json` files that sit next to their compiled texture [asset]:
 
 | Code | Format | Evidence |
 |---|---|---|
-| 0 | RGBA8888 | 4.0 B/px [corpus 1213]; `rgba8888`, `rgb888`, `rgba8888n` compile to 0 [asset 153] |
+| 0 | RGBA8888 | 4.0 B/px [corpus 1213]; `rgba8888`, `rgb888`, `rgba8888n` compile to 0 [asset 153]; bytes are R, G, B, A in that order: `materials/gradient/gradient_fire.tex` reads dark red to yellow (as B, G, R it would be blue) [asset] |
 | 4 | DXT5 (BC3) | 1.0 B/px; `dxt5`, `dxt5n` compile to 4 [asset 8]; alpha blocks show DXT5 endpoint pairs [corpus] |
 | 6 | DXT3 (BC2) | 1.0 B/px; opaque blocks have all-FF explicit alpha, the DXT3 signature [corpus 4897 blocks] |
 | 7 | DXT1 (BC1) | 0.5 B/px [corpus 4 textures] |
@@ -139,6 +165,22 @@ mips smaller than a block still store one whole block per started block
 | per mip: LZ4 flag, decompressed size (TEXB0002+) | u32 x2; when the flag is non zero the payload is an LZ4 block (no frame header) of that decompressed size [corpus 1541/1541 verified] |
 | per mip: payload size, payload | u32, bytes |
 
+TEXB0001 and TEXB0002 have no codec field and hold raw pixels [corpus
+45/45, 82/82].
+
+Mip sizes [corpus]: a mip's width and height fields are the size of its own
+payload. Raw payloads hold exactly that many pixels of the format, block
+formats rounded up to whole blocks (2763 of 2763 raw mips); JPEG and PNG
+payloads decode to exactly that size (every encoded mip); a volume PNG is
+width x (height x depth). Each mip halves the one before, rounded down, at
+least 1 (3193 of 3193). The first mip is at the texture size for raw images
+and at the image size for JPEG and PNG, except in the two multi-image
+sprite sheets, whose later images are smaller (4096x4096 then 2048x2048;
+three of 2048x2048 then 2048x1024: the last image holds the remaining
+frames). Per image sizes therefore come from the mips, not the header. The
+largest first mip decodes to 137 MiB of RGBA (8001 x 4501); no dimension
+exceeds 8192.
+
 After the last image, when flag 0x4 is set:
 
 | Field | Notes |
@@ -149,16 +191,24 @@ After the last image, when flag 0x4 is set:
 | per frame (32 bytes) | u32 image index, f32 duration in seconds, f32 x, f32 y, f32 ux, f32 uy, f32 vx, f32 vy |
 
 A frame is the parallelogram at (x, y) spanned by (ux, uy) and (vx, vy) in
-the image's pixels; every one of the 381 frames seen is axis aligned
-(uy = vx = 0), so it is the rectangle x, y, ux, vy [corpus]. Durations seen:
-0.1, 0.0625 and 0.03 s. 22 frames point at images other than the first.
+the pixels of the image it names (in both multi-image sheets every image's
+frames stay inside that image's own size); every one of the 381 frames
+seen is axis aligned (uy = vx = 0), so it is the rectangle x, y, ux, vy
+[corpus]. Durations seen: 0.1, 0.0625 and 0.03 s. 22 frames point at
+images other than the first.
 
 Volume textures (flag 0x40) hold one PNG of 32 x 1024 pixels: 32 slices
-of 32 x 32 stacked vertically [asset 28/28].
+of 32 x 32 stacked vertically [asset 28/28]. Their header reads texture and
+image size 32 x 32, the extra u32 1024 (32 x 32), flags 0x42, and one mip
+of 32 x 32 x depth 32.
 
-Files must be consumed exactly: anything left over, a size that runs past
-the end, a decompressed size above 256 MiB, dimensions above 16384, more
-than 64 images or 16 mips per image is an error.
+Reader rules (this project): files must be consumed exactly. Anything left
+over, a size that runs past the end, no images, an image without mips, a
+width, height or depth of 0 or above 16384, more than 64 images or 16 mips
+per image, a frame count larger than the bytes left, a frame naming a
+missing image or holding a non finite value, an unknown codec, or a
+TEXV, TEXI, TEXB or TEXS version not listed above is an error. Unknown pixel format codes parse (the report names them) and
+fail at decoding.
 
 ## 4. Decoding
 
@@ -167,16 +217,55 @@ Decoded results are tightly packed rows, top to bottom:
   them as R8 and RG8 textures);
 - DXT1/3/5 stay compressed for upload (S3TC is universal on desktop GL),
   and a CPU decoder to RGBA8 exists for screenshots, tests and drivers
-  without the extension;
-- JPEG (libjpeg-turbo) and PNG (libpng) decode to RGBA8 at the image size;
+  without the extension. It follows the public block definitions (Khronos
+  Data Format Specification, S3TC section; Direct3D 11 block compression
+  documentation for BC1 to BC3) with Direct3D's rules, the API Wallpaper
+  Engine targets (its `.dxs` caches hold DXBC bytecode [corpus]): DXT1
+  uses the three colour mode with transparent black when colour 0 <=
+  colour 1; the colour blocks of DXT3 and DXT5 always use four colours. An
+  opt-in test compares it with the GL driver's own decoding;
+- JPEG (libjpeg-turbo) and PNG (libpng) decode to RGBA8 at the mip size;
+  such textures always carry format code 0, RGBA8888 [corpus 107/107 and
+  403/403], so the result matches the header;
 - MP4 payloads are handed to the video texture path (phase P4b).
+
+A payload whose size (raw, after LZ4) or decoded dimensions differ from
+its mip fields is an error, and so is any single decoded buffer above
+256 MiB (1.9 times the largest seen).
+
+### 4.1 Tools
+
+`desktop-canvas-scene --extract ENTRY OUT WALLPAPER_DIR` looks ENTRY up
+through the layers of section 2; a `.tex` file is decoded (first image,
+first mip; block formats expanded) and written as a PNG with 1, 2 or 4
+channels, its header printed as JSON; any other file is copied as is.
+`--dump DIR WALLPAPER_DIR` writes every `scene.pkg` entry below DIR, which
+must be empty or absent; existing files are never overwritten.
 
 ## Files
 
+All in namespace `canvas::scene`, built into `canvas_scene_core`.
+
 - `ByteReader.h` bounds checked little endian reader over a byte span;
-  every read is checked, failures carry the offset.
-- `MappedFile` read only memory map of a file (RAII).
-- `PackageArchive` scene.pkg per section 1.
-- `AssetLocator` the lookup layers of section 2 for one wallpaper.
-- `TextureFile` parsing per section 3 (no pixel work).
-- `TextureDecode` LZ4, DXT and image codec decoding per section 4.
+  every read is checked, the first failure sticks and carries the offset.
+- `MappedFile` read only memory map of a file (RAII). `openBeneath(root,
+  relative)` opens with `openat2(RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS)`
+  (canonical path check on kernels before 5.6), so symlinks cannot lead a
+  lookup out of its layer's root.
+- `PackageArchive` scene.pkg per section 1: validates the whole table in
+  `open()`/`parse()`, then serves entries as views into the mapping.
+- `AssetLocator` the lookup layers of section 2 for one wallpaper, the
+  section 2.1 overrides (read from `config.json` with nlohmann/json), and
+  `guessAssetsDir()` for the Steam library holding an item. `find()` keeps
+  no state; loose and assets files come back with their own mapping.
+- `TextureFile` parsing per section 3 (no pixel work): `parseTexture()`
+  returns the header, images with their mips (payload views) and frames.
+- `TextureDecode` per section 4: `decodeMip()` (LZ4 through
+  `LZ4_decompress_safe`, JPEG through the TurboJPEG 2.x interface of
+  libjpeg-turbo 2.1 or later with the progressive scan limit and the size
+  checked before allocating, PNG through libpng's simplified API, raw size
+  checks) and `expandBlocks()` (CPU DXT1/3/5 to RGBA8). Stateless, any
+  thread.
+
+Tests: `claude_tests/test_scene_assets.cpp`, `test_scene_corpus.cpp`,
+`test_scene_dxt_gl.cpp` and `fuzz/` (see `claude_tests/README.md`).

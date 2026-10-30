@@ -18,9 +18,13 @@
 namespace canvas::scenehost {
 
 bool writePng(const std::string& path, int width, int height,
-              const std::vector<uint8_t>& rgba) {
-    if (width <= 0 || height <= 0 ||
-        rgba.size() != static_cast<size_t>(width) * height * 4)
+              const std::vector<uint8_t>& pixels, int channels) {
+    int colorType = channels == 1   ? PNG_COLOR_TYPE_GRAY
+                    : channels == 3 ? PNG_COLOR_TYPE_RGB
+                    : channels == 4 ? PNG_COLOR_TYPE_RGBA
+                                    : -1;
+    if (width <= 0 || height <= 0 || colorType < 0 ||
+        pixels.size() != static_cast<size_t>(width) * height * channels)
         return false;
     std::string tmp = path + ".tmp";
     FILE* file = std::fopen(tmp.c_str(), "wb");
@@ -40,13 +44,13 @@ bool writePng(const std::string& path, int width, int height,
     }
     png_init_io(png, file);
     png_set_IHDR(png, info, static_cast<png_uint_32>(width),
-                 static_cast<png_uint_32>(height), 8, PNG_COLOR_TYPE_RGBA,
+                 static_cast<png_uint_32>(height), 8, colorType,
                  PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
                  PNG_FILTER_TYPE_DEFAULT);
     png_write_info(png, info);
+    const size_t stride = static_cast<size_t>(width) * channels;
     for (int y = 0; y < height; y++)
-        png_write_row(png, const_cast<png_bytep>(rgba.data() +
-                                                 static_cast<size_t>(y) * width * 4));
+        png_write_row(png, const_cast<png_bytep>(pixels.data() + y * stride));
     png_write_end(png, nullptr);
     png_destroy_write_struct(&png, &info);
     if (std::fclose(file) != 0) {

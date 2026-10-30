@@ -7,11 +7,16 @@
 #                             release for "scene" wallpapers (default OFF; scenes
 #                             otherwise use the binary found on PATH at runtime).
 #   DESKTOP_CANVAS_SCENE      Build desktop-canvas-scene, the native scene
-#                             renderer helper (default ON; skipped with a
-#                             warning without libepoxy and libpng).
+#                             renderer helper, and its engine libraries
+#                             (default ON; skipped with a warning without
+#                             libepoxy, libpng, lz4 and libjpeg-turbo).
 #   DESKTOP_CANVAS_TESTS      Build the test binaries under claude_tests/
 #                             (default ON, skipped automatically when the
 #                             directory is absent, as in release tarballs).
+#   DESKTOP_CANVAS_FUZZ       Build the libFuzzer targets for the scene file
+#                             readers (default OFF; clang only, and it adds
+#                             AddressSanitizer and UndefinedBehaviorSanitizer
+#                             to the whole build, so use its own build dir).
 #
 # Code is split into static libraries so the daemon, helper binaries and
 # tests share it without relisting sources:
@@ -25,6 +30,11 @@
 #   canvas_daemon   config, library scanning, instance management, child
 #                   supervision, audio policy, IPC, control and the HTTP
 #                   settings UI. Links no display or video library.
+#   canvas_scene_core  scene/: the native scene engine's GPU free part
+#                   (today the asset readers: scene.pkg, file lookup, .tex
+#                   parsing and decoding with lz4, libjpeg-turbo, libpng).
+#   canvas_scene_host  scene-host/: the helper's GL free pacing, surface
+#                   and daemon protocol code, linked by its tests.
 # The desktop-canvas executable is main.cpp plus those libraries, and adds
 # the in-process libmpv video backend (CANVAS_HAVE_VIDEO) when mpv is found;
 # without libmpv the daemon still runs scene and web wallpapers. JSON and CLI
@@ -50,6 +60,18 @@ option(DESKTOP_CANVAS_WEB "Enable Qt6 WebEngine backend for web wallpapers" OFF)
 option(DESKTOP_CANVAS_BUNDLE_LWE "Bundle a pinned linux-wallpaperengine release" OFF)
 option(DESKTOP_CANVAS_SCENE "Build the native scene helper desktop-canvas-scene" ON)
 option(DESKTOP_CANVAS_TESTS "Build tests in claude_tests/" ON)
+option(DESKTOP_CANVAS_FUZZ "Build libFuzzer targets (clang; sanitizes everything)" OFF)
+
+if(DESKTOP_CANVAS_FUZZ)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "DESKTOP_CANVAS_FUZZ needs clang: "
+                            "-DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang")
+    endif()
+    # Coverage for the fuzzer and sanitizers for every library it links.
+    add_compile_options(-fsanitize=address,undefined -fsanitize=fuzzer-no-link
+                        -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -196,12 +218,34 @@ if(TARGET canvas_display)
     endif()
 endif()
 
-# Native scene helper (src/scene-host). canvas_scene_host holds the GL free
-# part (pacing, surfaces, daemon protocol) so tests can link it; the
-# executable adds the GL renderer, headless screenshots and the sandbox.
+# Native scene engine core (src/scene): no GPU code, deterministic. The
+# decoders' libraries stay private; static linking still hands them to
+# whatever links canvas_scene_core.
 pkg_check_modules(EPOXY IMPORTED_TARGET epoxy)
 pkg_check_modules(LIBPNG IMPORTED_TARGET libpng)
-if(DESKTOP_CANVAS_SCENE AND TARGET canvas_display AND EPOXY_FOUND AND LIBPNG_FOUND)
+pkg_check_modules(LZ4 IMPORTED_TARGET liblz4)
+# 2.1 or later: the decoder uses the TurboJPEG 2.x interface with
+# TJFLAG_LIMITSCANS (Debian 12 and Ubuntu 22.04 ship 2.1; 3.x keeps it).
+pkg_check_modules(TURBOJPEG IMPORTED_TARGET libturbojpeg>=2.1)
+if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND)
+    add_library(canvas_scene_core STATIC
+        src/scene/assets/MappedFile.cpp
+        src/scene/assets/PackageArchive.cpp
+        src/scene/assets/AssetLocator.cpp
+        src/scene/assets/TextureFile.cpp
+        src/scene/assets/TextureDecode.cpp
+    )
+    target_link_libraries(canvas_scene_core
+        PUBLIC canvas_core
+        PRIVATE PkgConfig::LZ4 PkgConfig::TURBOJPEG PkgConfig::LIBPNG)
+endif()
+
+# Native scene helper (src/scene-host). canvas_scene_host holds the GL free
+# part (pacing, surfaces, daemon protocol) so tests can link it; the
+# executable adds the GL renderer, headless screenshots, the asset tools
+# and the sandbox.
+if(DESKTOP_CANVAS_SCENE AND TARGET canvas_display AND TARGET canvas_scene_core
+   AND EPOXY_FOUND)
     add_library(canvas_scene_host STATIC
         src/scene-host/FrameClock.cpp
         src/scene-host/SceneHost.cpp
@@ -209,16 +253,19 @@ if(DESKTOP_CANVAS_SCENE AND TARGET canvas_display AND EPOXY_FOUND AND LIBPNG_FOU
     target_link_libraries(canvas_scene_host PUBLIC canvas_core)
     add_executable(desktop-canvas-scene
         src/scene-host/main.cpp
+        src/scene-host/AssetTools.cpp
         src/scene-host/PlaceholderRenderer.cpp
         src/scene-host/Screenshot.cpp
         src/scene-host/Sandbox.cpp
     )
     target_link_libraries(desktop-canvas-scene PRIVATE
-        canvas_scene_host canvas_display PkgConfig::EPOXY PkgConfig::LIBPNG)
+        canvas_scene_host canvas_scene_core canvas_display PkgConfig::EPOXY
+        PkgConfig::LIBPNG)
     install(TARGETS desktop-canvas-scene RUNTIME DESTINATION bin)
 elseif(DESKTOP_CANVAS_SCENE)
     message(WARNING "desktop-canvas-scene not built: it needs a display "
-                    "backend, libepoxy and libpng development files")
+                    "backend and the libepoxy, libpng, lz4 and "
+                    "libjpeg-turbo development files")
 endif()
 
 # Control CLI. Talks to the daemon over its unix socket.

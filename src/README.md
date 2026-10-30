@@ -26,9 +26,12 @@ Daemon source tree. Module map:
   the executable only)
 - `web-helper/` desktop-canvas-web, the optional Qt6 WebEngine child
   process for web wallpapers (DESKTOP_CANVAS_WEB=ON)
+- `scene/` the native scene engine (clean room rewrite, see its README):
+  so far `assets/`, the scene.pkg, file lookup and .tex readers (plan
+  phase P1)
 - `scene-host/` desktop-canvas-scene, the native scene renderer helper
-  (engines "native" and "auto"; the engine itself arrives with plan phases
-  P1 onward, until then a placeholder colour), DESKTOP_CANVAS_SCENE=ON
+  (engines "native" and "auto"; until the engine renders, a placeholder
+  colour) and its `--extract`/`--dump` asset tools, DESKTOP_CANVAS_SCENE=ON
 - `process/` child process supervision (process groups, death signal,
   control channel on fd 3, exit policies), the daemon/helper protocol,
   helper lookup, linux-wallpaperengine command construction, and the
@@ -52,8 +55,10 @@ is `config/`, `source/`, `render/` except VideoBackend, `process/`, `audio/`,
 `ipc/`, `control/` and `http/`, and links no display or video library. The
 `desktop-canvas` executable is `main.cpp` plus those, with
 `render/VideoBackend.cpp` and libmpv added when mpv is found.
-`canvas_scene_host` (scene-host pacing and protocol, no GL) plus the GL
-parts, canvas_display, libepoxy and libpng make `desktop-canvas-scene`.
+`canvas_scene_core` is `scene/` (no GPU code; links lz4, libjpeg-turbo and
+libpng). `canvas_scene_host` (scene-host pacing and protocol, no GL) plus
+the GL parts and asset tools, canvas_scene_core, canvas_display, libepoxy
+and libpng make `desktop-canvas-scene`.
 
 Data flow: main.cpp builds Config, picks a Platform, constructs
 InstanceManager, which scans wallpapers (source/), reconciles config

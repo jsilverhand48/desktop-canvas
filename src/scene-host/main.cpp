@@ -13,14 +13,23 @@
 //       print the support report as JSON and exit (0 supported, 3 not)
 //   desktop-canvas-scene --list-devices
 //       list EGL devices usable for --screenshot
+//   desktop-canvas-scene --extract ENTRY OUT WALLPAPER_DIR
+//       look ENTRY up like the renderer does (scene/assets/README.md
+//       section 2); a .tex is decoded to a PNG at OUT, anything else copied
+//   desktop-canvas-scene --dump DIR WALLPAPER_DIR
+//       write every scene.pkg entry below DIR (empty or absent)
+//
+// Without --assets-dir the Wallpaper Engine assets folder is looked for in
+// the Steam library holding the wallpaper (AssetLocator::guessAssetsDir).
 //
 // --strict (what "auto" passes) makes content that needs anything this
 // build cannot render a reason to stop: the helper reports the list over
 // the control channel and exits with helper::kExitUnsupported so the daemon
 // falls back to linux-wallpaperengine. Without it ("native"), whatever is
-// supported is shown and the rest skipped. The scene engine itself lands in
-// plan phases P1 onward; until then nothing is supported and the helper
-// shows a solid placeholder colour.
+// supported is shown and the rest skipped. Of the scene engine only the
+// asset readers exist so far (plan phase P1, behind --extract and --dump);
+// until it renders, nothing is supported and the helper shows a solid
+// placeholder colour.
 //
 // Exit codes follow process/HelperProtocol.h: 0 clean, 2 usage, 3
 // unsupported, 1 runtime failure (counted as a crash by the daemon).
@@ -42,10 +51,12 @@
 #include "display/Platform.h"
 #include "gl/EglContext.h"
 #include "process/HelperProtocol.h"
+#include "scene-host/AssetTools.h"
 #include "scene-host/PlaceholderRenderer.h"
 #include "scene-host/Sandbox.h"
 #include "scene-host/SceneHost.h"
 #include "scene-host/Screenshot.h"
+#include "scene/assets/AssetLocator.h"
 
 #ifdef CANVAS_HAVE_WAYLAND
 #include "display/wayland/WaylandPlatform.h"
@@ -133,6 +144,8 @@ int main(int argc, char** argv) {
     bool listDevices = false;
     bool noSandbox = false;
     bool glDebug = false;
+    std::vector<std::string> extract;
+    std::string dump;
 
     app.add_option("wallpaper", wallpaper, "Wallpaper directory (has project.json)");
     app.add_option("--control-fd", controlFd, "Daemon control socket (HelperProtocol)");
@@ -156,6 +169,10 @@ int main(int argc, char** argv) {
     app.add_flag("--list-devices", listDevices, "List EGL devices and exit");
     app.add_flag("--no-sandbox", noSandbox, "Do not apply the Landlock sandbox");
     app.add_flag("--gl-debug", glDebug, "Create a GL debug context");
+    app.add_option("--extract", extract, "ENTRY OUT: decode or copy one file and exit")
+        ->expected(2)
+        ->allow_extra_args(false);  // leave WALLPAPER_DIR to the positional
+    app.add_option("--dump", dump, "Write every scene.pkg entry below this folder");
     try {
         app.parse(argc, argv);
     } catch (const CLI::ParseError& e) {
@@ -174,6 +191,28 @@ int main(int argc, char** argv) {
         std::cerr << "desktop-canvas-scene: no project.json in '" << wallpaper
                   << "'\n";
         return helper::kExitUsage;
+    }
+
+    if (assetsDir.empty())
+        if (auto guess = scene::AssetLocator::guessAssetsDir(wallpaper))
+            assetsDir = guess->string();
+
+    if (!extract.empty() || !dump.empty()) {
+        scene::AssetLocator assets;
+        if (!assets.open(wallpaper, assetsDir)) {
+            std::cerr << "desktop-canvas-scene: " << assets.error() << "\n";
+            return 1;
+        }
+        if (!extract.empty()) {
+            fs::path out = fs::absolute(extract[1]);
+            if (!noSandbox) scenehost::applySandbox(writablePaths(out.parent_path()));
+            return scenehost::extractAsset(assets, extract[0], out);
+        }
+        fs::path out = fs::absolute(dump);
+        std::error_code ec;
+        fs::create_directories(out, ec);  // must exist to be sandbox writable
+        if (!noSandbox) scenehost::applySandbox(writablePaths(out.string()));
+        return scenehost::dumpPackage(assets, out);
     }
 
     auto unsupported = unsupportedFeatures(wallpaper);

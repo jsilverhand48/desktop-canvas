@@ -6,8 +6,9 @@ it for scene wallpapers on the "native" and "auto" engines (see
 over the control channel protocol in `process/HelperProtocol.h`. It also
 runs by hand for previews, screenshots and checks.
 
-Status: plan phase P0b. The scene engine itself (`src/scene/`, phases P1
-onward) does not exist yet, so the support check reports everything as
+Status: plan phase P1. The engine's asset readers (`src/scene/assets/`)
+are in and power the `--extract` and `--dump` tools; rendering arrives
+with later phases, so the support check still reports every scene as
 unsupported and "native" mode shows a solid dark slate placeholder. Every
 other part (surfaces, pacing, protocol, sandbox, headless screenshots) is
 real and tested.
@@ -23,6 +24,17 @@ blocks the daemon's single threaded event loop.
   X11) with a GL 3.3 core, robust, alpha-less EGL context, sandbox, then
   SceneHost. Modes and flags are listed in its header comment; exit codes
   follow HelperProtocol (0 clean, 2 usage, 3 unsupported, 1 failure).
+  Without `--assets-dir` it looks for the Wallpaper Engine assets folder
+  in the Steam library holding the wallpaper
+  (`scene::AssetLocator::guessAssetsDir`).
+- `AssetTools` the inspection modes of `src/scene/assets/README.md`
+  section 4.1. `--extract ENTRY OUT` resolves ENTRY through the lookup
+  layers (logging which one answered); a `.tex` is decoded (first image,
+  first mip, DXT expanded) and written as a PNG (R8 grayscale, RG88 as RGB
+  with blue 0, else RGBA; volume slices stacked) with its header printed as
+  JSON, anything else is copied. `--dump DIR` writes every scene.pkg entry
+  below DIR, which must be empty or absent, never replacing a file. Both
+  run sandboxed, writable only where they write.
 - `SceneHost` everything around the pixels: one RenderSurface per wanted
   output (dropped when the output disappears, recreated when it returns or
   reports `closed()`), frame pacing, and the helper side of the protocol
@@ -43,7 +55,8 @@ blocks the daemon's single threaded event loop.
 - `PlaceholderRenderer` clears to one colour (libepoxy).
 - `Screenshot` headless rendering into an RGBA8 framebuffer object and an
   atomic PNG write through libpng (`--screenshot`, `--size`, `--frames`,
-  `--device`).
+  `--device`); `writePng()` also takes 1 (gray) and 3 (RGB) channel images
+  for AssetTools.
 - `Sandbox` Landlock self restriction applied after the display connection
   and GL context exist: no file writes outside the cache, runtime and temp
   directories (device nodes stay writable for the GPU driver), no TCP bind
@@ -60,6 +73,7 @@ while unpaused and at least one output is uncovered.
 ## Libraries
 
 `canvas_scene_host` (SceneHost, FrameClock; links canvas_core) is shared
-with the tests; the executable adds the GL parts and links canvas_display,
-libepoxy and libpng. Built when `DESKTOP_CANVAS_SCENE` is on (default) and
-those are found.
+with the tests; the executable adds the GL parts and the asset tools and
+links canvas_scene_core, canvas_display, libepoxy and libpng. Built when
+`DESKTOP_CANVAS_SCENE` is on (default) and those are found
+(canvas_scene_core needs lz4 and libjpeg-turbo too).
