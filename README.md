@@ -20,8 +20,8 @@ Audio from wallpapers is muted by default; unmute with
 - Wayland compositor implementing wlr-layer-shell (KDE Plasma, Hyprland,
   Sway, and other wlroots compositors), or X11 (backend in progress).
   GNOME Wayland is not supported (Mutter lacks layer-shell).
-- libmpv, wayland, EGL at runtime; linux-wallpaperengine for scene
-  wallpapers.
+- wayland (or X11) and EGL at runtime; libmpv for video wallpapers;
+  linux-wallpaperengine for scene wallpapers.
 - Wallpaper Engine workshop content, e.g. a Steam library containing
   `steamapps/workshop/content/431960`. Content roots are autodetected from
   `~/.local/share/Steam`, `~/.steam/steam`, and
@@ -39,7 +39,10 @@ cmake --install build          # optional, installs to /usr/local
 Options: `-DDESKTOP_CANVAS_WEB=ON` (web wallpapers via Qt6 WebEngine),
 `-DDESKTOP_CANVAS_BUNDLE_LWE=ON` (download and bundle a pinned
 linux-wallpaperengine), `-DDESKTOP_CANVAS_TESTS=OFF`. Tests build by default
-when `claude_tests/` is present and are skipped when it is not.
+when `claude_tests/` is present and are skipped when it is not. libmpv is
+optional at build time: without its development files configure warns and
+the daemon is built without video support, while scene and web wallpapers
+still work.
 
 Installing places the `desktop-canvas` daemon and `desktop-canvasctl` in
 `bin`, plus a systemd user unit, an XDG desktop entry, AppStream metainfo, an

@@ -16,11 +16,6 @@
 #include "source/SceneOptions.h"
 #include "source/WorkshopScanner.h"
 
-#if defined(CANVAS_HAVE_WAYLAND) || defined(CANVAS_HAVE_X11)
-#define CANVAS_HAVE_VIDEO 1
-#include "render/VideoBackend.h"
-#endif
-
 namespace canvas {
 
 InstanceManager::InstanceManager(EventLoop& loop, Platform* platform,
@@ -211,17 +206,17 @@ void InstanceManager::startInstance(const std::vector<std::string>& group,
             break;
         }
         case WallpaperType::Video: {
-#ifdef CANVAS_HAVE_VIDEO
+            // The factory comes from main.cpp, which owns the libmpv
+            // backend; builds without libmpv install none.
+            if (!videoFactory_) {
+                log::error() << "video backend not built (needs libmpv)";
+                return;
+            }
             RenderSurface* surface = surfaceFor(outputName);
             if (!surface) return;
-            instance = std::make_shared<VideoInstance>(
-                loop_, *surface, info.id, info.filePath().string(),
-                config_.scaling, muted, audio_.volume());
+            instance = videoFactory_(*surface, info, muted);
+            if (!instance) return;
             break;
-#else
-            log::error() << "video backend not built";
-            return;
-#endif
         }
         case WallpaperType::Web: {
             std::string helper = findWebHelper();

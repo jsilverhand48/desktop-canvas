@@ -20,6 +20,14 @@ Platform and surface abstractions.
 Scene wallpapers bypass RenderSurface entirely; their child process creates
 its own surface (see src/process/).
 
+Build: the backends here, `src/gl/` and `src/input/X11PointerPoller` form
+the `canvas_display` static library. Each backend needs only EGL plus its
+own libraries (wayland-client and wayland-egl, or x11 and xrandr); libmpv is
+not required, since only the daemon's video backend uses it. Linking
+`canvas_display` exports `CANVAS_HAVE_WAYLAND` / `CANVAS_HAVE_X11` to the
+linking target. The generated Wayland protocol headers stay private to the
+library; public headers here only forward declare protocol structs.
+
 `wayland/WaylandLayerOutput` uses the layer shell `background` layer by
 default. Do not switch to `bottom` looking for something lower: KWin maps
 `bottom` to BelowLayer, which is above the DesktopLayer that `background`

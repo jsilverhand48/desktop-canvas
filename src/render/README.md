@@ -43,6 +43,13 @@ Wallpaper instance orchestration and in-process backends.
   switching back to a video), so each video gets a fresh surface; X11
   windows are reused. The per video leak once blamed on surface churn came
   from freeing mpv without its GL context current (see VideoBackend below).
+  Video instances are built by an injected `VideoFactory`
+  (`setVideoFactory`): main.cpp installs `VideoInstance` when compiled with
+  libmpv, tests install fakes, and without a factory a video assignment is
+  logged and leaves the output blank. InstanceManager therefore links no
+  display or video library and lives in the `canvas_daemon` library;
+  `claude_tests/test_video_factory` drives its apply() against
+  `claude_tests/fakes/FakePlatform.h`.
 - `Rotator` timed rotation over the enabled wallpapers in config: every
   `playlist.interval` seconds it draws a random id (skipping ids missing from the library,
   unsupported, or blacklisted) and installs it as a runtime override on
@@ -54,7 +61,9 @@ Wallpaper instance orchestration and in-process backends.
   wallpapers are enabled or disabled without forcing a pick (a running
   rotation keeps its schedule). With one usable wallpaper and random
   variants on, a tick relaunches it so a new variant shows.
-- `VideoBackend` (`VideoInstance`) libmpv render API into a RenderSurface:
+- `VideoBackend` (`VideoInstance`), compiled into the `desktop-canvas`
+  executable only (`CANVAS_HAVE_VIDEO`, set when libmpv is found), not into
+  `canvas_daemon`. libmpv render API into a RenderSurface:
   update callback bridged via eventfd, frames rendered only when both mpv
   has a new frame and the compositor signaled readiness. Mute toggles live
   via the mpv "mute" property. Teardown makes the surface current before

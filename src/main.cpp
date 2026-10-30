@@ -10,6 +10,9 @@
 // Flag precedence: defaults < config file < command line. See
 // config/Config.h for the file schema and ipc/Protocol.h for the control
 // protocol used by desktop-canvasctl.
+// Wiring: this file picks the display Platform (Wayland, then X11) and, when
+// built with libmpv (CANVAS_HAVE_VIDEO), installs the in-process video
+// backend as InstanceManager's VideoFactory.
 #include <malloc.h>
 
 #include <cstdlib>
@@ -42,6 +45,9 @@
 #endif
 #ifdef CANVAS_HAVE_X11
 #include "display/x11/X11Platform.h"
+#endif
+#ifdef CANVAS_HAVE_VIDEO
+#include "render/VideoBackend.h"
 #endif
 
 using nlohmann::json;
@@ -136,6 +142,17 @@ int runDaemon(Config& config) {
     ChildSupervisor supervisor(loop);
     InstanceManager manager(loop, platform.get(), config, audio, supervisor);
     manager.setSceneLayerSupported(lweLayer);
+#ifdef CANVAS_HAVE_VIDEO
+    // Video plays in process through libmpv. Injecting it here keeps that
+    // dependency out of InstanceManager and the libraries tests link.
+    manager.setVideoFactory([&loop, &config, &audio](
+                                RenderSurface& surface,
+                                const WallpaperInfo& info, bool muted) {
+        return std::make_shared<VideoInstance>(
+            loop, surface, info.id, info.filePath().string(), config.scaling,
+            muted, audio.volume());
+    });
+#endif
 
     Rotator rotator(loop, manager, config);
 

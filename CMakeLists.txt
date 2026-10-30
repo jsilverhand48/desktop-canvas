@@ -10,8 +10,21 @@
 #                             (default ON, skipped automatically when the
 #                             directory is absent, as in release tarballs).
 #
-# The daemon itself links Wayland, EGL, libmpv, and X11 libraries. JSON and
-# CLI parsing use vendored single header libraries in third_party/.
+# Code is split into static libraries so the daemon, helper binaries and
+# tests share it without relisting sources:
+#   canvas_core     core/: the epoll event loop everything else runs on.
+#   canvas_display  gl/ EGL helpers, the display/ Wayland and X11 backends
+#                   and the X11 pointer poller. Built when EGL plus Wayland
+#                   (wayland-client, wayland-egl) or X11 (x11, xrandr) are
+#                   found; exports CANVAS_HAVE_WAYLAND / CANVAS_HAVE_X11 to
+#                   targets linking it. Does not need libmpv.
+#   canvas_daemon   config, library scanning, instance management, child
+#                   supervision, audio policy, IPC, control and the HTTP
+#                   settings UI. Links no display or video library.
+# The desktop-canvas executable is main.cpp plus those libraries, and adds
+# the in-process libmpv video backend (CANVAS_HAVE_VIDEO) when mpv is found;
+# without libmpv the daemon still runs scene and web wallpapers. JSON and CLI
+# parsing use vendored single header libraries in third_party/.
 #
 # Besides the binaries this installs the desktop entry, AppStream metainfo,
 # application icon, systemd user unit, licence and the optional KDE Plasma
@@ -46,87 +59,103 @@ pkg_check_modules(XRANDR IMPORTED_TARGET xrandr)
 
 include(WaylandProtocols)
 
-# Core sources present in every build. Display and render backends are added
-# below when their dependencies are available.
-set(CANVAS_SOURCES
-    src/main.cpp
-    src/core/EventLoop.cpp
+# canvas_core: the event loop. Its public include path (src, third_party) is
+# inherited by every target that links a canvas_* library.
+add_library(canvas_core STATIC src/core/EventLoop.cpp)
+target_include_directories(canvas_core PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+)
+
+# canvas_display: each backend needs EGL plus its own libraries. Neither
+# needs libmpv; video is an optional backend of the daemon executable only.
+set(CANVAS_HAVE_WAYLAND FALSE)
+if(WAYLAND_CLIENT_FOUND AND WAYLAND_EGL_FOUND AND EGL_FOUND)
+    set(CANVAS_HAVE_WAYLAND TRUE)
+endif()
+set(CANVAS_HAVE_X11 FALSE)
+if(X11_FOUND AND XRANDR_FOUND AND EGL_FOUND)
+    set(CANVAS_HAVE_X11 TRUE)
+endif()
+
+if(CANVAS_HAVE_WAYLAND OR CANVAS_HAVE_X11)
+    add_library(canvas_display STATIC src/gl/EglContext.cpp)
+    target_link_libraries(canvas_display PUBLIC canvas_core PkgConfig::EGL)
+    if(GL_FOUND)
+        target_link_libraries(canvas_display PUBLIC PkgConfig::GL)
+    endif()
+    if(CANVAS_HAVE_WAYLAND)
+        target_sources(canvas_display PRIVATE
+            src/display/wayland/WaylandConnection.cpp
+            src/display/wayland/WaylandLayerOutput.cpp
+            src/display/wayland/WaylandPlatform.cpp
+        )
+        # Generated protocol headers stay private: the public display
+        # headers only forward declare the protocol structs.
+        canvas_add_wayland_protocols(canvas_display
+            ${CMAKE_CURRENT_SOURCE_DIR}/protocol/xdg-shell.xml
+            ${CMAKE_CURRENT_SOURCE_DIR}/protocol/wlr-layer-shell-unstable-v1.xml
+            ${CMAKE_CURRENT_SOURCE_DIR}/protocol/xdg-output-unstable-v1.xml
+            ${CMAKE_CURRENT_SOURCE_DIR}/protocol/fractional-scale-v1.xml
+        )
+        target_link_libraries(canvas_display PUBLIC
+            PkgConfig::WAYLAND_CLIENT PkgConfig::WAYLAND_EGL)
+        target_compile_definitions(canvas_display PUBLIC CANVAS_HAVE_WAYLAND=1)
+    endif()
+    if(CANVAS_HAVE_X11)
+        target_sources(canvas_display PRIVATE
+            src/display/x11/X11Connection.cpp
+            src/display/x11/X11DesktopOutput.cpp
+            src/display/x11/X11Platform.cpp
+            src/input/X11PointerPoller.cpp
+        )
+        target_link_libraries(canvas_display PUBLIC
+            PkgConfig::X11 PkgConfig::XRANDR)
+        target_compile_definitions(canvas_display PUBLIC CANVAS_HAVE_X11=1)
+    endif()
+else()
+    message(WARNING "No display backend: install EGL plus the Wayland "
+                    "(wayland-client, wayland-egl) or X11 (x11, xrandr) "
+                    "development files. The daemon will only support --list.")
+endif()
+
+# canvas_daemon: everything the daemon does that is not display or video
+# specific. Tests link this instead of relisting production sources.
+add_library(canvas_daemon STATIC
     src/config/Config.cpp
     src/source/WorkshopScanner.cpp
     src/source/Playlist.cpp
     src/source/SceneOptions.cpp
     src/source/LibraryWatcher.cpp
     src/render/Rotator.cpp
+    src/render/InstanceManager.cpp
     src/audio/AudioPolicy.cpp
     src/process/ChildSupervisor.cpp
     src/process/LweCommandBuilder.cpp
     src/process/ExternalProcessInstance.cpp
-    src/render/InstanceManager.cpp
     src/ipc/IpcServer.cpp
     src/control/Controller.cpp
     src/http/HttpServer.cpp
     src/http/WebApi.cpp
 )
-
-set(CANVAS_HAVE_WAYLAND FALSE)
-if(WAYLAND_CLIENT_FOUND AND WAYLAND_EGL_FOUND AND EGL_FOUND AND MPV_FOUND)
-    set(CANVAS_HAVE_WAYLAND TRUE)
-    list(APPEND CANVAS_SOURCES
-        src/display/wayland/WaylandConnection.cpp
-        src/display/wayland/WaylandLayerOutput.cpp
-        src/display/wayland/WaylandPlatform.cpp
-    )
-endif()
-
-set(CANVAS_HAVE_X11 FALSE)
-if(X11_FOUND AND XRANDR_FOUND AND EGL_FOUND AND MPV_FOUND)
-    set(CANVAS_HAVE_X11 TRUE)
-    list(APPEND CANVAS_SOURCES
-        src/display/x11/X11Connection.cpp
-        src/display/x11/X11DesktopOutput.cpp
-        src/display/x11/X11Platform.cpp
-        src/input/X11PointerPoller.cpp
-    )
-endif()
-
-# Shared GL/video sources used by both display backends.
-if(CANVAS_HAVE_WAYLAND OR CANVAS_HAVE_X11)
-    list(APPEND CANVAS_SOURCES
-        src/gl/EglContext.cpp
-        src/render/VideoBackend.cpp
-    )
-endif()
-
-add_executable(desktop-canvas ${CANVAS_SOURCES})
+target_link_libraries(canvas_daemon PUBLIC canvas_core)
 # Settings UI files (data/ui): installed under share/desktop-canvas/ui; the
 # source tree path lets a development build serve them without installing.
-target_compile_definitions(desktop-canvas PRIVATE
+target_compile_definitions(canvas_daemon PRIVATE
     CANVAS_UI_INSTALL_DIR="${CMAKE_INSTALL_PREFIX}/share/desktop-canvas/ui"
     CANVAS_UI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data/ui")
-target_include_directories(desktop-canvas PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
-)
 
-if(CANVAS_HAVE_WAYLAND)
-    canvas_add_wayland_protocols(desktop-canvas
-        ${CMAKE_CURRENT_SOURCE_DIR}/protocol/xdg-shell.xml
-        ${CMAKE_CURRENT_SOURCE_DIR}/protocol/wlr-layer-shell-unstable-v1.xml
-        ${CMAKE_CURRENT_SOURCE_DIR}/protocol/xdg-output-unstable-v1.xml
-        ${CMAKE_CURRENT_SOURCE_DIR}/protocol/fractional-scale-v1.xml
-    )
-    target_link_libraries(desktop-canvas PRIVATE
-        PkgConfig::WAYLAND_CLIENT PkgConfig::WAYLAND_EGL)
-    target_compile_definitions(desktop-canvas PRIVATE CANVAS_HAVE_WAYLAND=1)
-endif()
-if(CANVAS_HAVE_X11)
-    target_link_libraries(desktop-canvas PRIVATE PkgConfig::X11 PkgConfig::XRANDR)
-    target_compile_definitions(desktop-canvas PRIVATE CANVAS_HAVE_X11=1)
-endif()
-if(EGL_FOUND AND MPV_FOUND AND (CANVAS_HAVE_WAYLAND OR CANVAS_HAVE_X11))
-    target_link_libraries(desktop-canvas PRIVATE PkgConfig::EGL PkgConfig::MPV)
-    if(GL_FOUND)
-        target_link_libraries(desktop-canvas PRIVATE PkgConfig::GL)
+add_executable(desktop-canvas src/main.cpp)
+target_link_libraries(desktop-canvas PRIVATE canvas_daemon)
+if(TARGET canvas_display)
+    target_link_libraries(desktop-canvas PRIVATE canvas_display)
+    # In process video: libmpv rendering into a display backend surface.
+    if(MPV_FOUND)
+        target_sources(desktop-canvas PRIVATE src/render/VideoBackend.cpp)
+        target_link_libraries(desktop-canvas PRIVATE PkgConfig::MPV)
+        target_compile_definitions(desktop-canvas PRIVATE CANVAS_HAVE_VIDEO=1)
+    else()
+        message(WARNING "libmpv not found: video wallpapers will not play")
     endif()
 endif()
 

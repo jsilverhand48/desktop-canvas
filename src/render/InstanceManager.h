@@ -4,8 +4,13 @@
 // wallpaper id) into running instances, and services IPC commands. Per
 // wallpaper type:
 //   scene -> ExternalProcessInstance (linux-wallpaperengine child)
-//   video -> VideoInstance on a Platform RenderSurface
-//   web   -> optional backend (M6); reported unsupported otherwise
+//   video -> whatever the injected VideoFactory builds on a Platform
+//            RenderSurface (main.cpp installs the libmpv VideoInstance;
+//            without a factory video wallpapers are logged and left blank)
+//   web   -> ExternalProcessInstance running desktop-canvas-web when built
+// This module links no display or video library: Platform and RenderSurface
+// are interfaces and video arrives through the factory, so tests can drive
+// apply() against fakes.
 // Wallpapers whose scene child keeps crashing are added to config.broken and
 // unassigned automatically.
 //
@@ -71,6 +76,15 @@ public:
     // otherwise lwe picks its own default ("bottom" on r598+, which covers
     // the Plasma desktop icons). Takes effect on the next started scene.
     void setSceneLayerSupported(bool supported) { sceneLayerSupported_ = supported; }
+
+    // Builds the in-process instance for a video wallpaper on surface (one
+    // output; video never merges). Returning null leaves the output blank.
+    // Set once at startup; instances already running are unaffected.
+    using VideoFactory = std::function<std::shared_ptr<WallpaperInstance>(
+        RenderSurface& surface, const WallpaperInfo& info, bool muted)>;
+    void setVideoFactory(VideoFactory factory) {
+        videoFactory_ = std::move(factory);
+    }
 
     // Reconciles running instances with config assignments and the current
     // output list. Safe to call repeatedly; only differences cause changes.
@@ -144,6 +158,7 @@ private:
     std::function<void()> onRescan_;
     std::string assetsDir_;
     bool sceneLayerSupported_ = false;
+    VideoFactory videoFactory_;
     // Draws random scene variants when config_.sceneRandomizeOptions is on.
     std::mt19937 optionRng_{std::random_device{}()};
     // Declared before slots_ so instances, which borrow these surfaces, are

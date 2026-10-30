@@ -8,6 +8,8 @@ Daemon source tree. Module map:
   runDaemon() caps glibc at two malloc arenas (unless MALLOC_ARENA_MAX is
   set) before any thread starts, so memory freed by libmpv's many threads
   is actually returned to the system; see render/README.md (VideoBackend).
+  When built with libmpv (CANVAS_HAVE_VIDEO) it installs VideoInstance as
+  InstanceManager's VideoFactory.
 - `core/` event loop (epoll), logging
 - `config/` config file schema, load/save, CLI merge
 - `source/` workshop content scanner (project.json parsing), the rotation
@@ -17,7 +19,8 @@ Daemon source tree. Module map:
   implementation; `x11/` DESKTOP window implementation (M4)
 - `gl/` EGL display/context/surface helpers
 - `render/` WallpaperInstance interface, InstanceManager orchestration,
-  Rotator (timed playlist rotation), VideoBackend (libmpv)
+  Rotator (timed playlist rotation), VideoBackend (libmpv, compiled into
+  the executable only)
 - `web-helper/` desktop-canvas-web, the optional Qt6 WebEngine child
   process for web wallpapers (DESKTOP_CANVAS_WEB=ON)
 - `process/` child process supervision and linux-wallpaperengine command
@@ -29,6 +32,15 @@ Daemon source tree. Module map:
   settings UI
 - `http/` 127.0.0.1 HTTP server and JSON routes for the settings UI
   (front end files in data/ui)
+
+Build layout (root CMakeLists.txt): the tree compiles into static libraries
+shared by the daemon, helper binaries and tests. `canvas_core` is `core/`;
+`canvas_display` is `gl/`, `display/` and `input/X11PointerPoller` (built when
+EGL plus Wayland or X11 are available, never needs libmpv); `canvas_daemon`
+is `config/`, `source/`, `render/` except VideoBackend, `process/`, `audio/`,
+`ipc/`, `control/` and `http/`, and links no display or video library. The
+`desktop-canvas` executable is `main.cpp` plus those, with
+`render/VideoBackend.cpp` and libmpv added when mpv is found.
 
 Data flow: main.cpp builds Config, picks a Platform, constructs
 InstanceManager, which scans wallpapers (source/), reconciles config
