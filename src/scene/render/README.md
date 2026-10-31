@@ -343,9 +343,12 @@ Video textures (flag 0x20, an MP4 payload; 6 textures in 3 scenes
 [corpus]) play in a loop without sound through libmpv's render API into
 a texture of the video's size (the whole texture is the image) when the
 helper is built with libmpv; until the first frame, or without libmpv,
-the 1x1 stand in shows. The bytes reach mpv through an in memory file
-(memfd), so nothing is written to disk [inference: the format only says
-the payload is an MP4 file].
+the 1x1 stand in shows. The bytes reach mpv through its stream
+callbacks, read in place from the mapped package, so nothing is copied
+or written to disk; two decoder threads and a 16 MiB read ahead keep a
+4K video near 100 MiB (measured: one frame thread per core took 1.28 GiB
+for two videos) [inference: the format only says the payload is an MP4
+file].
 
 ## 10. Timeline animations
 

@@ -2,9 +2,14 @@
 // memory played in a loop, without sound, into a GL texture through
 // libmpv's render API.
 //
-// open() copies the bytes into a memfd and has mpv load "fd://N", so
-// nothing touches the disk; mpv decodes on its own threads (software
-// decoding, no config files, no terminal). update() renders mpv's newest
+// open() hands mpv the bytes through a read only stream protocol of its
+// own (mpv's stream callbacks), so mpv reads the mapped package directly:
+// no copy, nothing on disk. The bytes must stay valid while the texture
+// lives: `keep` holds whatever owns them (a mapping, or a decompressed
+// buffer). mpv decodes on its own threads: software decoding with two
+// decoder threads and a 16 MiB read ahead, which keeps a 4K video near
+// 100 MiB instead of one frame thread per core; no config files, no
+// terminal. update() renders mpv's newest
 // frame into the texture when there is one (call it once per frame with
 // the GL context current); texture() is 0 until the first frame. Built
 // only with libmpv (CANVAS_SCENE_HAVE_MPV); otherwise open() reports that
@@ -26,7 +31,9 @@ namespace canvas::scene {
 
 class VideoTexture {
 public:
-    static std::unique_ptr<VideoTexture> open(std::span<const uint8_t> mp4, std::string& error);
+    static std::unique_ptr<VideoTexture> open(std::span<const uint8_t> mp4,
+                                              std::shared_ptr<const void> keep,
+                                              std::string& error);
     // True when this build plays video textures (libmpv).
     static bool available();
     ~VideoTexture();
@@ -46,7 +53,8 @@ private:
 
     mpv_handle* mpv_ = nullptr;
     mpv_render_context* render_ = nullptr;
-    int memfd_ = -1;
+    std::span<const uint8_t> bytes_;
+    std::shared_ptr<const void> keep_;
     GLuint fbo_ = 0, texture_ = 0;
     int width_ = 0, height_ = 0;
     std::atomic<bool> pending_{false};

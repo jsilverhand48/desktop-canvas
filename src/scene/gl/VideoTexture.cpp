@@ -6,8 +6,10 @@
 #include <epoxy/egl.h>
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
-#include <sys/mman.h>
-#include <unistd.h>
+#include <mpv/stream_cb.h>
+
+#include <algorithm>
+#include <cstring>
 
 #include "core/Log.h"
 
@@ -19,27 +21,51 @@ void* procAddress(void*, const char* name) {
     return reinterpret_cast<void*>(eglGetProcAddress(name));
 }
 
-bool writeAll(int fd, std::span<const uint8_t> bytes) {
-    size_t done = 0;
-    while (done < bytes.size()) {
-        ssize_t n = ::write(fd, bytes.data() + done, bytes.size() - done);
-        if (n <= 0) return false;
-        done += size_t(n);
-    }
-    return true;
+// One open stream over the video's bytes (mpv may open it more than
+// once); mpv reads, seeks and closes it from its own threads.
+struct Cursor {
+    std::span<const uint8_t> bytes;
+    size_t pos = 0;
+};
+
+int64_t streamRead(void* cookie, char* buf, uint64_t nbytes) {
+    auto* c = static_cast<Cursor*>(cookie);
+    const size_t n = size_t(std::min<uint64_t>(nbytes, c->bytes.size() - c->pos));
+    std::memcpy(buf, c->bytes.data() + c->pos, n);
+    c->pos += n;
+    return int64_t(n);
+}
+
+int64_t streamSeek(void* cookie, int64_t offset) {
+    auto* c = static_cast<Cursor*>(cookie);
+    if (offset < 0 || uint64_t(offset) > c->bytes.size()) return MPV_ERROR_GENERIC;
+    c->pos = size_t(offset);
+    return offset;
+}
+
+int64_t streamSize(void* cookie) { return int64_t(static_cast<Cursor*>(cookie)->bytes.size()); }
+
+void streamClose(void* cookie) { delete static_cast<Cursor*>(cookie); }
+
+int streamOpen(void* user, char*, mpv_stream_cb_info* info) {
+    info->cookie = new Cursor{*static_cast<std::span<const uint8_t>*>(user)};
+    info->read_fn = streamRead;
+    info->seek_fn = streamSeek;
+    info->size_fn = streamSize;
+    info->close_fn = streamClose;
+    return 0;
 }
 
 }  // namespace
 
 bool VideoTexture::available() { return true; }
 
-std::unique_ptr<VideoTexture> VideoTexture::open(std::span<const uint8_t> mp4, std::string& error) {
+std::unique_ptr<VideoTexture> VideoTexture::open(std::span<const uint8_t> mp4,
+                                                 std::shared_ptr<const void> keep,
+                                                 std::string& error) {
     std::unique_ptr<VideoTexture> v(new VideoTexture());
-    v->memfd_ = memfd_create("desktop-canvas-video", MFD_CLOEXEC);
-    if (v->memfd_ < 0 || !writeAll(v->memfd_, mp4) || lseek(v->memfd_, 0, SEEK_SET) != 0) {
-        error = "cannot hold the video in memory";
-        return nullptr;
-    }
+    v->bytes_ = mp4;
+    v->keep_ = std::move(keep);
     v->mpv_ = mpv_create();
     if (!v->mpv_) {
         error = "mpv_create failed";
@@ -48,7 +74,11 @@ std::unique_ptr<VideoTexture> VideoTexture::open(std::span<const uint8_t> mp4, s
     for (auto [name, value] : {std::pair{"config", "no"}, {"terminal", "no"}, {"msg-level", "all=error"},
                                {"vo", "libmpv"}, {"audio", "no"}, {"aid", "no"}, {"sid", "no"},
                                {"loop-file", "inf"}, {"hwdec", "no"}, {"cache", "no"},
-                               {"input-default-bindings", "no"}, {"osc", "no"}})
+                               {"input-default-bindings", "no"}, {"osc", "no"},
+                               // A texture needs little read ahead, and frame threads
+                               // each hold whole frames: by default one per core.
+                               {"demuxer-max-bytes", "16MiB"}, {"demuxer-max-back-bytes", "1MiB"},
+                               {"vd-lavc-threads", "2"}})
         mpv_set_option_string(v->mpv_, name, value);
     if (mpv_initialize(v->mpv_) < 0) {
         error = "mpv_initialize failed";
@@ -66,8 +96,11 @@ std::unique_ptr<VideoTexture> VideoTexture::open(std::span<const uint8_t> mp4, s
         return nullptr;
     }
     mpv_render_context_set_update_callback(v->render_, onUpdate, v.get());
-    const std::string url = "fd://" + std::to_string(v->memfd_);
-    const char* cmd[] = {"loadfile", url.c_str(), nullptr};
+    if (mpv_stream_cb_add_ro(v->mpv_, "desktopcanvas", &v->bytes_, streamOpen) < 0) {
+        error = "mpv stream callbacks failed";
+        return nullptr;
+    }
+    const char* cmd[] = {"loadfile", "desktopcanvas://video", nullptr};
     if (mpv_command(v->mpv_, cmd) < 0) {
         error = "mpv cannot load the video";
         return nullptr;
@@ -77,8 +110,7 @@ std::unique_ptr<VideoTexture> VideoTexture::open(std::span<const uint8_t> mp4, s
 
 VideoTexture::~VideoTexture() {
     if (render_) mpv_render_context_free(render_);  // before the handle
-    if (mpv_) mpv_terminate_destroy(mpv_);
-    if (memfd_ >= 0) ::close(memfd_);
+    if (mpv_) mpv_terminate_destroy(mpv_);  // closes the streams first
     if (fbo_) glDeleteFramebuffers(1, &fbo_);
     if (texture_) glDeleteTextures(1, &texture_);
 }
@@ -128,7 +160,8 @@ namespace canvas::scene {
 
 bool VideoTexture::available() { return false; }
 
-std::unique_ptr<VideoTexture> VideoTexture::open(std::span<const uint8_t>, std::string& error) {
+std::unique_ptr<VideoTexture> VideoTexture::open(std::span<const uint8_t>,
+                                                 std::shared_ptr<const void>, std::string& error) {
     error = "video textures need a build with libmpv";
     return nullptr;
 }

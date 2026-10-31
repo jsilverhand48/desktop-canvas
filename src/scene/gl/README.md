@@ -23,7 +23,7 @@ context; the GPU free parts live in the other `src/scene/` modules.
   their frames (`spriteFrame()` picks the frame of a scene time); video
   textures play through `VideoTexture` (`updateVideos()` once per frame).
   Missing textures become a transparent 1x1 stand in, reported once.
-- `VideoTexture` an MP4 held in memory (a memfd, "fd://N") played in a
+- `VideoTexture` an MP4 read in place through mpv's stream callbacks played in a
   loop without sound into a texture through libmpv's render API; built
   only with libmpv (`CANVAS_SCENE_HAVE_MPV`), `available()` says so.
 - `SceneRenderer` the renderer of `../render/README.md`: `load()` builds

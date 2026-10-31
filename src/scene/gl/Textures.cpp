@@ -185,18 +185,22 @@ GpuTexture TextureCache::load(const std::string& name) {
         return placeholder_;
     }
     if (tex->payload == PayloadKind::Video) {
-        // The MP4 is the first mip's payload (section 9).
+        // The MP4 is the first mip's payload (section 9), read in place:
+        // the package mapping lives as long as the asset lookup, and a
+        // loose file's mapping is kept by the texture.
         const TextureMip& mip = tex->images.front().mips.front();
-        std::vector<uint8_t> unpacked;
         std::span<const uint8_t> bytes = mip.payload;
+        std::shared_ptr<const void> keep = asset->mapping;
         if (mip.lz4) {
-            if (!decompressLz4(mip.payload, mip.decompressedSize, unpacked, error)) {
+            auto unpacked = std::make_shared<std::vector<uint8_t>>();
+            if (!decompressLz4(mip.payload, mip.decompressedSize, *unpacked, error)) {
                 problem("texture " + name + ": " + error);
                 return placeholder_;
             }
-            bytes = unpacked;
+            bytes = *unpacked;
+            keep = unpacked;
         }
-        auto video = VideoTexture::open(bytes, error);
+        auto video = VideoTexture::open(bytes, std::move(keep), error);
         if (!video) {
             problem("texture " + name + ": " + error);
             return placeholder_;
