@@ -6,8 +6,8 @@
 // verdicts): scene, image, effects, solid-layer, fullscreen-layer,
 // composition-layer, shape-layer, group, particles, text, sound, light,
 // puppet, camera-path, 3d-model, script, timeline, user-properties,
-// parallax, camera-shake, bloom, hdr, video-texture. "scene" (camera,
-// clear colour, projection) is used by every scene.
+// parallax, camera-shake, bloom, hdr, video-texture, sprite-animation.
+// "scene" (camera, clear colour, projection) is used by every scene.
 #pragma once
 
 #include <set>
@@ -22,7 +22,9 @@ namespace canvas::scene {
 
 std::set<std::string> sceneFeatures(LoadedScene& scene);
 
-// What this build renders; grows phase by phase (empty before P4).
+// What this build renders; grows phase by phase (P4a: scene, image,
+// effects, solid-layer, fullscreen-layer, composition-layer, group,
+// user-properties).
 const std::set<std::string>& supportedFeatures();
 
 std::vector<std::string> unsupportedOf(const std::set<std::string>& features);

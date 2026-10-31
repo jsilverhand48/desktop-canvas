@@ -6,14 +6,14 @@ it for scene wallpapers on the "native" and "auto" engines (see
 over the control channel protocol in `process/HelperProtocol.h`. It also
 runs by hand for previews, screenshots and checks.
 
-Status: plan phase P2. The engine's asset readers (`src/scene/assets/`)
-and scene model (`src/scene/model/`) are in: they power `--extract`,
-`--dump`, `--check` and `--check-all`. Rendering arrives with later
-phases, so the support check still reports every scene as unsupported
-(no feature is supported yet) and "native" mode shows a solid dark slate
-placeholder. Every
-other part (surfaces, pacing, protocol, sandbox, headless screenshots) is
-real and tested.
+Status: plan phase P4a. The engine draws image, solid, composition and
+fullscreen layers with their effects (`src/scene/render/README.md`);
+particles, text, sound, scripts, animation and puppets arrive with later
+phases. The support check reports scenes made only of what this build
+draws as supported, so "auto" uses the native renderer for those and
+linux-wallpaperengine for the rest; "native" draws what it can and skips
+the rest. A scene that cannot be read, or has nothing drawable, shows a
+solid dark slate placeholder.
 
 Why a separate process: workshop content is untrusted (binary formats,
 shaders, JavaScript); a crash or hang takes down only the helper, whose
@@ -51,16 +51,24 @@ blocks the daemon's single threaded event loop.
   motion and buttons the helper sees itself (its own Wayland surfaces on
   wlroots, polling on X11) go to the renderer too; on Plasma the daemon
   forwards the KDE bridge's cursor as "pointer" messages. `--span`
-  (`SceneHostOptions::span`) is accepted and logged; each output renders
-  the whole frame until the engine composes scenes (phase P4). No GL, so
-  `claude_tests/test_scene_host` drives it with fakes.
+  (`SceneHostOptions::span`) is accepted and logged; each output still
+  renders the whole frame (spanning lands with the screen span step). No
+  GL, so `claude_tests/test_scene_host` drives it with fakes.
 - `FrameClock` fixed rate ticker on absolute deadlines: no drift, and no
   catch up burst after a stall (it restarts from now).
 - `Renderer` the interface SceneHost drives: `advance(dt)` once per tick,
   then `render(width, height)` per output into the bound framebuffer, plus
-  live pointer, property, mute and volume inputs. The scene engine will
-  implement it.
-- `PlaceholderRenderer` clears to one colour (libepoxy).
+  live pointer, property, mute and volume inputs.
+- `NativeRenderer` the scene engine (`scene/gl/SceneRenderer`) behind
+  that interface: `create()` reads the wallpaper and loads the scene
+  before GL exists (and before the sandbox), the first `render()` builds
+  the GL side; `--scaling`, `--clamp` and `--render-debug` reach the
+  engine through it, and compiled programs are cached in
+  `$XDG_CACHE_HOME/desktop-canvas/shaders`. GL objects are freed only by
+  `shutdown()` with the context current (the screenshot path does so);
+  otherwise the driver frees them at exit.
+- `PlaceholderRenderer` clears to one colour (libepoxy); shown when the
+  scene cannot be read or has nothing drawable.
 - `Screenshot` headless rendering into an RGBA8 framebuffer object and an
   atomic PNG write through libpng (`--screenshot`, `--size`, `--frames`,
   `--device`); `writePng()` also takes 1 (gray) and 3 (RGB) channel images

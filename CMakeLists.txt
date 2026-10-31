@@ -259,6 +259,7 @@ if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND)
         src/scene/shader/Tokens.cpp
         src/scene/shader/Syntax.cpp
         src/scene/shader/Conversions.cpp
+        src/scene/render/Layout.cpp
     )
     target_link_libraries(canvas_scene_core
         PUBLIC canvas_core canvas_scene_props
@@ -266,9 +267,13 @@ if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND)
 endif()
 
 # canvas_scene_gl: the engine's GL code (src/scene/gl), GL 3.3 core
-# through libepoxy. Today the program cache; rendering lands in P4.
+# through libepoxy: program cache, textures and the scene renderer.
 if(TARGET canvas_scene_core AND EPOXY_FOUND)
-    add_library(canvas_scene_gl STATIC src/scene/gl/ProgramCache.cpp)
+    add_library(canvas_scene_gl STATIC
+        src/scene/gl/ProgramCache.cpp
+        src/scene/gl/Textures.cpp
+        src/scene/gl/SceneRenderer.cpp
+    )
     target_link_libraries(canvas_scene_gl PUBLIC canvas_scene_core PkgConfig::EPOXY)
 endif()
 
@@ -276,8 +281,7 @@ endif()
 # part (pacing, surfaces, daemon protocol) so tests can link it; the
 # executable adds the GL renderer, headless screenshots, the asset tools
 # and the sandbox.
-if(DESKTOP_CANVAS_SCENE AND TARGET canvas_display AND TARGET canvas_scene_core
-   AND EPOXY_FOUND)
+if(DESKTOP_CANVAS_SCENE AND TARGET canvas_display AND TARGET canvas_scene_gl)
     add_library(canvas_scene_host STATIC
         src/scene-host/FrameClock.cpp
         src/scene-host/SceneHost.cpp
@@ -287,12 +291,13 @@ if(DESKTOP_CANVAS_SCENE AND TARGET canvas_display AND TARGET canvas_scene_core
         src/scene-host/main.cpp
         src/scene-host/AssetTools.cpp
         src/scene-host/SceneCheck.cpp
+        src/scene-host/NativeRenderer.cpp
         src/scene-host/PlaceholderRenderer.cpp
         src/scene-host/Screenshot.cpp
         src/scene-host/Sandbox.cpp
     )
     target_link_libraries(desktop-canvas-scene PRIVATE
-        canvas_scene_host canvas_scene_core canvas_display PkgConfig::EPOXY
+        canvas_scene_host canvas_scene_gl canvas_scene_core canvas_display PkgConfig::EPOXY
         PkgConfig::LIBPNG)
     install(TARGETS desktop-canvas-scene RUNTIME DESTINATION bin)
 elseif(DESKTOP_CANVAS_SCENE)

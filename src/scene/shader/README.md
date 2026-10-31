@@ -29,7 +29,7 @@ platform names [doc: Mobile]:
 | `saturate(x)` | `clamp(x, 0.0, 1.0)` | 393 / 32 |
 | `fmod(x, y)` | `(x-y*trunc(x/y))` | 2 / 0 |
 | `ddx` | `dFdx` | 3 / 2 |
-| `ddy(x)` | `dFdy(-(x))` | 3 / 2 |
+| `ddy(x)` | `dFdy(-(x))`; desktop-canvas uses `dFdy(x)` (below) | 3 / 2 |
 | `CAST2(x)`, `CAST3(x)`, `CAST4(x)`, `CAST3X3(x)` | `vec2(x)`, `vec3(x)`, `vec4(x)`, `mat3(x)` [doc: Syntax] | 108, 111, 219, 4 / 13, 30, 2, 17 |
 | `log10(x)` | `(log2(x) * 0.30102999566398120)`: an HLSL intrinsic GLSL lacks, not documented [HLSL spec] | 1 / 0 |
 
@@ -39,9 +39,10 @@ then a vector, 4 two matrices; with the mapping above, matrices are
 uploaded in the usual GL column vector convention (phase P4).
 
 The documented `ddy` mapping negates its argument because Direct3D's
-screen Y runs down where GL's runs up; Wallpaper Engine's GL path renders
-in plain GL orientation and flips only under `#ifdef HLSL` [asset:
-composelayer.vert, genericimage2.vert] (`../render/README.md` section 1).
+screen Y runs down where GL's runs up, which fits a frame drawn bottom
+row first. desktop-canvas lays every buffer out top row first, as
+Direct3D does (`../render/README.md` section 1), so GL's `dFdy` already
+runs the way `ddy` does and the prelude maps `ddy` to plain `dFdy`.
 
 On GLSL ES, Wallpaper Engine "appends .0 to integer constants it finds"
 unless the file defines `WEMOBILE_DISABLE_INTEGER_CONVERSION` [doc:

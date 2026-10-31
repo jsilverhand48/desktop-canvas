@@ -28,6 +28,14 @@ void apply(ProgramRequest& request, const MaterialPass& pass, const LoadedScene&
 
 }  // namespace
 
+ProgramRequest programRequest(const MaterialPass& pass, const LoadedScene& scene,
+                              const std::map<std::string, int>* instanceCombos,
+                              const std::vector<std::optional<std::string>>* instanceTextures) {
+    ProgramRequest request;
+    apply(request, pass, scene, instanceCombos, instanceTextures);
+    return request;
+}
+
 std::string PassProgram::where() const {
     std::string s = "object " + std::to_string(object);
     if (effect >= 0) s += " effect " + std::to_string(effect);
@@ -52,6 +60,8 @@ std::vector<PassProgram> collectPrograms(const LoadedScene& scene) {
                         apply(program.request, material->second->passes[p], scene,
                               instance ? &instance->combos : nullptr,
                               instance ? &instance->textures : nullptr);
+                        int blendMode = int(object.image->colorBlendMode.value);
+                        if (blendMode != 0) program.request.combos["BLENDMODE"] = blendMode;
                         if (!program.request.shader.empty()) out.push_back(std::move(program));
                     }
                 }

@@ -1,7 +1,7 @@
-// Stand-in Renderer until the native scene engine exists: clears every
-// frame to one solid colour. It proves the helper's whole path (surfaces,
-// pacing, protocol, screenshots) end to end and is what "native" mode shows
-// for now. GL calls go through libepoxy.
+// Stand-in Renderer: clears every frame to one solid colour. The helper
+// shows it when a scene cannot be read or has nothing the engine can draw;
+// it also exercises the helper's whole path (surfaces, pacing, protocol,
+// screenshots) in tests. GL calls go through libepoxy.
 #pragma once
 
 #include "scene-host/Renderer.h"

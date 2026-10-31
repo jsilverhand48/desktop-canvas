@@ -4,8 +4,10 @@
 // and texture slots marked set (material textures, overridden by the
 // instance's non null entries) with their format codes. Effect pass
 // settings match the effect file's passes by position; passes without a
-// material (commands such as copy) have no program. Particle and text
-// layer materials join in their phases (P5, P6b).
+// material (commands such as copy) have no program. An image layer's
+// colorBlendMode becomes the BLENDMODE combo of its own passes
+// (src/scene/render/README.md section 2). Particle and text layer
+// materials join in their phases (P5, P6b).
 #pragma once
 
 #include <cstdint>
@@ -28,6 +30,13 @@ struct PassProgram {
 };
 
 std::vector<PassProgram> collectPrograms(const LoadedScene& scene);
+
+// The request for one material pass with optional scene.json overrides
+// (instance combos win over the material's; non null instance textures
+// win over the material's); what collectPrograms uses per pass.
+ProgramRequest programRequest(const MaterialPass& pass, const LoadedScene& scene,
+                              const std::map<std::string, int>* instanceCombos,
+                              const std::vector<std::optional<std::string>>* instanceTextures);
 
 // Shader sources through a wallpaper's lookup layers.
 ShaderLoader shaderLoader(const AssetLocator& assets);

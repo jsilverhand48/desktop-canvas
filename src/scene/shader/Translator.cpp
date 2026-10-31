@@ -282,7 +282,7 @@ const std::string& shaderPrelude() {
         "#define lerp mix\n"
         "#define fmod(x, y) ((x) - (y) * trunc((x) / (y)))\n"
         "#define ddx dFdx\n"
-        "#define ddy(x) dFdy(-(x))\n"
+        "#define ddy dFdy\n"
         "#define saturate(x) clamp(x, 0.0, 1.0)\n"
         "#define CAST2(x) vec2(x)\n"
         "#define CAST3(x) vec3(x)\n"

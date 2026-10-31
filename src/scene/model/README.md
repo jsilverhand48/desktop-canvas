@@ -224,8 +224,8 @@ number (an object id), `origin`, `scale`, `angles` vec3, `visible` bool,
 transform and appearance fields take the identity: origin 0 0 0, scale 1
 1 1, angles 0 0 0, visible true, alpha 1, colour 1 1 1 (this project).
 Angles are stored in radians: `shape` quads hold z angles 0.41952 and
-1.54700 next to editor round numbers elsewhere [corpus; confirmed when
-P4a renders].
+1.54700 next to editor round numbers elsewhere [corpus; to be checked by
+the comparison of `../render/README.md` section 7].
 
 The kind is the first of `image`, `particle`, `text`, `sound`, `light`
 whose value is not null (particles carry `"image": null`), else `camera`,
@@ -301,9 +301,13 @@ and exits 0 when supported, 3 otherwise. Feature names: `scene` (camera,
 clear colour and projection: every scene), `image`, `effects`, `solid-layer`, `fullscreen-layer`, `composition-layer`,
 `shape-layer`, `group`, `particles`, `text`, `sound`, `light`, `puppet`,
 `camera-path`, `3d-model`, `script`, `timeline`, `user-properties`,
-`parallax`, `camera-shake`, `bloom`, `hdr`, `video-texture`. A build
-supports the features of the phases it contains; this one supports none,
-so the "auto" engine keeps using linux-wallpaperengine.
+`parallax`, `camera-shake`, `bloom`, `hdr`, `video-texture`,
+`sprite-animation` (a texture with sprite sheet frames). A build
+supports the features of the phases it contains; this one (phase P4a)
+supports `scene`, `image`, `effects`, `solid-layer`, `fullscreen-layer`,
+`composition-layer`, `group` and `user-properties`, so the "auto" engine
+uses the native renderer only for scenes made of those and keeps
+linux-wallpaperengine for the rest.
 `--check-all ROOT` runs the check on every scene folder in ROOT and
 prints a summary (scenes, fully supported, feature counts), or a JSON
 array with `--json`.

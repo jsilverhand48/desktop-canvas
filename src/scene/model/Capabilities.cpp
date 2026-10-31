@@ -41,13 +41,18 @@ std::set<std::string> sceneFeatures(LoadedScene& scene) {
     if (g.cameraShake.value) f.insert("camera-shake");
     if (g.bloom.value) f.insert("bloom");
     if (g.hdr.value) f.insert("hdr");
-    for (const auto& [path, texture] : scene.textures)
+    for (const auto& [path, texture] : scene.textures) {
         if (texture.payload == PayloadKind::Video) f.insert("video-texture");
+        if (texture.spriteSheet) f.insert("sprite-animation");
+    }
     return f;
 }
 
 const std::set<std::string>& supportedFeatures() {
-    static const std::set<std::string> supported;  // nothing renders before P4
+    // What phase P4a draws (src/scene/render/README.md).
+    static const std::set<std::string> supported = {
+        "scene",           "image",           "effects", "solid-layer",
+        "fullscreen-layer", "composition-layer", "group", "user-properties"};
     return supported;
 }
 

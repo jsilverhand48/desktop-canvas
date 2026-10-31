@@ -6,8 +6,8 @@
 // the given pixel size, with the GL context already current. Renderers must
 // not depend on GL state surviving between calls.
 //
-// Today the only implementation is PlaceholderRenderer (a solid colour);
-// the native scene engine (src/scene/, plan phases P1 onward) plugs in here.
+// Implementations: NativeRenderer (the scene engine, src/scene/) and
+// PlaceholderRenderer (a solid colour when the scene cannot be drawn).
 #pragma once
 
 #include <cstdint>

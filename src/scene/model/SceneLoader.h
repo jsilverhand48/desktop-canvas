@@ -29,6 +29,7 @@ namespace canvas::scene {
 struct TextureSummary {
     PayloadKind payload = PayloadKind::Raw;
     uint32_t formatCode = 0;  // .tex format code (also TEX<n>FORMAT)
+    bool spriteSheet = false;  // animated: a frames section follows
 };
 
 struct LoadedScene {

@@ -14,8 +14,20 @@ context; the GPU free parts live in the other `src/scene/` modules.
   with `GL_KHR_parallel_shader_compile` making `ready()` non blocking.
   Failed programs carry the stage and driver log. `fnv1a64` names the
   files.
+- `Textures` (`TextureCache`, `GpuTexture`): textures by material name,
+  loaded once through the wallpaper's lookup layers: every mip of the
+  first image, DXT kept compressed when the driver has S3TC, R8 and RG88
+  as one and two channel textures, volume textures as 3D textures,
+  filtering and wrapping from the texture flags, the usable region
+  (image / allocated size) and the first sprite sheet frame. Missing and
+  video textures (phase P4b) become a transparent 1x1 stand in, reported
+  once.
+- `SceneRenderer` the renderer of `../render/README.md`: `load()` builds
+  programs, textures, per layer passes, effect pass graphs and base
+  passes; `render(width, height)` draws a frame once per `advance()` and
+  presents it into the bound framebuffer by the scaling and clamp modes;
+  `RenderDebug` holds the `--render-debug` switches. GL objects need the
+  context current, including at destruction.
 
-Rendering (layers, effects, compositing) arrives with phase P4.
-
-Tests: `claude_tests/test_scene_gl` (opt-in; llvmpipe, every device with
-`CANVAS_GPU_ALL=1`).
+Tests: `claude_tests/test_scene_gl` and `test_scene_render` (opt-in GL
+parts; llvmpipe, every device with `CANVAS_GPU_ALL=1`).

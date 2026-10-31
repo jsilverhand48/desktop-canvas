@@ -74,7 +74,8 @@ public:
             out_.report.error(path + ": " + error);
             return;
         }
-        out_.textures[path] = TextureSummary{tex->payload, tex->formatCode};
+        out_.textures[path] =
+            TextureSummary{tex->payload, tex->formatCode, tex->has(TextureFile::kSpriteSheet)};
     }
 
     void exists(const std::string& path) {

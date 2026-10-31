@@ -29,11 +29,13 @@ Daemon source tree. Module map:
 - `scene/` the native scene engine (clean room rewrite, see its README):
   so far `assets/` (scene.pkg, file lookup, .tex readers; plan phase P1)
   and `model/` (scene description, user properties, capability report;
-  P2), `shader/` (dialect translation to GLSL 3.30; P3) and `gl/` (program
-  cache; P3, rendering from P4)
+  P2), `shader/` (dialect translation to GLSL 3.30; P3), `render/`
+  (layout math; P4a) and `gl/` (program cache, textures and the scene
+  renderer: image, solid, composition and fullscreen layers with effects;
+  P3 and P4a)
 - `scene-host/` desktop-canvas-scene, the native scene renderer helper
-  (engines "native" and "auto"; until the engine renders, a placeholder
-  colour) and its `--extract`/`--dump` asset tools, DESKTOP_CANVAS_SCENE=ON
+  (engines "native" and "auto"), its `--extract`/`--dump` asset tools and
+  `--render-debug` diagnostics, DESKTOP_CANVAS_SCENE=ON
 - `process/` child process supervision (process groups, death signal,
   control channel on fd 3, exit policies), the daemon/helper protocol,
   helper lookup, linux-wallpaperengine command construction, and the

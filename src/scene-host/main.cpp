@@ -29,15 +29,19 @@
 // build cannot render a reason to stop: the helper reports the list over
 // the control channel and exits with helper::kExitUnsupported so the daemon
 // falls back to linux-wallpaperengine. Without it ("native"), whatever is
-// supported is shown and the rest skipped. Of the scene engine only the
-// asset readers exist so far (plan phase P1, behind --extract and --dump);
-// until it renders, nothing is supported and the helper shows a solid
-// placeholder colour.
+// supported is shown and the rest skipped. The scene engine
+// (NativeRenderer, scene/gl/SceneRenderer) draws image, solid, composition
+// and fullscreen layers with their effects (plan phase P4a); a scene it
+// cannot read or with nothing it can draw shows a solid placeholder
+// colour. --scaling and --clamp say how the scene meets the output
+// (scene/render/README.md section 1). Compiled shader programs are cached
+// in $XDG_CACHE_HOME/desktop-canvas/shaders.
 //
 // Exit codes follow process/HelperProtocol.h: 0 clean, 2 usage, 3
 // unsupported, 1 runtime failure (counted as a crash by the daemon).
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -55,6 +59,7 @@
 #include "gl/EglContext.h"
 #include "process/HelperProtocol.h"
 #include "scene-host/AssetTools.h"
+#include "scene-host/NativeRenderer.h"
 #include "scene-host/PlaceholderRenderer.h"
 #include "scene-host/SceneCheck.h"
 #include "scene-host/Sandbox.h"
@@ -106,6 +111,16 @@ std::vector<std::string> writablePaths(const std::string& extra) {
     return paths;
 }
 
+// $XDG_CACHE_HOME/desktop-canvas/shaders (or ~/.cache/...); empty without
+// either variable.
+fs::path shaderCacheDir() {
+    const char* cache = std::getenv("XDG_CACHE_HOME");
+    const char* home = std::getenv("HOME");
+    if (cache && *cache) return fs::path(cache) / "desktop-canvas" / "shaders";
+    if (home && *home) return fs::path(home) / ".cache" / "desktop-canvas" / "shaders";
+    return {};
+}
+
 bool parseSize(const std::string& text, int& width, int& height) {
     auto x = text.find('x');
     if (x == std::string::npos) return false;
@@ -146,16 +161,21 @@ int main(int argc, char** argv) {
     std::string dump;
     std::string checkAllRoot;
     bool jsonOutput = false;
+    std::vector<std::string> renderDebug;
 
     app.add_option("wallpaper", wallpaper, "Wallpaper directory (has project.json)");
     app.add_option("--control-fd", controlFd, "Daemon control socket (HelperProtocol)");
-    app.add_option("--output", outputs, "Output to cover (repeatable; default all)");
+    // Repeatable options take one value per use, so a WALLPAPER_DIR after
+    // them stays the positional.
+    app.add_option("--output", outputs, "Output to cover (repeatable; default all)")
+        ->allow_extra_args(false);
     app.add_option("--layer", layer, "Layer shell layer: background | bottom");
     app.add_option("--fps", fps, "Frame rate cap")->check(CLI::Range(1, 240));
     app.add_option("--scaling", scaling, "fill | fit | stretch | default");
     app.add_option("--clamp", clamp, "clamp | border | repeat");
     app.add_option("--assets-dir", assetsDir, "Wallpaper Engine assets directory");
-    app.add_option("--set-property", properties, "NAME=VALUE user property (repeatable)");
+    app.add_option("--set-property", properties, "NAME=VALUE user property (repeatable)")
+        ->allow_extra_args(false);
     app.add_flag("--muted", muted, "Start muted");
     app.add_option("--volume", volume, "Volume 0..100")->check(CLI::Range(0, 100));
     app.add_flag("--strict", strict, "Exit 3 when anything is unsupported");
@@ -175,6 +195,10 @@ int main(int argc, char** argv) {
     app.add_option("--dump", dump, "Write every scene.pkg entry below this folder");
     app.add_option("--check-all", checkAllRoot, "Check every scene folder in this root");
     app.add_flag("--json", jsonOutput, "With --check-all: print a JSON array");
+    app.add_option("--render-debug", renderDebug,
+                   "pass-log, base-only, no-solid-final, object=ID, skip-object=ID, "
+                   "skip-effect=ID[:N] (comma separated, repeatable)")
+        ->allow_extra_args(false);
     try {
         app.parse(argc, argv);
     } catch (const CLI::ParseError& e) {
@@ -247,8 +271,26 @@ int main(int argc, char** argv) {
         return helper::kExitUnsupported;
     }
 
-    scenehost::PlaceholderRenderer renderer(kPlaceholder[0], kPlaceholder[1],
-                                            kPlaceholder[2]);
+    scenehost::PlaceholderRenderer placeholder(kPlaceholder[0], kPlaceholder[1],
+                                               kPlaceholder[2]);
+    scenehost::NativeRenderer::Options nativeOptions;
+    nativeOptions.scaling = scene::scalingFromName(scaling);
+    nativeOptions.clamp = scene::clampFromName(clamp);
+    nativeOptions.shaderCache = shaderCacheDir();
+    std::copy_n(kPlaceholder, 3, nativeOptions.placeholder);
+    for (const auto& list : renderDebug) {
+        std::string error;
+        if (!nativeOptions.debug.parse(list, error)) {
+            std::cerr << "desktop-canvas-scene: " << error << "\n";
+            return helper::kExitUsage;
+        }
+    }
+    std::string loadError;
+    auto native = scenehost::NativeRenderer::create(wallpaper, assetsDir, overrides,
+                                                    nativeOptions, loadError);
+    if (!native) log::warn() << "scene not loaded, showing a placeholder: " << loadError;
+    scenehost::Renderer& renderer =
+        native ? static_cast<scenehost::Renderer&>(*native) : placeholder;
     renderer.setMuted(muted);
     renderer.setVolume(volume);
     for (const auto& [name, value] : overrides) renderer.setProperty(name, value);
@@ -264,10 +306,13 @@ int main(int argc, char** argv) {
         if (!egl.initDevice(device, glOptions(glDebug))) return 1;
         fs::path out = fs::absolute(screenshot);
         if (!noSandbox) scenehost::applySandbox(writablePaths(out.parent_path()));
-        return scenehost::renderToPng(renderer, width, height, frames, fps,
-                                      out.string())
-                   ? helper::kExitClean
-                   : 1;
+        bool written = scenehost::renderToPng(renderer, width, height, frames, fps,
+                                              out.string());
+        if (native) {
+            for (const auto& p : native->problems()) std::cerr << "problem: " << p << "\n";
+            native->shutdown();  // while the context is still current
+        }
+        return written ? helper::kExitClean : 1;
     }
 
     std::unique_ptr<Platform> platform;
