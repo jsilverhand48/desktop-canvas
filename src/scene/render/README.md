@@ -1,11 +1,16 @@
 # src/scene/render/
 
 Specification of how a loaded scene becomes pixels: coordinates, layers,
-effects, blending and the frame. Evidence tags as in `src/scene/README.md`,
+effects, blending and the frame (phase P4a, sections 1 to 7), and how it
+moves: time, animated textures, timeline animations, camera and parallax
+(phase P4b, sections 8 to 11). Evidence tags as in `src/scene/README.md`,
 plus **[inference]** for rules read from evidence that does not state
-them; each inference is checked by the comparison of section 7. Corpus
-numbers come from the 203 scenes (2026-10-31). The GPU free parts
-(`Layout`) are in `canvas_scene_core`, the GL parts in `../gl/`.
+them; inferences about still pictures are checked by the comparison of
+section 7, those about motion (sections 8 to 11) by watching scenes with
+`--window`. Corpus numbers come from the 203 scenes of 2026-10-31
+(sections 1 to 5) and the 207 of the same day later (sections 8 to 11).
+The GPU free parts (`Layout`, animations) are in `canvas_scene_core`, the
+GL parts in `../gl/`.
 
 ## 1. Coordinates and the view
 
@@ -260,13 +265,15 @@ levels this compounds to white in 2404179953, whose preview shows a mild
 glow, so the levels must combine with less gain than this reading
 gives.
 
-Engine uniforms set for every pass: the matrices of section 3,
-`g_Time` (seconds since the scene started), `g_Texture<n>Resolution`,
-`g_Screen` (frame width, height, aspect), `g_TexelSize` (1 / frame
-size) and `g_TexelSizeHalf`, `g_PointerPosition` (normalized pointer),
-the audio spectra (zeros until phase P7), `g_Color4`, `g_Color`,
-`g_Alpha` [doc: Variables]. Unannotated uniforms GL would leave at zero
-(`g_Color4`) are always set.
+Engine uniforms set for every pass: the matrices of section 3 (and
+`g_LayerModelMatrix`, the layer's model matrix;
+`g_EffectTextureProjectionMatrix`, clip space to texture coordinates of
+the effect quad, and its inverse), the time values of section 8,
+`g_Texture<n>Resolution`, `g_Screen` (frame width, height, aspect),
+`g_TexelSize` (1 / frame size) and `g_TexelSizeHalf`, the pointer and
+parallax values of section 11, the audio spectra (zeros until phase P7),
+`g_Color4`, `g_Color`, `g_Alpha` [doc: Variables]. Unannotated uniforms GL
+would leave at zero (`g_Color4`) are always set.
 
 ## 6. Tools
 
@@ -306,6 +313,118 @@ are looked at only for scenes rated Everyone, and never for 3826693905.
 Previews of `hdr` scenes show the HDR look (section 5), and previews of
 animated scenes catch one moment, so the scores are a review aid, not a
 gate.
+
+## 8. Time
+
+Scene time t starts at 0 when the scene starts and moves with the
+frame clock, which never steps more than 0.1 s at once (after a pause or
+a stall, `../../scene-host/README.md`), so a paused scene stands still.
+`g_Time` is t in seconds, `g_Frametime` the last step and `g_Daytime` the
+local time of day from 0 (midnight) to 1 [doc: Variables]. t is kept in
+double precision; shaders get floats. Animated textures, timeline
+animations, camera shake and parallax smoothing (sections 9 to 11) all
+run on t.
+
+## 9. Animated textures
+
+Sprite sheets (flag 0x4, `../assets/README.md` section 3.4; 60 textures
+[corpus], 5 scenes report `sprite-animation`): the frames play in order,
+each for its `duration` in seconds, and loop; the frame shown at time t
+is the one where t modulo the sum of the durations falls [inference:
+per frame durations in seconds, the editor's `spritesheetsequences`
+[asset: .tex-json]]. A frame lies in image `image` of the texture, so
+every image is uploaded and the frame's own image is bound;
+`g_Texture<n>Translation` is (x, y) and `g_Texture<n>Rotation` (ux, uy,
+vx, vy), divided by that image's size [doc: Variables "for sprite
+sheets"; asset: genericimage4.vert maps a_TexCoord 0..1 through them
+under `SPRITESHEET`]. Any slot may hold a sprite sheet.
+
+Video textures (flag 0x20, an MP4 payload; 6 textures in 3 scenes
+[corpus]) play in a loop without sound through libmpv's render API into
+a texture of the video's size (the whole texture is the image) when the
+helper is built with libmpv; until the first frame, or without libmpv,
+the 1x1 stand in shows. The bytes reach mpv through an in memory file
+(memfd), so nothing is written to disk [inference: the format only says
+the payload is an MP4 file].
+
+## 10. Timeline animations
+
+Any field may hold `{"value": v, "animation": {...}}` [doc: Timeline
+Animation Introduction; corpus: 44 animations in 8 scenes: effect
+constants 19, alpha 11 (6 layers, 5 particle overrides), origin 4, zoom
+2, and scale, volume, radius, intensity, bloom strength and threshold,
+a control point angle]:
+- channels `c0`, `c1`, `c2` hold the value's components (one channel
+  for numbers, three for vectors), each a list of keyframes `{frame,
+  value, back: {x, y, enabled, magic}, front: {...}, lockangle,
+  locklength}` [corpus];
+- `options`: `fps` (30, 2, 60, 15, 12, 20), `length` in frames, `mode`
+  `single` (33; plays once and stays on the last frame), `loop` (8; jumps
+  back to the start) or `mirror` (3; runs backwards at the same speed,
+  then forwards again) [doc: Modes; corpus], `wraploop` (6; loop mode
+  moves from the last keyframe back to the first keyframe's value at
+  `length`: "a smooth transition to the first frame" [doc]),
+  `startpaused` (7; stays on frame 0 until SceneScript plays it, phase P6
+  [doc]); `parent`, `children` and `name` link animations that share
+  settings [doc: Combined], and each still stores its own options
+  [corpus]; `smoothing`, `stiffness` and `previewvalue` are editor
+  values;
+- `relative` true (4: origin and scale) adds the animated value to the
+  field's own value [inference: their keyframe values are offsets];
+- frame position f = t * fps; single: min(f, length); loop: f modulo
+  length; mirror: a triangle wave of period 2 * length;
+- between two keyframes A and B, L frames apart, the value follows the
+  cubic Bezier through (frame, value) points A, A + (front.x * L / 3,
+  front.y), B + (back.x * L / 3, back.y), B, solved for the frame. `x` is
+  a fraction of the segment: the editor writes ±1 by default (273 of 400
+  handles) and gives both ends of a segment the same |x| when it smooths
+  them itself (`magic`) [corpus], and ±1 at a third of the segment is the
+  ease in and out the docs promise by default ("Wallpaper Engine will
+  smoothen animations by easing the speed of the animation in and out"
+  [doc]) [inference for the third]. A side whose handle is not `enabled`
+  (interpolation modes both, left, right, none [doc]) has its control
+  point on the keyframe. Before the first keyframe the first value
+  holds, after the last the last (unless wraploop).
+
+## 11. Camera, parallax and the pointer
+
+Camera fade (`camerafade`, on in 204 scenes [corpus]) is "the fade
+effect when changing paths" [doc: SceneScript IScene]: camera paths,
+nothing to draw in a 2D scene.
+
+Camera shake (`camerashake`, 7 scenes; editor defaults amplitude 0.5,
+roughness 1, speed 3 [corpus]): speed "sets the base speed", amplitude
+"the magnitude", roughness "how rough the camera will shake" [doc:
+SceneScript IScene]. desktop-canvas moves the view by smooth value noise
+in x and y: octaves k = 0, 1, 2 of noise at t * speed * 2^k weighted
+roughness^k, normalised, times amplitude * 1% of the projection height
+[inference: no source gives the formula; chosen gentle].
+
+Parallax (`cameraparallax`, 16 scenes; editor defaults amount 0.5,
+delay 0.1, mouse influence 0.5 [corpus]): amount is "how strong the
+parallax will scale", delay "how quickly or slowly the parallax effect
+will transition", mouse influence "how much the parallax effect is
+affected by the cursor position" [doc: IScene], and 0 "essentially
+disables it for 2D scenes" [doc: Parallax]. Each layer's `parallaxDepth`
+(x, y) fine tunes it, 0 turning it off for that layer or axis [doc];
+absent means (1, 1), since the docs turn a layer off by setting 0 and
+36 of the 109 image layers in parallax scenes leave it out [corpus;
+inference]. Authors scale backgrounds up so edges never show [doc], so
+nothing is scaled for them. desktop-canvas: the pointer target p (0..1,
+y down) is followed by s += (p - s) * (1 - exp(-dt / delay)) (s = p when
+delay is 0); a drawn layer then moves by -(s - 0.5) * amount * mouse
+influence * depth * projection size per axis (y turned to the scene's Y
+up), added to its world origin after its parents [inference: "scale"
+read as a fraction of the view, moving against the cursor].
+
+Pointer [doc: Variables]: `g_PointerPosition` is the cursor in 0..1
+screen space, (0.5, 0.5) until a pointer position arrives, y down from
+the top of the output [inference: screen space like texture v];
+`g_PointerPositionLast` the value of the previous frame;
+`g_ParallaxPosition`, the "normalized parallax offset of current layer",
+is 0.5 + (s - 0.5) * depth per axis with parallax on and (0.5, 0.5)
+otherwise [inference: depthparallax.frag centres it with `* 2 - 1`
+[asset]]. `g_PointerState` is not documented and stays zero.
 
 ## Files
 

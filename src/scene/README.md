@@ -37,7 +37,7 @@ Appendix A; they are cited as **[req A<n>]**.
 | `model/` | project, scene, object, material, effect and model JSON, user properties, capability report (implemented) | P2 |
 | `shader/` | Wallpaper Engine shader dialect, combos, translation to GLSL 3.30 with HLSL conversions (implemented: 200 of 203 scenes compile everywhere) | P3 |
 | `gl/` | GL 3.3 code: program cache, textures, the scene renderer (implemented: image, solid, composition and fullscreen layers with effects; all 205 scenes render headless without a crash) | P3, P4 |
-| `render/` | how a scene becomes pixels: coordinates, layers, effects, blending, the frame; the GPU free layout math (implemented through P4a; bloom, HDR and motion follow) | P4 |
+| `render/` | how a scene becomes pixels and how it moves: coordinates, layers, effects, blending, the frame, time, animated textures, timeline animations, camera and parallax; the GPU free layout and animation math (P4a implemented, P4b specified) | P4 |
 | `particles/` | particle systems | P5 |
 | `script/`, `text/` | SceneScript (QuickJS-ng), text layers | P6 |
 | `audio/` | sound layers, spectrum | P7 |
