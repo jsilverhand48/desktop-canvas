@@ -30,9 +30,9 @@ Daemon source tree. Module map:
   so far `assets/` (scene.pkg, file lookup, .tex readers; plan phase P1)
   and `model/` (scene description, user properties, capability report;
   P2), `shader/` (dialect translation to GLSL 3.30; P3), `render/`
-  (layout math; P4a) and `gl/` (program cache, textures and the scene
-  renderer: image, solid, composition and fullscreen layers with effects;
-  P3 and P4a)
+  (layout and timeline animation math; P4) and `gl/` (program cache,
+  textures, video textures and the scene renderer: layers with effects,
+  bloom, animation, camera shake and parallax; P3 and P4)
 - `scene-host/` desktop-canvas-scene, the native scene renderer helper
   (engines "native" and "auto"), its `--extract`/`--dump` asset tools and
   `--render-debug` diagnostics, DESKTOP_CANVAS_SCENE=ON

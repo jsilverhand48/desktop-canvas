@@ -261,6 +261,7 @@ if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND)
         src/scene/shader/Syntax.cpp
         src/scene/shader/Conversions.cpp
         src/scene/render/Layout.cpp
+        src/scene/render/Animation.cpp
     )
     target_link_libraries(canvas_scene_core
         PUBLIC canvas_core canvas_scene_props
@@ -274,7 +275,15 @@ if(TARGET canvas_scene_core AND EPOXY_FOUND)
         src/scene/gl/ProgramCache.cpp
         src/scene/gl/Textures.cpp
         src/scene/gl/SceneRenderer.cpp
+        src/scene/gl/VideoTexture.cpp
     )
+    # Video textures play through libmpv's render API when it is there.
+    if(MPV_FOUND)
+        target_link_libraries(canvas_scene_gl PRIVATE PkgConfig::MPV)
+        target_compile_definitions(canvas_scene_gl PRIVATE CANVAS_SCENE_HAVE_MPV=1)
+    else()
+        message(STATUS "libmpv not found: scene video textures show a stand in")
+    endif()
     target_link_libraries(canvas_scene_gl PUBLIC canvas_scene_core PkgConfig::EPOXY)
 endif()
 

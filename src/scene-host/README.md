@@ -6,10 +6,12 @@ it for scene wallpapers on the "native" and "auto" engines (see
 over the control channel protocol in `process/HelperProtocol.h`. It also
 runs by hand for previews, screenshots and checks.
 
-Status: plan phase P4a. The engine draws image, solid, composition and
-fullscreen layers with their effects (`src/scene/render/README.md`);
-particles, text, sound, scripts, animation and puppets arrive with later
-phases. The support check reports scenes made only of what this build
+Status: plan phase P4b. The engine draws image, solid, composition and
+fullscreen layers with their effects and bloom, and moves them: timeline
+animations, sprite sheets, video textures (when built with libmpv),
+camera shake, parallax and the pointer uniforms
+(`src/scene/render/README.md`); particles, text, sound, scripts and
+puppets arrive with later phases. The support check reports scenes made only of what this build
 draws as supported, so "auto" uses the native renderer for those and
 linux-wallpaperengine for the rest; "native" draws what it can and skips
 the rest. A scene that cannot be read, or has nothing drawable, shows a

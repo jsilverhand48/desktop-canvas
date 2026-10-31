@@ -50,10 +50,13 @@ std::set<std::string> sceneFeatures(LoadedScene& scene) {
 
 const std::set<std::string>& supportedFeatures() {
     // What phase P4a draws (src/scene/render/README.md).
+    // hdr as users without Ultra post-processing see it; video-texture
+    // needs libmpv, which the helper checks (SceneCheck).
     static const std::set<std::string> supported = {
-        "scene",           "image",           "effects", "solid-layer",
-        "fullscreen-layer", "composition-layer", "group", "user-properties",
-        "bloom", "hdr"};  // hdr as users without Ultra post-processing see it
+        "scene",       "image",           "effects",          "solid-layer",
+        "fullscreen-layer", "composition-layer", "group",     "user-properties",
+        "bloom",       "hdr",             "timeline",         "parallax",
+        "camera-shake", "sprite-animation", "video-texture"};
     return supported;
 }
 

@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <ctime>
 #include <list>
 #include <map>
 #include <optional>
@@ -19,6 +20,7 @@
 #include "scene/gl/ProgramCache.h"
 #include "scene/gl/Textures.h"
 #include "scene/model/Json.h"
+#include "scene/render/Animation.h"
 #include "scene/shader/Programs.h"
 #include "scene/shader/Translator.h"
 
@@ -258,7 +260,8 @@ struct EngineLocations {
           modelInverse = -1, effectModel = -1, viewProjection = -1, normalModel = -1,
           time = -1, frameTime = -1, screen = -1, texelSize = -1, texelSizeHalf = -1,
           pointer = -1, pointerLast = -1, parallax = -1, color4 = -1, color = -1, alpha = -1,
-          eye = -1, renderVar0 = -1;
+          eye = -1, renderVar0 = -1, daytime = -1, layerModel = -1, textureProjection = -1,
+          textureProjectionInverse = -1;
     std::array<GLint, kSlots> resolution, rotation, translation, mipInfo;
     EngineLocations() {
         resolution.fill(-1);
@@ -510,6 +513,8 @@ struct SceneRenderer::Impl {
         // Buffers that replace slots (slot 0: an effect result; bloom levels).
         std::array<const Target*, kSlots> overrides{};
         Vec4 renderVar0{0, 0, 0, 0};  // g_RenderVar0 (bloom passes)
+        Mat4 layerModel = Mat4::identity();  // g_LayerModelMatrix
+        float parallax[2] = {0.5f, 0.5f};    // g_ParallaxPosition
         const GpuTexture* layerTexture = nullptr;
         const std::map<std::string, const Target*>* named = nullptr;
         const SceneObject* object = nullptr;
@@ -537,8 +542,13 @@ struct SceneRenderer::Impl {
     GLint blitMatrix = -1, blitTexture = -1, blitOpaque = -1;
     bool logPasses = false;  // this frame's passes go to the log
     double time = 0, frameTime = 0;
+    float daytime = 0;  // this frame's g_Daytime
     uint64_t generation = 0;
-    float pointer[2] = {0.5f, 0.5f};
+    float pointer[2] = {0.5f, 0.5f};       // latest pointer target
+    float framePointer[2] = {0.5f, 0.5f};  // g_PointerPosition this frame
+    float lastPointer[2] = {0.5f, 0.5f};   // g_PointerPositionLast
+    float parallaxPointer[2] = {0.5f, 0.5f};  // s of section 11, smoothed
+    std::unique_ptr<Animator> animator;
     float projection[2] = {1920, 1080};
     // RGBA16F for hdr scenes: the frame, its copies, layer buffers and
     // rgba_backbuffer fbos (section 5).
@@ -681,6 +691,10 @@ struct SceneRenderer::Impl {
             e.alpha = loc("g_Alpha");
             e.eye = loc("g_EyePosition");
             e.renderVar0 = loc("g_RenderVar0");
+            e.daytime = loc("g_Daytime");
+            e.layerModel = loc("g_LayerModelMatrix");
+            e.textureProjection = loc("g_EffectTextureProjectionMatrix");
+            e.textureProjectionInverse = loc("g_EffectTextureProjectionMatrixInverse");
             for (int i = 0; i < kSlots; i++) {
                 std::string n = "g_Texture" + std::to_string(i);
                 e.resolution[size_t(i)] = loc((n + "Resolution").c_str());
@@ -1038,6 +1052,7 @@ struct SceneRenderer::Impl {
     bool load(LoadedScene loaded, std::string& error) {
         scene = std::move(loaded);
         layout = std::make_unique<SceneLayout>(scene.scene);
+        animator = std::make_unique<Animator>(scene);
         const General& g = scene.scene.general;
         const bool ultra = g.hdr.value && options.debug.ultra;
         if (ultra) frameFormat = GL_RGBA16F;
@@ -1239,14 +1254,15 @@ struct SceneRenderer::Impl {
             if (e.translation[size_t(i)] >= 0) glUniform2f(e.translation[size_t(i)], 0, 0);
             if (e.mipInfo[size_t(i)] >= 0) glUniform1f(e.mipInfo[size_t(i)], float(buffer->levels - 1));
         } else {
-            glBindTexture(texture->target == target ? target : texture->target, texture->id);
+            // Sprite sheets show the frame of the scene time (section 9).
+            const SpriteFrame frame = spriteFrame(*texture, time);
+            glBindTexture(texture->target == target ? target : texture->target, frame.id);
             if (e.resolution[size_t(i)] >= 0)
                 glUniform4f(e.resolution[size_t(i)], float(texture->width), float(texture->height),
                             float(texture->imageWidth), float(texture->imageHeight));
-            if (e.rotation[size_t(i)] >= 0)
-                glUniform4fv(e.rotation[size_t(i)], 1, texture->frameRotation);
+            if (e.rotation[size_t(i)] >= 0) glUniform4fv(e.rotation[size_t(i)], 1, frame.rotation);
             if (e.translation[size_t(i)] >= 0)
-                glUniform2fv(e.translation[size_t(i)], 1, texture->frameTranslation);
+                glUniform2fv(e.translation[size_t(i)], 1, frame.translation);
             if (e.mipInfo[size_t(i)] >= 0) glUniform1f(e.mipInfo[size_t(i)], 0.0f);
         }
     }
@@ -1307,13 +1323,21 @@ struct SceneRenderer::Impl {
         if (e.screen >= 0) glUniform3f(e.screen, fw, fh, fw / fh);
         if (e.texelSize >= 0) glUniform2f(e.texelSize, 1.0f / fw, 1.0f / fh);
         if (e.texelSizeHalf >= 0) glUniform2f(e.texelSizeHalf, 0.5f / fw, 0.5f / fh);
-        if (e.pointer >= 0) glUniform2f(e.pointer, pointer[0], pointer[1]);
-        if (e.pointerLast >= 0) glUniform2f(e.pointerLast, pointer[0], pointer[1]);
-        if (e.parallax >= 0) glUniform2f(e.parallax, 0.5f, 0.5f);
+        if (e.pointer >= 0) glUniform2f(e.pointer, framePointer[0], framePointer[1]);
+        if (e.pointerLast >= 0) glUniform2f(e.pointerLast, lastPointer[0], lastPointer[1]);
+        if (e.parallax >= 0) glUniform2f(e.parallax, in.parallax[0], in.parallax[1]);
         if (e.eye >= 0) glUniform3f(e.eye, projection[0] / 2, projection[1] / 2, 1000.0f);
         if (e.renderVar0 >= 0)
             glUniform4f(e.renderVar0, in.renderVar0[0], in.renderVar0[1], in.renderVar0[2],
                         in.renderVar0[3]);
+        if (e.daytime >= 0) glUniform1f(e.daytime, daytime);
+        setMatrix(e.layerModel, in.layerModel);
+        if (e.textureProjection >= 0 || e.textureProjectionInverse >= 0) {
+            // Clip space of the effect quad to its texture coordinates.
+            const Mat4 toTexture = Mat4::translate(0.5f, 0.5f, 0) * Mat4::scale(0.5f, 0.5f, 1);
+            setMatrix(e.textureProjection, toTexture);
+            setMatrix(e.textureProjectionInverse, toTexture.inverse());
+        }
         const ImageLayer* image = in.object ? &*in.object->image : nullptr;
         if (e.color4 >= 0) {
             if (in.white || !image) {
@@ -1417,13 +1441,70 @@ struct SceneRenderer::Impl {
         for (const Target* t : pooled) pool.release(t);
     }
 
+    // Section 11: the parallax offset of a layer (scene units) and its
+    // g_ParallaxPosition.
+    Vec2 parallaxOffset(const SceneObject& o, float position[2]) const {
+        const General& g = scene.scene.general;
+        if (!g.cameraParallax.value) return {0, 0};
+        const Vec2 depth = o.parallaxDepth.present ? o.parallaxDepth.value : Vec2{1, 1};
+        const float amount = g.cameraParallaxAmount.present ? g.cameraParallaxAmount.value : 0.5f;
+        const float influence = g.cameraParallaxMouseInfluence.present
+                                    ? g.cameraParallaxMouseInfluence.value
+                                    : 0.5f;
+        const float dx = parallaxPointer[0] - 0.5f, dy = parallaxPointer[1] - 0.5f;
+        position[0] = 0.5f + dx * depth[0];
+        position[1] = 0.5f + dy * depth[1];
+        // Against the cursor; pointer y runs down, scene y up.
+        return {-dx * amount * influence * depth[0] * projection[0],
+                dy * amount * influence * depth[1] * projection[1]};
+    }
+
+    // Smooth value noise in -1..1 (section 11's camera shake).
+    static double valueNoise(double x, uint32_t seed) {
+        auto hash = [seed](int64_t n) {
+            uint32_t v = uint32_t(n) * 0x9E3779B1u ^ seed;
+            v ^= v >> 16;
+            v *= 0x85EBCA6Bu;
+            v ^= v >> 13;
+            v *= 0xC2B2AE35u;
+            v ^= v >> 16;
+            return double(v) / 4294967295.0 * 2 - 1;
+        };
+        const double i = std::floor(x), f = x - i;
+        const double a = hash(int64_t(i)), b = hash(int64_t(i) + 1);
+        return a + (b - a) * f * f * (3 - 2 * f);
+    }
+
+    // The camera shake offset of the view (scene units).
+    Vec2 shakeOffset() const {
+        const General& g = scene.scene.general;
+        if (!g.cameraShake.value) return {0, 0};
+        const double amplitude = g.cameraShakeAmplitude.present ? g.cameraShakeAmplitude.value : 0.5;
+        const double roughness = g.cameraShakeRoughness.present ? g.cameraShakeRoughness.value : 1.0;
+        const double speed = g.cameraShakeSpeed.present ? g.cameraShakeSpeed.value : 3.0;
+        double x = 0, y = 0, total = 0, weight = 1;
+        for (int k = 0; k < 3; k++) {
+            const double at = time * speed * double(1 << k);
+            x += weight * valueNoise(at, 0x1000u + uint32_t(k));
+            y += weight * valueNoise(at, 0x2000u + uint32_t(k));
+            total += weight;
+            weight *= std::max(0.0, roughness);
+        }
+        const double scale = amplitude * 0.01 * projection[1] / std::max(total, 1e-6);
+        return {float(x * scale), float(y * scale)};
+    }
+
     // Draws a layer when shown; computes its composite when referenced.
     void drawLayer(Layer& layer, bool shown) {
         const SceneObject& o = scene.scene.objects[layer.object];
         const bool fullscreen = layer.kind == LayerKind::Fullscreen;
         const Vec2 size = layerSize(layer);
         const LayerRect rect = fullscreen ? LayerRect{-1, -1, 1, 1} : layerRect(size, o.image->alignment.value);
-        const Mat4 model = fullscreen ? Mat4::identity() : layout->world(layer.object).matrix();
+        float parallaxPosition[2] = {0.5f, 0.5f};
+        const Vec2 offset = fullscreen ? Vec2{0, 0} : parallaxOffset(o, parallaxPosition);
+        const Mat4 model = fullscreen ? Mat4::identity()
+                                      : Mat4::translate(offset[0], offset[1], 0) *
+                                            layout->world(layer.object).matrix();
         const Mat4 screenMvp = fullscreen ? Mat4::identity() : viewProj * model;
 
         const RenderDebug& debug = options.debug;
@@ -1440,8 +1521,10 @@ struct SceneRenderer::Impl {
         DrawInputs in;
         in.object = &o;
         in.model = model;
+        in.layerModel = model;
         in.effectMvp = screenMvp;
         in.layerTexture = layer.texture;
+        std::copy_n(parallaxPosition, 2, in.parallax);
 
         // Texture region of the layer texture on the plain quad.
         float uMax = 1, vMax = 1;
@@ -1599,12 +1682,23 @@ struct SceneRenderer::Impl {
 
     void drawFrame(Frame& f) {
         frame = &f;
+        if (animator) animator->update(time);  // fields first: layout reads them
+        textures.updateVideos();
         layout->update();
         const General& g = scene.scene.general;
         const int w = f.target.width, h = f.target.height;
-        viewProj = flipY() * viewProjection(projection[0], projection[1], g.zoom.value, w, h,
-                                            options.scaling == Scaling::Stretch ? Scaling::Stretch
-                                                                                : Scaling::Fill);
+        {
+            std::time_t now = std::time(nullptr);
+            std::tm local{};
+            localtime_r(&now, &local);
+            daytime = float(local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec) / 86400.0f;
+        }
+        const Vec2 shake = shakeOffset();
+        viewProj = flipY() *
+                   viewProjection(projection[0], projection[1], g.zoom.value, w, h,
+                                  options.scaling == Scaling::Stretch ? Scaling::Stretch
+                                                                      : Scaling::Fill) *
+                   Mat4::translate(-shake[0], -shake[1], 0);
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
         glDisable(GL_SCISSOR_TEST);
@@ -1736,9 +1830,18 @@ bool SceneRenderer::load(LoadedScene scene, std::string& error) {
 }
 
 void SceneRenderer::advance(double dt) {
-    impl_->time += dt;
-    impl_->frameTime = dt;
-    impl_->generation++;
+    Impl& m = *impl_;
+    m.time += dt;
+    m.frameTime = dt;
+    m.generation++;
+    std::copy_n(m.framePointer, 2, m.lastPointer);
+    std::copy_n(m.pointer, 2, m.framePointer);
+    // Parallax follows the pointer with the scene's delay (section 11).
+    const General& g = m.scene.scene.general;
+    const double delay = g.cameraParallaxDelay.present ? g.cameraParallaxDelay.value : 0.1;
+    const double k = delay > 0 ? 1 - std::exp(-dt / delay) : 1.0;
+    for (int i = 0; i < 2; i++)
+        m.parallaxPointer[i] += float((m.framePointer[i] - m.parallaxPointer[i]) * k);
 }
 
 void SceneRenderer::render(int width, int height) { impl_->render(width, height); }

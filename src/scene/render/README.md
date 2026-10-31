@@ -431,12 +431,19 @@ otherwise [inference: depthparallax.frag centres it with `* 2 - 1`
 - `Layout.h`, `Layout.cpp` (`canvas_scene_core`): matrices, world
   transforms through parents [req A3], visibility [req A4], layer
   rectangles, view projection.
+- `Animation.h`, `Animation.cpp` (`canvas_scene_core`): section 10,
+  `parseTimeline`, `Timeline::evaluate`, and `Animator`, which writes
+  every animated field's value each frame.
 - `../gl/Textures.h`, `../gl/Textures.cpp`: texture upload (section 2's
-  texture region, the first sprite frame).
-- `../gl/SceneRenderer.h`, `../gl/SceneRenderer.cpp`: sections 1 to 6.
+  texture region), sprite sheet frames (section 9).
+- `../gl/VideoTexture.h`, `.cpp`: video textures (section 9).
+- `../gl/SceneRenderer.h`, `../gl/SceneRenderer.cpp`: sections 1 to 6
+  and 8 to 11 (time, animations, shake, parallax, pointer).
 - `../../scene-host/NativeRenderer.h`, `.cpp`: the renderer inside
   `desktop-canvas-scene`.
 - Tests: `claude_tests/test_scene_render.cpp` (layout math, debug
   options, synthetic scenes drawn headless and checked pixel by pixel,
-  one of them through the bloom chain); `claude_tests/corpus/render_survey.py` (the corpus numbers
+  among them the bloom chain, sprite sheet frames over time and parallax
+  following the pointer); `claude_tests/test_scene_motion.cpp` (timeline
+  animations, no GL); `claude_tests/corpus/render_survey.py` (the corpus numbers
   above) and `render_all.py` (renders every scene).

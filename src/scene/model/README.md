@@ -307,7 +307,9 @@ supports the features of the phases it contains; this one (phase P4a)
 supports `scene`, `image`, `effects`, `solid-layer`, `fullscreen-layer`,
 `composition-layer`, `group`, `user-properties`, `bloom` and `hdr`
 (drawn as users without Ultra post-processing see it, `../render/README.md`
-section 5), so the "auto" engine
+section 5) from phase P4a, and `timeline`, `parallax`, `camera-shake`,
+`sprite-animation` and `video-texture` (with libmpv only) from P4b, so the
+"auto" engine
 uses the native renderer only for scenes made of those and keeps
 linux-wallpaperengine for the rest.
 `--check-all ROOT` runs the check on every scene folder in ROOT and
