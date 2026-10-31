@@ -694,7 +694,15 @@ std::string printExpr(const Expr& e) {
         case Expr::Kind::Literal:
         case Expr::Kind::Identifier: return e.text;
         case Expr::Kind::Paren: return "(" + child(0) + ")";
-        case Expr::Kind::Unary: return e.text + child(0);
+        case Expr::Kind::Unary: {
+            // "-" before "-1.3" (a macro holding a negative number) must not
+            // print as the decrement operator "--".
+            std::string operand = child(0);
+            bool merge = !e.text.empty() && !operand.empty() &&
+                         (e.text.back() == '-' || e.text.back() == '+') &&
+                         operand.front() == e.text.back();
+            return e.text + (merge ? " " : "") + operand;
+        }
         case Expr::Kind::Postfix: return child(0) + e.text;
         case Expr::Kind::Binary:
         case Expr::Kind::Assign: return child(0) + " " + e.text + " " + child(1);

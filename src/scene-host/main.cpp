@@ -196,8 +196,8 @@ int main(int argc, char** argv) {
     app.add_option("--check-all", checkAllRoot, "Check every scene folder in this root");
     app.add_flag("--json", jsonOutput, "With --check-all: print a JSON array");
     app.add_option("--render-debug", renderDebug,
-                   "pass-log, base-only, no-solid-final, object=ID, skip-object=ID, "
-                   "skip-effect=ID[:N] (comma separated, repeatable)")
+                   "pass-log, base-only, no-bloom, no-solid-final, object=ID, skip-object=ID, "
+                   "skip-effect=ID[:N], dump-programs=DIR (comma separated, repeatable)")
         ->allow_extra_args(false);
     try {
         app.parse(argc, argv);

@@ -52,7 +52,8 @@ const std::set<std::string>& supportedFeatures() {
     // What phase P4a draws (src/scene/render/README.md).
     static const std::set<std::string> supported = {
         "scene",           "image",           "effects", "solid-layer",
-        "fullscreen-layer", "composition-layer", "group", "user-properties"};
+        "fullscreen-layer", "composition-layer", "group", "user-properties",
+        "bloom"};  // bloom without hdr; hdr is its own feature
     return supported;
 }
 

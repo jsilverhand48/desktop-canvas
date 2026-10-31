@@ -338,7 +338,10 @@ Namespace `canvas::scene`, library `canvas_scene_core` (no GL).
   an `AssetLocator`).
 - `Tokens` section 6.1's tokenizer and macro expander (`expandProgram`).
 - `Syntax` GLSL types (`GlslType`, `builtinType`), the syntax tree, the
-  recursive descent parser (`parseGlsl`) and printer (`printGlsl`).
+  recursive descent parser (`parseGlsl`) and printer (`printGlsl`). The
+  printer keeps a unary `-` or `+` apart from an operand that starts with
+  the same sign: a macro holding `-1.3` after a minus must print as
+  `- -1.3`, not the decrement operator (3058007295).
 - `Conversions` section 6.1's type checker (`applyHlslConversions`):
   scopes, structs, user overloads, the built in function table with
   generic families, the conversion rules; unknown types are left alone.

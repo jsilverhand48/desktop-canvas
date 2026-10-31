@@ -8,6 +8,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <list>
 #include <map>
 #include <optional>
@@ -53,8 +54,12 @@ bool RenderDebug::parse(const std::string& list, std::string& error) {
             passLog = true;
         } else if (item == "base-only") {
             baseOnly = true;
+        } else if (item == "no-bloom") {
+            noBloom = true;
         } else if (item == "no-solid-final") {
             keepAlpha = true;
+        } else if (key == "dump-programs" && !value.empty()) {
+            dumpPrograms = value;
         } else if (key == "object" && number(value, id)) {
             only.insert(id);
         } else if (key == "skip-object" && number(value, id)) {
@@ -84,6 +89,20 @@ constexpr uint64_t kUnusedFrames = 120;  // pooled buffers idle this long are fr
 
 const char* const kPassthroughMaterial = "materials/util/effectpassthrough.json";
 const char* const kComposeBackgroundMaterial = "materials/util/effectcomposebackground.json";
+
+// Wallpaper Engine's bloom chain (section 5): material, target buffer
+// (empty: the output) and that buffer's size divisor.
+struct BloomStep {
+    const char* material;
+    const char* target;
+    int divisor;
+};
+constexpr BloomStep kBloomSteps[] = {
+    {"materials/util/downsample_quarter_bloom.json", "_rt_4FrameBuffer", 4},
+    {"materials/util/downsample_eighth_blur_v.json", "_rt_8FrameBuffer", 8},
+    {"materials/util/blur_h_bloom.json", "_rt_Bloom", 8},
+    {"materials/util/combine_ldr.json", "", 1},
+};
 
 // Every projection is followed by this, so buffers hold their content top
 // row first as on Direct3D (section 1).
@@ -330,6 +349,9 @@ struct ConstantSource {
     const Field<Floats>* material = nullptr;  // the material's constantshadervalues
     std::string property;                     // usershadervalues binding
     bool objectBrightness = false, objectAlpha = false;  // genericimage2 defaults
+    // Bloom passes: scene.json general values, when present.
+    const Field<float>* sceneFloat = nullptr;
+    const Field<Vec3>* sceneVec3 = nullptr;
 };
 
 struct Pass {
@@ -486,6 +508,7 @@ struct SceneRenderer::Impl {
     ShaderLoader loader;
     std::map<std::string, std::unique_ptr<Program>> programIndex;
     std::vector<Layer> layers;
+    EffectRun bloom;  // section 5; usable only when built
     std::set<int64_t> referencedComposites;
     std::map<int64_t, size_t> layerById;  // object id to index in layers
     TargetPool pool;
@@ -533,6 +556,23 @@ struct SceneRenderer::Impl {
         return out;
     }
 
+    void dumpProgram(const TranslatedProgram& t, const ProgramRequest& request,
+                     const std::string& where) {
+        std::error_code ec;
+        std::filesystem::create_directories(options.debug.dumpPrograms, ec);
+        const std::string base =
+            (options.debug.dumpPrograms / std::to_string(programIndex.size())).string();
+        auto write = [](const std::string& path, const std::string& text) {
+            if (FILE* f = std::fopen(path.c_str(), "wb")) {
+                std::fwrite(text.data(), 1, text.size(), f);
+                std::fclose(f);
+            }
+        };
+        write(base + ".vert", t.vertex);
+        write(base + ".frag", t.fragment);
+        write(base + ".txt", where + "\n" + programKey(request) + "\n" + t.error + "\n");
+    }
+
     Program* program(const ProgramRequest& request, const std::string& where) {
         if (request.shader.empty()) return nullptr;
         std::string key = programKey(request);
@@ -541,6 +581,7 @@ struct SceneRenderer::Impl {
         auto p = std::make_unique<Program>();
         p->where = where;
         TranslatedProgram t = translateProgram(loader, request);
+        if (!options.debug.dumpPrograms.empty()) dumpProgram(t, request, where);
         if (!t.ok()) {
             problem(where + " (" + request.shader + "): " + t.error);
         } else if (!t.requirements.empty()) {
@@ -636,7 +677,14 @@ struct SceneRenderer::Impl {
                   const std::string& where) {
         Slot s;
         auto composite = compositeObject(name);
-        if (name == "previous" || (composite && *composite == self)) {
+        const bool effectBuffer =
+            effect && std::any_of(effect->buffers.begin(), effect->buffers.end(),
+                                  [&](const EffectBuffer& b) { return b.name == name; });
+        if (effectBuffer) {
+            // The effect's own fbos, by name; not every name starts _rt_.
+            s.kind = SlotKind::Buffer;
+            s.name = name;
+        } else if (name == "previous" || (composite && *composite == self)) {
             // A layer naming its own composite means what binds call
             // previous (section 3).
             s.kind = SlotKind::Previous;
@@ -648,14 +696,7 @@ struct SceneRenderer::Impl {
         } else if (name == "_rt_MipMappedFrameBuffer") {
             s.kind = SlotKind::MipFrame;
         } else if (name.rfind("_rt_", 0) == 0) {
-            bool known = effect && std::any_of(effect->buffers.begin(), effect->buffers.end(),
-                                               [&](const EffectBuffer& b) { return b.name == name; });
-            if (known) {
-                s.kind = SlotKind::Buffer;
-                s.name = name;
-            } else {
-                problem(where + ": unknown render target " + name);
-            }
+            problem(where + ": unknown render target " + name);
         } else if (name[0] == '$') {
             problem(where + ": system texture " + name + " (later phase)");
         } else {
@@ -853,6 +894,44 @@ struct SceneRenderer::Impl {
         layers.push_back(std::move(layer));
     }
 
+    // The bloom chain of section 5, for scenes whose bloom is on or bound.
+    // HDR scenes keep no bloom until the HDR chain is specified.
+    void buildBloom() {
+        const General& g = scene.scene.general;
+        bloom.usable = false;
+        if (!(g.bloom.value || g.bloom.bound()) || g.hdr.value) return;
+        bloom.usable = true;
+        bloom.where = "bloom";
+        for (const auto& step : kBloomSteps) {
+            if (!*step.target) continue;
+            EffectBuffer b;
+            b.name = step.target;
+            b.divisor = step.divisor;
+            bloom.buffers.push_back(std::move(b));
+        }
+        for (size_t i = 0; i < std::size(kBloomSteps); i++) {
+            const BloomStep& step = kBloomSteps[i];
+            auto mat = material(step.material);
+            if (!mat || mat->passes.empty()) {
+                bloom.usable = false;
+                return;
+            }
+            const MaterialPass& mp = mat->passes.front();
+            Pass pass = materialPass(mp, programRequest(mp, scene, nullptr, nullptr),
+                                     "bloom pass " + std::to_string(i), nullptr, nullptr, nullptr,
+                                     &bloom, false, 0);
+            pass.target = step.target;
+            if (pass.program)
+                for (size_t c = 0; c < pass.program->constants.size(); c++) {
+                    const std::string& name = pass.program->constants[c].material;
+                    if (name == "bloomstrength") pass.sources[c].sceneFloat = &g.bloomStrength;
+                    if (name == "bloomthreshold") pass.sources[c].sceneFloat = &g.bloomThreshold;
+                    if (name == "bloomtint") pass.sources[c].sceneVec3 = &g.bloomTint;
+                }
+            bloom.passes.push_back(std::move(pass));
+        }
+    }
+
     // After finishPrograms(): drop what cannot draw.
     void settleLayers() {
         for (auto& layer : layers) {
@@ -893,8 +972,11 @@ struct SceneRenderer::Impl {
         const General& g = scene.scene.general;
         findReferencedComposites();
         for (size_t i = 0; i < scene.scene.objects.size(); i++) buildLayer(i);
+        buildBloom();
         finishPrograms();
         settleLayers();
+        for (const auto& pass : bloom.passes)
+            if (!pass.usable()) bloom.usable = false;
         for (size_t i = 0; i < layers.size(); i++) layerById[layers[i].id] = i;
         for (const auto& t : textures.problems()) problem(t);
         projection[0] = g.projectionWidth.value;
@@ -1017,6 +1099,14 @@ struct SceneRenderer::Impl {
             if (!s.property.empty()) {
                 auto it = scene.values.find(s.property);
                 if (it != scene.values.end()) f.count = textToFloats(it->second, f.v.data(), 4);
+            }
+            if (!f.count && s.sceneFloat && s.sceneFloat->present) {
+                f.v[0] = s.sceneFloat->value;
+                f.count = 1;
+            }
+            if (!f.count && s.sceneVec3 && s.sceneVec3->present) {
+                std::copy_n(s.sceneVec3->value.begin(), 3, f.v.begin());
+                f.count = 3;
             }
             if (!f.count && s.instance && s.instance->value.count) f = s.instance->value;
             if (!f.count && s.material && s.material->value.count) f = s.material->value;
@@ -1359,6 +1449,21 @@ struct SceneRenderer::Impl {
         else pool.release(input);
     }
 
+    // Runs the bloom chain over the finished frame and writes the result
+    // back into it (section 5).
+    void applyBloom() {
+        const Target& f = frame->target;
+        const Target* output = pool.acquire(f.width, f.height, GL_RGBA8, generation);
+        DrawInputs in;
+        in.mvp = Mat4::identity();
+        in.effectMvp = Mat4::identity();
+        in.quad = clipQuad();
+        runEffect(bloom, &f, output, f.width, f.height, in);
+        copyTarget(*output, f);
+        frame->copyValid = frame->mipValid = false;
+        pool.release(output);
+    }
+
     void drawFrame(Frame& f) {
         frame = &f;
         layout->update();
@@ -1389,12 +1494,14 @@ struct SceneRenderer::Impl {
                          (debug.only.empty() || debug.only.count(layer.id));
             if (shown || layer.referenced) drawLayer(layer, shown);
         }
-        logPasses = false;
         for (auto& layer : layers)
             if (layer.composite) {
                 pool.release(layer.composite);
                 layer.composite = nullptr;
             }
+        if (bloom.usable && scene.scene.general.bloom.value && !debug.baseOnly && !debug.noBloom)
+            applyBloom();
+        logPasses = false;
         f.generation = generation;
         pool.collect(generation);
         glUseProgram(0);

@@ -24,7 +24,7 @@ std::set<std::string> sceneFeatures(LoadedScene& scene);
 
 // What this build renders; grows phase by phase (P4a: scene, image,
 // effects, solid-layer, fullscreen-layer, composition-layer, group,
-// user-properties).
+// user-properties, bloom).
 const std::set<std::string>& supportedFeatures();
 
 std::vector<std::string> unsupportedOf(const std::set<std::string>& features);

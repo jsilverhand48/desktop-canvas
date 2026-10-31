@@ -134,7 +134,9 @@ them:
    (formats rgba_backbuffer like the frame, rgba8888, r8; scales 1, 2
    and 4 [corpus]), cleared before the effect runs, except `unique`
    buffers, which keep their pixels from frame to frame (motionblur's
-   accumulation, the only one [corpus]); a pass draws its material into
+   accumulation, the only one [corpus]); fbo names need not start with
+   `_rt_` (`render_target`, `_downscaled1` [corpus: 2 effects]), so
+   binds and targets match them by exact name; a pass draws its material into
    its `target`, or without one into the effect's output, which becomes
    `previous` for the next effect (every effect's last pass has no
    target; 2 effects have an earlier pass without one [corpus]); `bind`
@@ -192,7 +194,7 @@ normal 2, effect passes all normal]:
 ## 5. The frame
 
 The scene draws into an offscreen frame at the size section 1 gives
-(RGBA8; RGBA16F with `hdr`, phase P4a's bloom step), cleared to
+(RGBA8, `hdr` scenes too until their chain is specified), cleared to
 `clearcolor` unless `clearenabled` is false [corpus: true 162, null 34,
 never false]. `_rt_FullFrameBuffer` is a copy of the frame as drawn so
 far, made right before a pass that samples it (once until the frame
@@ -202,8 +204,26 @@ output (section 1), opaque. A frame is drawn once per tick: with several
 outputs showing one scene, every output of the same frame size presents
 that frame.
 
-Bloom and HDR (`bloom`, `hdr`, Wallpaper Engine's `materials/util`
-bloom, downsample and combine materials) are specified with their step.
+Bloom [asset: `materials/util` and `shaders` of the names below]: with
+`bloom` true and `hdr` not (19 scenes, 4 of them binding `bloom` to a
+property [corpus]), the finished frame goes through Wallpaper Engine's
+own bloom materials, each drawn over clip space:
+1. `downsample_quarter_bloom` reads the frame into a buffer a quarter of
+   its size per axis (`_rt_4FrameBuffer`): four bilinear taps one frame
+   texel off each target texel's centre average a 4x4 block; the part
+   above `bloomthreshold` is kept, saturation raised, and the result
+   multiplied by `bloomstrength` and `bloomtint` (annotation defaults
+   0.65, 2 and 1 1 1; the scene's general values replace them);
+2. `downsample_eighth_blur_v` blurs horizontally (13 taps, 8 frame
+   texels apart) into an eighth size buffer (`_rt_8FrameBuffer`);
+3. `blur_h_bloom` blurs vertically the same way into `_rt_Bloom`, also
+   an eighth [inference: each material names only its input];
+4. `combine_ldr` writes frame plus bloom, alpha 1, back as the frame.
+`g_TexelSize` stays one frame texel throughout, which is what the taps
+are written in [asset]. Scenes with `hdr` (8 [corpus]) use the `hdr_*`
+and `combine_hdr` chain instead, whose engine values (`g_RenderVar0`)
+no source documents; they draw without bloom for now, and `hdr` stays an
+unsupported feature.
 
 Engine uniforms set for every pass: the matrices of section 3,
 `g_Time` (seconds since the scene started), `g_Texture<n>Resolution`,
@@ -219,9 +239,12 @@ the audio spectra (zeros until phase P7), `g_Color4`, `g_Color`,
 `--render-debug LIST` (comma separated, repeatable) helps find which
 layer or effect does what: `pass-log` logs every pass of the first
 frame (where, target, blending, slot kinds), `base-only` runs no
-effects, `no-solid-final` presents the frame's alpha, `object=ID` draws
+effects and no bloom, `no-bloom` skips bloom, `no-solid-final` presents
+the frame's alpha, `object=ID` draws
 only the named objects, `skip-object=ID` leaves one out, and
-`skip-effect=ID[:N]` skips an object's effect N or all of them. Objects
+`skip-effect=ID[:N]` skips an object's effect N or all of them, and
+`dump-programs=DIR` writes every translated program (vertex, fragment,
+and the pass and request that asked for it) into DIR. Objects
 that others sample as composites are still computed. `--window` arrives
 with a later step.
 
@@ -247,6 +270,6 @@ images are looked at only for scenes rated Everyone, and never for
 - `../../scene-host/NativeRenderer.h`, `.cpp`: the renderer inside
   `desktop-canvas-scene`.
 - Tests: `claude_tests/test_scene_render.cpp` (layout math, debug
-  options, a synthetic scene drawn headless and checked pixel by
-  pixel); `claude_tests/corpus/render_survey.py` (the corpus numbers
+  options, synthetic scenes drawn headless and checked pixel by pixel,
+  one of them through the bloom chain); `claude_tests/corpus/render_survey.py` (the corpus numbers
   above) and `render_all.py` (renders every scene).

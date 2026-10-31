@@ -45,15 +45,20 @@ Clamp clampFromName(const std::string& name);  // unknown: Clamp
 // Diagnostics (desktop-canvas-scene --render-debug, section 6).
 struct RenderDebug {
     bool passLog = false;    // log every pass of the first frame drawn
-    bool baseOnly = false;   // run no effects
+    bool baseOnly = false;   // run no effects (and no bloom)
+    bool noBloom = false;    // skip the bloom chain
     bool keepAlpha = false;  // present the frame's alpha instead of opaque
     std::set<int64_t> only;  // draw only these objects (empty: all)
     std::set<int64_t> skip;  // never draw these objects
     // (object id, effect index) pairs to skip; index -1 skips them all.
     std::set<std::pair<int64_t, int>> skipEffects;
+    // Writes every translated program here (<n>.vert, <n>.frag and
+    // <n>.txt naming the pass and request); empty: off.
+    std::filesystem::path dumpPrograms;
 
-    // Parses one comma separated list (pass-log, base-only,
-    // no-solid-final, object=ID, skip-object=ID, skip-effect=ID[:N]);
+    // Parses one comma separated list (pass-log, base-only, no-bloom,
+    // no-solid-final, object=ID, skip-object=ID, skip-effect=ID[:N],
+    // dump-programs=DIR);
     // false (with error) on an unknown item.
     bool parse(const std::string& list, std::string& error);
 };
