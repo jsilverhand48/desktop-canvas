@@ -38,9 +38,10 @@ platform names [doc: Mobile]:
 then a vector, 4 two matrices; with the mapping above, matrices are
 uploaded in the usual GL column vector convention (phase P4).
 
-The documented `ddy` mapping negates its argument, which fits a GL render
-that is upside down relative to Direct3D; phase P4 renders with that
-orientation and its comparisons confirm the reading (this project).
+The documented `ddy` mapping negates its argument because Direct3D's
+screen Y runs down where GL's runs up; Wallpaper Engine's GL path renders
+in plain GL orientation and flips only under `#ifdef HLSL` [asset:
+composelayer.vert, genericimage2.vert] (`../render/README.md` section 1).
 
 On GLSL ES, Wallpaper Engine "appends .0 to integer constants it finds"
 unless the file defines `WEMOBILE_DISABLE_INTEGER_CONVERSION` [doc:
