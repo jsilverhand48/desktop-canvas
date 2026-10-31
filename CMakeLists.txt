@@ -256,6 +256,9 @@ if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND)
         src/scene/shader/Preprocessor.cpp
         src/scene/shader/Translator.cpp
         src/scene/shader/Programs.cpp
+        src/scene/shader/Tokens.cpp
+        src/scene/shader/Syntax.cpp
+        src/scene/shader/Conversions.cpp
     )
     target_link_libraries(canvas_scene_core
         PUBLIC canvas_core canvas_scene_props

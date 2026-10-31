@@ -31,6 +31,7 @@ platform names [doc: Mobile]:
 | `ddx` | `dFdx` | 3 / 2 |
 | `ddy(x)` | `dFdy(-(x))` | 3 / 2 |
 | `CAST2(x)`, `CAST3(x)`, `CAST4(x)`, `CAST3X3(x)` | `vec2(x)`, `vec3(x)`, `vec4(x)`, `mat3(x)` [doc: Syntax] | 108, 111, 219, 4 / 13, 30, 2, 17 |
+| `log10(x)` | `(log2(x) * 0.30102999566398120)`: an HLSL intrinsic GLSL lacks, not documented [HLSL spec] | 1 / 0 |
 
 `mul` argument order [corpus]: 820 calls pass a vector then a matrix
 (`mul(vec4(a_Position, 1.0), g_ModelViewProjectionMatrix)`), 2 a matrix
@@ -186,6 +187,58 @@ comments:
 reference (tests and the corpus experiment); NVIDIA's core profile turned
 out to be as strict (section 7).
 
+### 6.1 HLSL conversions
+
+Wallpaper Engine compiles these shaders as HLSL on desktop, so authors
+rely on HLSL's implicit conversions, which GLSL lacks (section 7). The
+rules, from the HLSL language specification [HLSL spec:
+microsoft/hlsl-specs, conversions]: a scalar splats into every element of
+a vector or matrix; a vector truncates to a smaller vector (elements
+[0..n)) or to its first element, a matrix per dimension; every numeric
+type converts to every other (float to integer truncates), and to bool
+by being non zero; a conversion sequence is one numeric conversion then
+one splat or truncation.
+
+After the rewrites of section 6, each stage is macro expanded by this
+project's own expander (object and function like macros, C rescanning:
+a replacement is rescanned with the tokens that follow it, which
+`common_blending.h` needs for `#define BlendDarken BlendDarkenf` [asset];
+`#` and `##` do not exist in the dialect [doc: Syntax]), parsed and type
+checked, and a
+GLSL constructor `T(e)` is inserted wherever a value of type U is used
+as a different type T and GLSL would not convert it by itself (int and
+uint to float it does):
+- initializers, assignments (also through swizzles) and the right side
+  of compound assignments: to the target's type; return values: to the
+  function's return type;
+- arguments: to the parameter types of the chosen overload. Built in
+  functions resolve the HLSL way when no GLSL overload fits as written:
+  the vector size is the smallest among vector arguments (scalar if none),
+  the base type float when any argument is float, generic parameters take
+  that type and scalar parameters stay scalar (`max(0, v.rgb)` becomes
+  `max(vec3(0), v.rgb)`, `pow(vec3, float)` splats the exponent,
+  `mix(vec4, vec3, float)` truncates the first argument, `texture(s,
+  vec4)` truncates the coordinate to the sampler's dimension). User
+  functions: the declared overload needing the fewest conversions, never
+  through `out` or `inout` parameters;
+- operands: vectors of different sizes truncate to the smaller; integer
+  and unsigned operands meet as unsigned, booleans as the other operand's
+  type; `%` with a float operand becomes `x - y * trunc(x / y)` (the
+  `fmod` meaning); comparisons and `?:` branches meet at a common type;
+- conditions (`if`, loops, `?:`, `!`, `&&`, `||`): to bool; array
+  indices: to int;
+- a fragment input that the vertex stage outputs wider (HLSL matches
+  stages by semantic) takes the vertex type, and its uses convert; a
+  vertex output that the fragment stage reads wider takes the fragment
+  type and is padded with zeros where it is assigned;
+- a local `const` whose initializer is not a constant expression loses
+  `const` (HLSL's const only forbids writes; GLSL wants a constant).
+
+Code the parser does not understand, and expressions whose types cannot
+be known (an identifier or function it has not seen), are left as they
+are. A stage that does not parse keeps the text of section 6, with a
+note, so this pass never makes a program worse than without it.
+
 ## 7. Corpus experiment
 
 Every program the library uses (object materials and effect passes, with
@@ -215,7 +268,7 @@ program); and uniforms must be hoisted, since Wallpaper Engine's own
 include `common_blur.h`, which samples `g_Texture0`, before declaring it
 (21 programs).
 
-The 37 programs still failing (46 scenes) rely on HLSL's implicit
+The 37 programs that still failed (46 scenes) relied on HLSL's implicit
 conversions, which GLSL does not have: scalar to vector promotion and
 vector truncation in built in and user function calls (`max(0,
 albedo.rgb)` in Wallpaper Engine's own `effects/nitro`, used by 24
@@ -224,10 +277,27 @@ vec4)`), `%` on floats (the `Simple_Audio_Bars` copies of effect
 3021673417, 20 scenes), truncation or broadcast in assignments and
 initializers, arithmetic between vectors of different sizes, float array
 indices, and varyings declared with different widths in the two stages.
-Fixing these needs the types of expressions, so a text rewrite cannot do
-it; the options are recorded in the phase report and decided before
-rendering builds on this. Until then such programs fail to compile and
-their effects are skipped (native) or the scene falls back (auto).
+Fixing them needs the types of expressions, so the decision (2026-10-30,
+with the user) was this project's own type checker: section 6.1.
+
+Run of 2026-10-31 with section 6.1 (the conversion pass prints programs
+normally, so programs that differed only in comments or macros now
+coincide: 270 distinct):
+
+| | NVIDIA | radeonsi | llvmpipe | glslang |
+|---|---|---|---|---|
+| programs compiling and linking | 269 | 269 | 269 | 270 |
+| scenes with every program working | 200 | 200 | 200 | 201 |
+
+The drivers agree on every program. Programs the pass changed, by kind
+of conversion (one program can need several): truncation 13, splat 11,
+numeric 8, `%` as fmod 6, stage widening 3, index to int 2, condition to
+bool 1, const dropped 1. Left: one
+oscilloscope effect whose vertex stage passes `vec4 audioValue[60]` to
+the fragment stage, more interpolated vectors than GL drivers offer (32;
+Direct3D 11 has 32 as well), and the 2 scenes needing `LightingV1`
+(phase P8). 200 of 203 scenes therefore have every shader they use
+compiling on every driver.
 
 ## 8. Program cache
 
@@ -264,5 +334,11 @@ Namespace `canvas::scene`, library `canvas_scene_core` (no GL).
 - `Programs` `collectPrograms` (every material and effect pass of a
   loaded scene as a `ProgramRequest`) and `shaderLoader` (sources through
   an `AssetLocator`).
+- `Tokens` section 6.1's tokenizer and macro expander (`expandProgram`).
+- `Syntax` GLSL types (`GlslType`, `builtinType`), the syntax tree, the
+  recursive descent parser (`parseGlsl`) and printer (`printGlsl`).
+- `Conversions` section 6.1's type checker (`applyHlslConversions`):
+  scopes, structs, user overloads, the built in function table with
+  generic families, the conversion rules; unknown types are left alone.
 
 GL compilation and the program cache are in `../gl/`.

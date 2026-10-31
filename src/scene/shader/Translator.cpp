@@ -1,6 +1,8 @@
 // Implementation of translateProgram declared in Translator.h.
 #include "scene/shader/Translator.h"
 
+#include "scene/shader/Conversions.h"
+
 #include <algorithm>
 #include <cctype>
 #include <regex>
@@ -285,7 +287,8 @@ const std::string& shaderPrelude() {
         "#define CAST2(x) vec2(x)\n"
         "#define CAST3(x) vec3(x)\n"
         "#define CAST4(x) vec4(x)\n"
-        "#define CAST3X3(x) mat3(x)\n";
+        "#define CAST3X3(x) mat3(x)\n"
+        "#define log10(x) (log2(x) * 0.30102999566398120)\n";
     return prelude;
 }
 
@@ -456,6 +459,32 @@ TranslatedProgram translateProgram(const ShaderLoader& loader, const ProgramRequ
     };
     out.vertex = assemble(vert, vcode, vertUniforms);
     out.fragment = assemble(frag, fcode, fragDeclarations + fragUniforms);
+
+    // 6. HLSL conversions (section 6.1). Fragment inputs the vertex stage
+    // outputs wider take the vertex type. A stage that does not parse keeps
+    // its text.
+    std::map<std::string, GlslType> widenedInputs, widenedOutputs;
+    for (const auto& [ftype, name] : fragVaryings)
+        for (const auto& [vtype, vname] : out.interface.varyings) {
+            if (vname != name) continue;
+            GlslType f = builtinType(ftype), v = builtinType(vtype);
+            if (!f.isScalarOrVector() || !v.isScalarOrVector() || f.base != v.base) continue;
+            if (v.size > f.size) widenedInputs[name] = v;
+            if (f.size > v.size) widenedOutputs[name] = f;
+        }
+    auto convertStage = [&](std::string& program, const std::map<std::string, GlslType>& inputs,
+                            const std::map<std::string, GlslType>& outputs, const char* stage) {
+        std::string error;
+        auto converted = applyHlslConversions(program, inputs, outputs, error);
+        if (!converted) {
+            out.notes.push_back(std::string(stage) + ": HLSL conversion pass skipped: " + error);
+            return;
+        }
+        program = std::move(converted->program);
+        for (const auto& n : converted->notes) out.notes.push_back(std::string(stage) + ": " + n);
+    };
+    convertStage(out.vertex, {}, widenedOutputs, "vertex");
+    convertStage(out.fragment, widenedInputs, {}, "fragment");
     return out;
 }
 

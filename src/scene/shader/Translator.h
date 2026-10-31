@@ -13,7 +13,11 @@
 //    Wallpaper Engine's own headers use uniforms their shaders declare
 //    after the #include (section 6);
 // 4. the result is #version 330 core, the #extension lines, the combo
-//    defines, the prelude, the repairs' declarations, then the code.
+//    defines, the prelude, the repairs' declarations, then the code;
+// 5. each stage then goes through the HLSL conversion pass (Conversions.h,
+//    section 6.1), with varyings of different widths in the two stages
+//    reconciled; a stage that does not parse keeps the step 4 text (a
+//    note says why). The final sources are therefore macro expanded.
 // The interface (uniforms with their annotations, attributes, varyings)
 // comes from the resolved code, so it lists only what the combos keep.
 // Nothing here touches GL; GL compilation is the caller's.

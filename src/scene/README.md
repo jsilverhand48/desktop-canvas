@@ -35,7 +35,7 @@ Appendix A; they are cited as **[req A<n>]**.
 |---|---|---|
 | `assets/` | scene.pkg archives, file lookup across item, package, Wallpaper Engine compatibility overrides and assets, `.tex` textures (implemented) | P1 |
 | `model/` | project, scene, object, material, effect and model JSON, user properties, capability report (implemented) | P2 |
-| `shader/` | Wallpaper Engine shader dialect, combos, translation to GLSL 3.30 (implemented; HLSL conversion rules pending, see its section 7) | P3 |
+| `shader/` | Wallpaper Engine shader dialect, combos, translation to GLSL 3.30 with HLSL conversions (implemented: 200 of 203 scenes compile everywhere) | P3 |
 | `gl/` | GL 3.3 code: program cache (implemented), rendering from P4 | P3, P4 |
 | `render/` | GL 3.3 core compositing, effects, camera, bloom | P4 |
 | `particles/` | particle systems | P5 |
