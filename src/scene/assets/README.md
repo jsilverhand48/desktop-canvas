@@ -85,7 +85,11 @@ explicit `float()` and `int()` casts, `mix` for `lerp`, `mod2` for `%` on
 uints); 2284874919, also below, ships a much older revision with other
 uniform names. So the override is the effect's strict GLSL revision and
 `maximumprojectid` is the newest wallpaper (by workshop id) still shipping
-an older one.
+an older one. The documentation describes the mechanism: fixes cannot be
+pushed into published wallpapers, but "a fixed effect may be shipped in
+the program and substituted automatically", only for effects previously
+submitted to the Workshop and not radically changed [doc: Shaders on
+Mobile Devices, Existing Effects].
 
 Implemented as: when the wallpaper's workshop id is numeric and at most
 `maximumprojectid` (a missing value means no limit; an unparsable one
