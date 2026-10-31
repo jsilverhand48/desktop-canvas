@@ -51,8 +51,12 @@ directory) builds the sanitized libFuzzer targets in `claude_tests/fuzz/`.
 
 desktop-canvas-scene can also inspect a scene's files the way its renderer
 finds them: `desktop-canvas-scene --extract materials/x.tex x.png DIR`
-decodes one texture (or copies any other file) and
-`desktop-canvas-scene --dump OUT DIR` unpacks the item's scene.pkg.
+decodes one texture (or copies any other file),
+`desktop-canvas-scene --dump OUT DIR` unpacks the item's scene.pkg,
+`desktop-canvas-scene --check DIR` prints which features the scene uses
+and which this build cannot render yet, and
+`desktop-canvas-scene --check-all ROOT [--json]` does that for a whole
+workshop folder.
 
 Installing places the `desktop-canvas` daemon and `desktop-canvasctl` in
 `bin`, plus a systemd user unit, an XDG desktop entry, AppStream metainfo, an

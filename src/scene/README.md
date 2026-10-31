@@ -34,7 +34,7 @@ Appendix A; they are cited as **[req A<n>]**.
 | Directory | Contents | Phase |
 |---|---|---|
 | `assets/` | scene.pkg archives, file lookup across item, package, Wallpaper Engine compatibility overrides and assets, `.tex` textures (implemented) | P1 |
-| `model/` | project, scene, object, material, effect and model JSON | P2 |
+| `model/` | project, scene, object, material, effect and model JSON, user properties, capability report (implemented) | P2 |
 | `shader/` | Wallpaper Engine shader dialect, combos, translation | P3 |
 | `render/` | GL 3.3 core compositing, effects, camera, bloom | P4 |
 | `particles/` | particle systems | P5 |
@@ -46,13 +46,17 @@ Appendix A; they are cited as **[req A<n>]**.
 
 `canvas_scene_core` holds everything that needs no GPU (parsing, decoding,
 simulation) and is deterministic, so tests run it headless. Today it is the
-`assets/` readers; it links lz4, libjpeg-turbo and libpng privately and
-canvas_core publicly (include paths, logging). GL code will live in
+`assets/` readers and the `model/`; it links lz4, libjpeg-turbo and libpng
+privately and canvas_core and `canvas_scene_props` publicly.
+`canvas_scene_props` is `model/UserProperties` alone, so the daemon shares
+it without linking the engine. GL code will live in
 `canvas_scene_gl` from P4 on.
 
 Verification of the readers: `claude_tests/test_scene_assets` (fixtures
 built in code), the opt-in `test_scene_corpus` (every texture of a real
 library: 203 scenes, 1475 textures, 4668 mips, 0 failures, peak 385 MiB
 on 2026-10-30), `test_scene_dxt_gl` (CPU DXT decoding against the GL
-drivers: within 1 on NVIDIA and llvmpipe, 2 on radeonsi) and two libFuzzer
-targets (`DESKTOP_CANVAS_FUZZ`).
+drivers: within 1 on NVIDIA and llvmpipe, 2 on radeonsi) and libFuzzer
+targets (`DESKTOP_CANVAS_FUZZ`). The model: `test_scene_model`, the corpus
+test loading all 203 scene models (0 file errors, 0 warnings) and a model
+fuzz target.

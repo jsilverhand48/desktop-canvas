@@ -26,7 +26,9 @@ Workshop content scanning and the user's rotation playlist.
   Used by `render/Rotator`, `config/Config` (import) and `control/`.
 - `SceneOptions` reads every user property a scene declares in
   `project.json` (dropdowns, sliders, toggles, colours, text, headings) for
-  the settings UI, and `resolveSceneProperties()` builds the
+  the settings UI, through the parser in `scene/model/UserProperties`
+  (library canvas_scene_props) that the native scene engine uses too, and
+  `resolveSceneProperties()` builds the
   `--set-property` list for one launch: pinned values always; with
   randomize on, one random value per other dropdown from its allowed list
   (or every option minus NSFW / nude unless allowed globally). Dropdowns

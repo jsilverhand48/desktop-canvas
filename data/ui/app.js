@@ -354,8 +354,19 @@ function drawerContent(w) {
       : 'Pin a value to always use it. Random dropdown picks are off (Settings > Scenes); checked options only matter when it is on.',
   }));
 
-  const editors = w.properties.map(p => propertyEditor(p, w, includeNsfw)).filter(Boolean);
-  nodes.push(...editors.map(e => e.node));
+  // Properties whose display condition is false are not shown (as in
+  // Wallpaper Engine) but keep their pinned value and option restriction.
+  const hidden = w.properties.filter(p => p.shown === false);
+  const editors = w.properties
+    .map(p => (p.shown === false ? keptEditor(p, w) : propertyEditor(p, w, includeNsfw)))
+    .filter(Boolean);
+  nodes.push(...editors.map(e => e.node).filter(Boolean));
+  if (hidden.length) {
+    nodes.push(el('div', {
+      class: 'muted',
+      text: `${hidden.length} more ${hidden.length === 1 ? 'property depends' : 'properties depend'} on the values above and ${hidden.length === 1 ? 'appears' : 'appear'} after saving them.`,
+    }));
+  }
 
   const relaunch = el('input', { type: 'checkbox', checked: w.showing_on.length > 0 });
   nodes.push(el('div', { class: 'row' },
@@ -382,6 +393,18 @@ function drawerContent(w) {
       },
     })));
   return nodes;
+}
+
+// A property hidden by its display condition: no controls, and saving
+// keeps whatever was pinned or restricted for it.
+function keptEditor(p, w) {
+  return {
+    node: null,
+    collect(properties, allowed) {
+      if (Object.prototype.hasOwnProperty.call(w.pinned, p.name)) properties[p.name] = w.pinned[p.name];
+      if (Object.prototype.hasOwnProperty.call(w.allowed, p.name)) allowed[p.name] = w.allowed[p.name];
+    },
+  };
 }
 
 // One editor per property. collect(properties, allowed) writes its result.

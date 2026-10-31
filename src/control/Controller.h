@@ -65,8 +65,10 @@ public:
     bool updateSettings(const json& patch, std::string& error,
                         std::vector<std::string>& notes);
 
-    // One wallpaper: library fields, its user properties from project.json,
-    // and the saved pinned / allowed values.
+    // One wallpaper: library fields, its user properties from project.json
+    // (each with its display "condition" and "shown", the condition
+    // evaluated against the pinned values), and the saved pinned / allowed
+    // values.
     bool wallpaper(const std::string& id, json& out, std::string& error) const;
     // Patch: {"enabled", "properties", "allowed", "apply"}; the maps
     // replace the saved ones wholesale.

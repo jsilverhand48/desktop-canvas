@@ -3,14 +3,10 @@
 
 #include <algorithm>
 #include <cctype>
-#include <fstream>
-
-#include <nlohmann/json.hpp>
 
 namespace canvas {
 
 namespace fs = std::filesystem;
-using nlohmann::json;
 
 namespace {
 
@@ -21,80 +17,13 @@ std::string lower(std::string s) {
     return s;
 }
 
-// Values as text in the format lwe's --set-property parses.
-bool scalarToText(const json& v, std::string& out) {
-    if (v.is_string()) {
-        out = v.get<std::string>();
-    } else if (v.is_boolean()) {
-        out = v.get<bool>() ? "true" : "false";
-    } else if (v.is_number_integer()) {
-        out = std::to_string(v.get<long long>());
-    } else if (v.is_number()) {
-        out = v.dump();
-    } else {
-        return false;
-    }
-    return true;
-}
-
-double number(const json& obj, const char* key) {
-    auto it = obj.find(key);
-    return it != obj.end() && it->is_number() ? it->get<double>() : 0.0;
-}
-
 }  // namespace
 
 std::vector<UserProperty> readUserProperties(const fs::path& wallpaperDir) {
-    std::vector<UserProperty> result;
-    std::ifstream in(wallpaperDir / "project.json");
-    if (!in) return result;
-    json project = json::parse(in, nullptr, /*allow_exceptions=*/false);
-    if (project.is_discarded() || !project.is_object()) return result;
-
-    const auto general = project.find("general");
-    if (general == project.end() || !general->is_object()) return result;
-    const auto props = general->find("properties");
-    if (props == general->end() || !props->is_object()) return result;
-
-    for (const auto& [name, prop] : props->items()) {
-        if (!prop.is_object()) continue;
-        const auto type = prop.find("type");
-        if (type == prop.end() || !type->is_string()) continue;
-
-        UserProperty p;
-        p.name = name;
-        p.type = lower(type->get<std::string>());
-        if (prop.contains("text") && prop["text"].is_string())
-            p.text = prop["text"].get<std::string>();
-        if (prop.contains("order") && prop["order"].is_number_integer())
-            p.order = prop["order"].get<int>();
-        if (prop.contains("value")) scalarToText(prop["value"], p.value);
-
-        if (p.type == "combo") {
-            const auto options = prop.find("options");
-            if (options == prop.end() || !options->is_array()) continue;
-            for (const auto& opt : *options) {
-                if (!opt.is_object() || !opt.contains("value")) continue;
-                ComboOption o;
-                if (!scalarToText(opt["value"], o.value)) continue;
-                if (opt.contains("label") && opt["label"].is_string())
-                    o.label = opt["label"].get<std::string>();
-                p.options.push_back(std::move(o));
-            }
-            if (p.options.empty()) continue;
-        } else if (p.type == "slider") {
-            p.min = number(prop, "min");
-            p.max = number(prop, "max");
-            p.step = number(prop, "step");
-            p.hasRange = prop.contains("min") && prop.contains("max");
-        }
-        result.push_back(std::move(p));
-    }
-    std::sort(result.begin(), result.end(),
-              [](const UserProperty& a, const UserProperty& b) {
-                  return a.order != b.order ? a.order < b.order
-                                            : a.name < b.name;
-              });
+    std::vector<UserProperty> result = scene::readUserProperties(wallpaperDir);
+    std::erase_if(result, [](const UserProperty& p) {
+        return p.type.empty() || (p.type == "combo" && p.options.empty());
+    });
     return result;
 }
 

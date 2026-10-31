@@ -13,15 +13,21 @@
 //     "clock": {"type": "bool", "value": false},
 //     "tint":  {"type": "color", "value": "1 0.5 0"}}}
 //
-// readUserProperties() returns all of them (for the settings UI and for
-// picking). resolveSceneProperties() turns a wallpaper's saved choices into
-// the `--set-property name=value` list passed to lwe (LweOptions).
+// readUserProperties() returns them (for the settings UI and for picking).
+// resolveSceneProperties() turns a wallpaper's saved choices into the
+// `--set-property name=value` list passed to lwe (LweOptions) or to the
+// native scene helper.
+//
+// Parsing lives in scene/model/UserProperties (library canvas_scene_props),
+// shared with the native scene engine so both read properties the same
+// way; UserProperty and ComboOption here are those types.
 //
 // Contract:
 // - Reading is tolerant: a missing or malformed project.json, or malformed
-//   entries, yield fewer (or no) properties, never an error. Values are
-//   kept as text in lwe's format: booleans "true"/"false", numbers as
-//   written, colours "r g b" (0..1).
+//   entries, yield fewer (or no) properties, never an error. Labels (no
+//   type) and combos without options are left out here. Values are kept as
+//   text in lwe's format: booleans "true"/"false", numbers as written,
+//   colours "r g b" (0..1).
 // - Pinned values are always emitted and win over random picks.
 // - With randomize on, each other dropdown gets one random value from its
 //   eligible options: the wallpaper's "allowed" list for it when present
@@ -43,30 +49,17 @@
 #include <utility>
 #include <vector>
 
+#include "scene/model/UserProperties.h"
+
 namespace canvas {
 
-struct ComboOption {
-    std::string label;
-    std::string value;
-};
-
-struct UserProperty {
-    std::string name;
-    std::string type;   // lower case: combo, slider, bool, color, textinput,
-                        // text (a heading, no value), file, ...
-    std::string text;   // label shown in Wallpaper Engine (may be a
-                        // ui_... localisation key)
-    std::string value;  // default, as text (see contract)
-    int order = 0;
-    std::vector<ComboOption> options;  // combo only
-    double min = 0, max = 0, step = 0;  // slider only
-    bool hasRange = false;
-};
+using ComboOption = scene::ComboOption;
+using UserProperty = scene::UserProperty;
 
 using PropertyList = std::vector<std::pair<std::string, std::string>>;
 
-// User properties declared in <wallpaperDir>/project.json, sorted by
-// (order, name).
+// User properties declared in <wallpaperDir>/project.json that the
+// settings offer (see contract), sorted by (order, name).
 std::vector<UserProperty> readUserProperties(
     const std::filesystem::path& wallpaperDir);
 

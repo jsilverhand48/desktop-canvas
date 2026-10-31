@@ -30,9 +30,13 @@
 #   canvas_daemon   config, library scanning, instance management, child
 #                   supervision, audio policy, IPC, control and the HTTP
 #                   settings UI. Links no display or video library.
+#   canvas_scene_props  scene/model/UserProperties: project.json user
+#                   properties, shared by the daemon and the scene engine;
+#                   no dependencies, always built.
 #   canvas_scene_core  scene/: the native scene engine's GPU free part
-#                   (today the asset readers: scene.pkg, file lookup, .tex
-#                   parsing and decoding with lz4, libjpeg-turbo, libpng).
+#                   (asset readers: scene.pkg, file lookup, .tex parsing and
+#                   decoding with lz4, libjpeg-turbo, libpng; the scene
+#                   model and capability report).
 #   canvas_scene_host  scene-host/: the helper's GL free pacing, surface
 #                   and daemon protocol code, linked by its tests.
 # The desktop-canvas executable is main.cpp plus those libraries, and adds
@@ -155,6 +159,12 @@ endif()
 
 # canvas_daemon: everything the daemon does that is not display or video
 # specific. Tests link this instead of relisting production sources.
+# canvas_scene_props: project.json user properties (scene/model/
+# UserProperties), shared by the daemon's SceneOptions and the native scene
+# engine. Only the JSON header, so it is built whatever else is found.
+add_library(canvas_scene_props STATIC src/scene/model/UserProperties.cpp)
+target_link_libraries(canvas_scene_props PUBLIC canvas_core)
+
 add_library(canvas_daemon STATIC
     src/config/Config.cpp
     src/source/WorkshopScanner.cpp
@@ -176,7 +186,7 @@ add_library(canvas_daemon STATIC
     src/http/HttpServer.cpp
     src/http/WebApi.cpp
 )
-target_link_libraries(canvas_daemon PUBLIC canvas_core)
+target_link_libraries(canvas_daemon PUBLIC canvas_core canvas_scene_props)
 # Settings UI files (data/ui): installed under share/desktop-canvas/ui; the
 # source tree path lets a development build serve them without installing.
 target_compile_definitions(canvas_daemon PRIVATE
@@ -234,9 +244,16 @@ if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND)
         src/scene/assets/AssetLocator.cpp
         src/scene/assets/TextureFile.cpp
         src/scene/assets/TextureDecode.cpp
+        src/scene/model/Json.cpp
+        src/scene/model/Field.cpp
+        src/scene/model/Project.cpp
+        src/scene/model/SceneFile.cpp
+        src/scene/model/Resources.cpp
+        src/scene/model/SceneLoader.cpp
+        src/scene/model/Capabilities.cpp
     )
     target_link_libraries(canvas_scene_core
-        PUBLIC canvas_core
+        PUBLIC canvas_core canvas_scene_props
         PRIVATE PkgConfig::LZ4 PkgConfig::TURBOJPEG PkgConfig::LIBPNG)
 endif()
 
@@ -254,6 +271,7 @@ if(DESKTOP_CANVAS_SCENE AND TARGET canvas_display AND TARGET canvas_scene_core
     add_executable(desktop-canvas-scene
         src/scene-host/main.cpp
         src/scene-host/AssetTools.cpp
+        src/scene-host/SceneCheck.cpp
         src/scene-host/PlaceholderRenderer.cpp
         src/scene-host/Screenshot.cpp
         src/scene-host/Sandbox.cpp

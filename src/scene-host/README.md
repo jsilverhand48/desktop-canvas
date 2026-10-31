@@ -6,10 +6,12 @@ it for scene wallpapers on the "native" and "auto" engines (see
 over the control channel protocol in `process/HelperProtocol.h`. It also
 runs by hand for previews, screenshots and checks.
 
-Status: plan phase P1. The engine's asset readers (`src/scene/assets/`)
-are in and power the `--extract` and `--dump` tools; rendering arrives
-with later phases, so the support check still reports every scene as
-unsupported and "native" mode shows a solid dark slate placeholder. Every
+Status: plan phase P2. The engine's asset readers (`src/scene/assets/`)
+and scene model (`src/scene/model/`) are in: they power `--extract`,
+`--dump`, `--check` and `--check-all`. Rendering arrives with later
+phases, so the support check still reports every scene as unsupported
+(no feature is supported yet) and "native" mode shows a solid dark slate
+placeholder. Every
 other part (surfaces, pacing, protocol, sandbox, headless screenshots) is
 real and tested.
 
@@ -27,6 +29,12 @@ blocks the daemon's single threaded event loop.
   Without `--assets-dir` it looks for the Wallpaper Engine assets folder
   in the Steam library holding the wallpaper
   (`scene::AssetLocator::guessAssetsDir`).
+- `SceneCheck` the capability report (`src/scene/model/README.md`
+  section 9): `examine()` loads the scene model with the `--set-property`
+  values and lists the features this build cannot render; it backs
+  `--check` (JSON, exit 0 or 3), the `--strict` start (the "unsupported"
+  message and exit 3 the "auto" engine relies on) and `--check-all ROOT`
+  (summary, or a JSON array with `--json`; non scene folders skipped).
 - `AssetTools` the inspection modes of `src/scene/assets/README.md`
   section 4.1. `--extract ENTRY OUT` resolves ENTRY through the lookup
   layers (logging which one answered); a `.tex` is decoded (first image,

@@ -14,8 +14,10 @@ HTML, CSS and JavaScript: no framework, no build step.
   - Wallpaper drawer: enable, show now on an output, clear the broken flag,
     and for scenes one editor per user property: dropdowns can be pinned or
     limited to the options random picks may use (NSFW options marked);
-    sliders, toggles, colours and text can be overridden. Save can relaunch
-    the wallpaper if it is showing. Scenes also get an engine choice
+    sliders, toggles, colours and text can be overridden. Properties whose
+    display condition is false for the pinned values are hidden (their pins
+    are kept) and appear after saving the values they depend on. Save can
+    relaunch the wallpaper if it is showing. Scenes also get an engine choice
     (global, linux-wallpaperengine, auto, native), the renderer they use
     now, and when the native renderer has given up on them, why, with a
     "Retry native" button.

@@ -454,19 +454,27 @@ bool Controller::wallpaper(const std::string& id, json& out,
                             id) != config_.broken.end();
     out = itemJson(*info, config_, broken);
     json props = json::array();
+    auto ws = config_.wallpapers.find(id);
     if (info->type == WallpaperType::Scene) {
-        for (const auto& p : readUserProperties(info->dir)) {
+        static const std::map<std::string, std::string> kNoPins;
+        const auto& pins = ws != config_.wallpapers.end() ? ws->second.properties : kNoPins;
+        const auto declared = readUserProperties(info->dir);
+        for (const auto& p : declared) {
             json options = json::array();
             for (const auto& o : p.options)
                 options.push_back({{"label", o.label},
                                    {"value", o.value},
                                    {"nsfw", isNsfwOption(o)}});
+            // "shown": the property's display condition against the pinned
+            // values (defaults otherwise); the UI hides it when false.
             json prop = {{"name", p.name},
                          {"type", p.type},
                          {"text", p.text},
                          {"value", p.value},
                          {"order", p.order},
-                         {"options", options}};
+                         {"options", options},
+                         {"condition", p.condition},
+                         {"shown", scene::evaluateCondition(p.condition, declared, pins)}};
             if (p.hasRange) {
                 prop["min"] = p.min;
                 prop["max"] = p.max;
@@ -476,7 +484,6 @@ bool Controller::wallpaper(const std::string& id, json& out,
         }
     }
     out["properties"] = props;
-    auto ws = config_.wallpapers.find(id);
     out["pinned"] = ws != config_.wallpapers.end()
                         ? json(ws->second.properties)
                         : json::object();

@@ -40,8 +40,10 @@ report. Unknown keys are ignored.
 | string | JSON string | |
 | path | string naming a file through the lookup of `../assets/README.md` section 2 | |
 
-Vector parsing (this project): components are read left to right; fewer
-than N fill from the field's default, more than N are ignored; a JSON
+Vector parsing (this project): components are separated by spaces or
+commas (2 effect constants are written "0.0, 1.0" [corpus]) and read left
+to right; fewer than N fill from the field's default, more than N are
+ignored (at most 4 seen [corpus]); a JSON
 number or a one number string sets every component (the uniform rule of
 section 2.3). A component that is not a number makes the whole value
 invalid (default plus warning). `null` anywhere means absent [corpus:
@@ -95,7 +97,8 @@ added.
 
 `"user": {"name": "name", "condition": "c"}` is a conditional binding: the
 value is true exactly when the property's current value equals `c`
-(compared as text). All 42 such bindings with a known property name a
+(compared as text, or as numbers when both are numeric; a number field
+gets 1 or 0). All 42 such bindings with a known property name a
 combo and a condition equal to one of its option values, around a bool
 (layer, effect or animation layer visibility) [corpus]; this is the combo
 property's "associate the layer with an option" feature [doc: Combo Box
@@ -174,6 +177,11 @@ against numbers), anything else as text. A bare reference is true when the
 value is true, non zero or non empty text. An unknown name is undefined
 (false, equal to nothing). An expression that does not parse shows the
 property.
+
+The daemon's settings UI evaluates each condition against the wallpaper's
+pinned values (defaults otherwise) and hides properties whose condition
+is false, keeping their pins; they appear once the values they depend on
+are saved.
 
 ## 4. scene.json
 
@@ -289,8 +297,8 @@ compose}`; command `copy` 3), and editor only `gizmos`, `preview`,
 `supported` (true when nothing is unsupported), `features` (what the
 scene uses), `unsupported` (features this build cannot render), `errors`
 (files that failed, section 1) and `warnings` (section 1 type tolerance),
-and exits 0 when supported, 3 otherwise. Feature names: `image`,
-`effects`, `solid-layer`, `fullscreen-layer`, `composition-layer`,
+and exits 0 when supported, 3 otherwise. Feature names: `scene` (camera,
+clear colour and projection: every scene), `image`, `effects`, `solid-layer`, `fullscreen-layer`, `composition-layer`,
 `shape-layer`, `group`, `particles`, `text`, `sound`, `light`, `puppet`,
 `camera-path`, `3d-model`, `script`, `timeline`, `user-properties`,
 `parallax`, `camera-shake`, `bloom`, `hdr`, `video-texture`. A build
@@ -310,4 +318,36 @@ scene engine.
 
 ## Files
 
-(added with the implementation)
+`UserProperties` is library `canvas_scene_props`; the rest is part of
+`canvas_scene_core` (namespace `canvas::scene` throughout).
+
+- `UserProperties` section 3: declarations (`parseUserProperties`,
+  `readUserProperties`), the text form (`valueText`, `textToBool`,
+  `textToNumber`, `textToFloats`), `defaultValues` and
+  `evaluateCondition` (a small recursive descent parser, never
+  JavaScript).
+- `Json` section 1: `parseJson` with the byte order mark, size and depth
+  rules (`jsonNesting` counts brackets outside strings).
+- `LoadReport.h` errors, warnings (capped at 200, then counted).
+- `Field` section 2: `Field<T>` (stored and current value, presence,
+  binding, unevaluated script and animation), `readPlain`/`readText`
+  conversions for bool, float, int64, string, Vec2 to Vec4 and Floats,
+  `readField`/`readValue` for wrapped values, `resolve` for bindings.
+  Structs expose `forEachField(f)` so resolution and feature scans walk a
+  scene without stored pointers.
+- `Project` section 3: `ProjectFile` and `parseProjectFile`.
+- `SceneFile` sections 4 and 5: camera, general settings, objects by kind,
+  effect instances, animation layers, particle overrides.
+- `Resources` sections 6 to 8: model, material and effect files.
+- `SceneLoader` everything above through an `AssetLocator`: each path
+  parsed once and shared, referenced particle, sound and texture files
+  checked (texture headers parsed for video), bindings resolved against
+  defaults plus overrides; `applyProperties` for live changes;
+  `texturePath` maps material texture names to `materials/<name>.tex`
+  (every texture the 203 scenes reference resolves this way [corpus]).
+- `Capabilities` section 9: `sceneFeatures`, `supportedFeatures` (empty
+  until P4), `checkReport`.
+
+Measured with these readers on 2026-10-30: all 203 scenes load with no
+file error and no warning; the acceptance scene 3784295445 loads cleanly
+[req A1].

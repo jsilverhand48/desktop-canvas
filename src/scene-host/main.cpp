@@ -10,7 +10,10 @@
 //                        [--device NAME] WALLPAPER_DIR
 //       headless: render on an EGL device and write a PNG
 //   desktop-canvas-scene --check WALLPAPER_DIR
-//       print the support report as JSON and exit (0 supported, 3 not)
+//       print the support report as JSON and exit (0 supported, 3 not);
+//       see scene/model/README.md section 9
+//   desktop-canvas-scene --check-all ROOT [--json]
+//       check every scene folder in ROOT: a summary, or a JSON array
 //   desktop-canvas-scene --list-devices
 //       list EGL devices usable for --screenshot
 //   desktop-canvas-scene --extract ENTRY OUT WALLPAPER_DIR
@@ -53,6 +56,7 @@
 #include "process/HelperProtocol.h"
 #include "scene-host/AssetTools.h"
 #include "scene-host/PlaceholderRenderer.h"
+#include "scene-host/SceneCheck.h"
 #include "scene-host/Sandbox.h"
 #include "scene-host/SceneHost.h"
 #include "scene-host/Screenshot.h"
@@ -73,12 +77,6 @@ namespace {
 // Placeholder colour: a dark slate, distinct from black so a running
 // helper is visible.
 constexpr float kPlaceholder[3] = {0.09f, 0.10f, 0.13f};
-
-// Features the wallpaper needs that this build cannot render yet. The
-// engine phases replace this with the real capability report.
-std::vector<std::string> unsupportedFeatures(const fs::path& /*dir*/) {
-    return {"scene-renderer"};
-}
 
 EglContext::Options glOptions(bool debug) {
     EglContext::Options options;
@@ -146,6 +144,8 @@ int main(int argc, char** argv) {
     bool glDebug = false;
     std::vector<std::string> extract;
     std::string dump;
+    std::string checkAllRoot;
+    bool jsonOutput = false;
 
     app.add_option("wallpaper", wallpaper, "Wallpaper directory (has project.json)");
     app.add_option("--control-fd", controlFd, "Daemon control socket (HelperProtocol)");
@@ -173,6 +173,8 @@ int main(int argc, char** argv) {
         ->expected(2)
         ->allow_extra_args(false);  // leave WALLPAPER_DIR to the positional
     app.add_option("--dump", dump, "Write every scene.pkg entry below this folder");
+    app.add_option("--check-all", checkAllRoot, "Check every scene folder in this root");
+    app.add_flag("--json", jsonOutput, "With --check-all: print a JSON array");
     try {
         app.parse(argc, argv);
     } catch (const CLI::ParseError& e) {
@@ -187,6 +189,7 @@ int main(int argc, char** argv) {
                       << "\n";
         return helper::kExitClean;
     }
+    if (!checkAllRoot.empty()) return scenehost::checkAll(checkAllRoot, assetsDir, jsonOutput);
     if (wallpaper.empty() || !fs::exists(fs::path(wallpaper) / "project.json")) {
         std::cerr << "desktop-canvas-scene: no project.json in '" << wallpaper
                   << "'\n";
@@ -215,12 +218,15 @@ int main(int argc, char** argv) {
         return scenehost::dumpPackage(assets, out);
     }
 
-    auto unsupported = unsupportedFeatures(wallpaper);
+    scene::PropertyValues overrides;
+    for (const auto& p : properties) {
+        auto eq = p.find('=');
+        if (eq != std::string::npos) overrides[p.substr(0, eq)] = p.substr(eq + 1);
+    }
+    scenehost::Examination exam = scenehost::examine(wallpaper, assetsDir, overrides);
+    const std::vector<std::string>& unsupported = exam.unsupported;
     if (check) {
-        nlohmann::json report = {{"wallpaper", wallpaper},
-                                 {"supported", unsupported.empty()},
-                                 {"unsupported", unsupported}};
-        std::cout << report.dump(2) << "\n";
+        std::cout << exam.report.dump(2) << "\n";
         return unsupported.empty() ? helper::kExitClean
                                    : helper::kExitUnsupported;
     }
@@ -245,11 +251,7 @@ int main(int argc, char** argv) {
                                             kPlaceholder[2]);
     renderer.setMuted(muted);
     renderer.setVolume(volume);
-    for (const auto& p : properties) {
-        auto eq = p.find('=');
-        if (eq != std::string::npos)
-            renderer.setProperty(p.substr(0, eq), p.substr(eq + 1));
-    }
+    for (const auto& [name, value] : overrides) renderer.setProperty(name, value);
 
     if (!screenshot.empty()) {
         int width = 0;

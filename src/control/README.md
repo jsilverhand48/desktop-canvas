@@ -7,8 +7,9 @@ IPC socket (`handleIpc`, desktop-canvasctl) and the browser settings UI
 - Reads: `status()` (outputs, what they show, rotation, mute/pause, UI
   address, `library_revision` / `library_size` for the UI's auto reload), `library()` (every item with enabled / broken / customized /
   rating / tags / preview), `settings()` (all global settings),
-  `wallpaper(id)` (one item, its user properties from project.json, saved
-  pinned and allowed values, outputs showing it).
+  `wallpaper(id)` (one item, its user properties from project.json with
+  each display `condition` and whether it is `shown` for the pinned values,
+  saved pinned and allowed values, outputs showing it).
 - Writes: `updateSettings()` validates the whole patch against a copy of
   Config before committing, so a bad field changes nothing. `updateWallpaper`,
   `setEnabled` (bulk), `show` (temporary override, not persisted) and
