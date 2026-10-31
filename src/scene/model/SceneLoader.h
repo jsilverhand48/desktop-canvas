@@ -25,13 +25,19 @@
 
 namespace canvas::scene {
 
+// A referenced texture's header facts (the pixels load later).
+struct TextureSummary {
+    PayloadKind payload = PayloadKind::Raw;
+    uint32_t formatCode = 0;  // .tex format code (also TEX<n>FORMAT)
+};
+
 struct LoadedScene {
     ProjectFile project;
     SceneFile scene;
     std::map<std::string, std::shared_ptr<ModelFile>> models;        // by path
     std::map<std::string, std::shared_ptr<MaterialFile>> materials;  // by path
     std::map<std::string, std::shared_ptr<EffectFile>> effects;      // by path
-    std::map<std::string, PayloadKind> textures;  // referenced .tex files found
+    std::map<std::string, TextureSummary> textures;  // referenced .tex files found
     PropertyValues values;  // current property values
     LoadReport report;
 

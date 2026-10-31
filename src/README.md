@@ -29,7 +29,8 @@ Daemon source tree. Module map:
 - `scene/` the native scene engine (clean room rewrite, see its README):
   so far `assets/` (scene.pkg, file lookup, .tex readers; plan phase P1)
   and `model/` (scene description, user properties, capability report;
-  P2)
+  P2), `shader/` (dialect translation to GLSL 3.30; P3) and `gl/` (program
+  cache; P3, rendering from P4)
 - `scene-host/` desktop-canvas-scene, the native scene renderer helper
   (engines "native" and "auto"; until the engine renders, a placeholder
   colour) and its `--extract`/`--dump` asset tools, DESKTOP_CANVAS_SCENE=ON
@@ -58,8 +59,9 @@ is `config/`, `source/`, `render/` except VideoBackend, `process/`, `audio/`,
 `render/VideoBackend.cpp` and libmpv added when mpv is found.
 `canvas_scene_props` is `scene/model/UserProperties` (no dependencies;
 linked by `canvas_daemon` for SceneOptions and by the engine).
-`canvas_scene_core` is the rest of `scene/` (no GPU code; links lz4,
-libjpeg-turbo and libpng). `canvas_scene_host` (scene-host pacing and protocol, no GL) plus
+`canvas_scene_core` is the rest of `scene/` except `gl/` (no GPU code;
+links lz4, libjpeg-turbo and libpng); `canvas_scene_gl` is `scene/gl/`
+(libepoxy). `canvas_scene_host` (scene-host pacing and protocol, no GL) plus
 the GL parts and asset tools, canvas_scene_core, canvas_display, libepoxy
 and libpng make `desktop-canvas-scene`.
 

@@ -41,8 +41,8 @@ std::set<std::string> sceneFeatures(LoadedScene& scene) {
     if (g.cameraShake.value) f.insert("camera-shake");
     if (g.bloom.value) f.insert("bloom");
     if (g.hdr.value) f.insert("hdr");
-    for (const auto& [path, kind] : scene.textures)
-        if (kind == PayloadKind::Video) f.insert("video-texture");
+    for (const auto& [path, texture] : scene.textures)
+        if (texture.payload == PayloadKind::Video) f.insert("video-texture");
     return f;
 }
 

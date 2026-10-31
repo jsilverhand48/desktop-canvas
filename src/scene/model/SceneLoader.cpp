@@ -74,7 +74,7 @@ public:
             out_.report.error(path + ": " + error);
             return;
         }
-        out_.textures[path] = tex->payload;
+        out_.textures[path] = TextureSummary{tex->payload, tex->formatCode};
     }
 
     void exists(const std::string& path) {

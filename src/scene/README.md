@@ -35,7 +35,8 @@ Appendix A; they are cited as **[req A<n>]**.
 |---|---|---|
 | `assets/` | scene.pkg archives, file lookup across item, package, Wallpaper Engine compatibility overrides and assets, `.tex` textures (implemented) | P1 |
 | `model/` | project, scene, object, material, effect and model JSON, user properties, capability report (implemented) | P2 |
-| `shader/` | Wallpaper Engine shader dialect, combos, translation | P3 |
+| `shader/` | Wallpaper Engine shader dialect, combos, translation to GLSL 3.30 (implemented; HLSL conversion rules pending, see its section 7) | P3 |
+| `gl/` | GL 3.3 code: program cache (implemented), rendering from P4 | P3, P4 |
 | `render/` | GL 3.3 core compositing, effects, camera, bloom | P4 |
 | `particles/` | particle systems | P5 |
 | `script/`, `text/` | SceneScript (QuickJS-ng), text layers | P6 |
@@ -49,7 +50,7 @@ simulation) and is deterministic, so tests run it headless. Today it is the
 `assets/` readers and the `model/`; it links lz4, libjpeg-turbo and libpng
 privately and canvas_core and `canvas_scene_props` publicly.
 `canvas_scene_props` is `model/UserProperties` alone, so the daemon shares
-it without linking the engine. GL code will live in
+it without linking the engine. `canvas_scene_gl` is `gl/` (libepoxy). GL code will live in
 `canvas_scene_gl` from P4 on.
 
 Verification of the readers: `claude_tests/test_scene_assets` (fixtures

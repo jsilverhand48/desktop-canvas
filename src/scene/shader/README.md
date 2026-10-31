@@ -158,7 +158,11 @@ The program text handed to the driver: `#version 330 core`, the defines
 of section 4, the prelude (the mappings of section 1 as macros), then the
 resolved source with these rewrites, on whole identifiers outside
 comments:
-- vertex: `attribute` becomes `in`, `varying` becomes `out`;
+- vertex: `attribute` becomes `in`, `varying` becomes `out`; the
+  documented attributes get fixed locations (`a_Position` 0, `a_TexCoord`
+  1, `a_Normal` 2, `a_Tangent4` 3, `a_Color` 4, `a_PositionVec4` 5,
+  `a_TexCoordVec3` 6, `a_TexCoordVec4` 7, `a_TexCoordC1` to `C5` 8 to 12),
+  so every program takes the same vertex layout;
 - fragment: `varying` becomes `in`, and `gl_FragColor` becomes a declared
   `out vec4` (a macro may not take a `gl_` name);
 - the compatibility fixes of [req A2], in this order, each logged: (1) a
@@ -170,19 +174,60 @@ comments:
   swizzle too, never `==`) go to a global copy initialised at the start of
   `main`, and every use reads the copy.
 
+- uniform declarations of built in types move above the code (array
+  sizes given by macros are expanded): Wallpaper Engine's own effect
+  shaders include headers that use uniforms the shader declares after the
+  `#include` (section 7);
+- `#require LightingV1` asks for engine provided lighting code; a program
+  that calls its `PerformLighting_V1` cannot render until phase P8 writes
+  it, one that does not call it is unaffected.
+
 `glslang` checks the result against the GLSL 3.30 core rules as a strict
-reference (tests and the corpus experiment); drivers differ in leniency
-(NVIDIA accepts what Mesa rejects).
+reference (tests and the corpus experiment); NVIDIA's core profile turned
+out to be as strict (section 7).
 
 ## 7. Corpus experiment
 
 Every program the library uses (object materials and effect passes, with
 their resolved combos) is translated and compiled on the three drivers
 of this machine (NVIDIA, radeonsi, llvmpipe) through headless EGL
-contexts, and checked with glslang. Results, failure classes and the
-fixes they led to are recorded here before rendering builds on them.
+contexts, and checked with glslang (`claude_tests/test_shader_corpus`).
+Results, failure classes and the fixes they led to are recorded here
+before rendering builds on them.
 
-(results pending)
+Run of 2026-10-30: 2431 passes in 203 scenes, 355 distinct programs.
+
+| | NVIDIA 595 | radeonsi | llvmpipe | glslang |
+|---|---|---|---|---|
+| programs compiling and linking | 319 | 318 | 318 | 319 |
+| scenes with every program working | 156 | 155 | 155 | 155 |
+
+The drivers disagree on 1 program; NVIDIA's core profile is as strict as
+Mesa here (`error C7011: implicit cast`). 318 programs (90 %) work on
+every driver, and 155 scenes (76 %) have every program working on every
+driver. 2 more scenes call `PerformLighting_V1` (`#require LightingV1`),
+engine code to be written with lights (phase P8).
+
+What the first run taught, now part of sections 2 and 6: includes must
+be expanded inside the conditional preprocessor (one run failed every
+program); and uniforms must be hoisted, since Wallpaper Engine's own
+`effects/blur_precise_gaussian`, `shine_gaussian` and `godrays_gaussian`
+include `common_blur.h`, which samples `g_Texture0`, before declaring it
+(21 programs).
+
+The 37 programs still failing (46 scenes) rely on HLSL's implicit
+conversions, which GLSL does not have: scalar to vector promotion and
+vector truncation in built in and user function calls (`max(0,
+albedo.rgb)` in Wallpaper Engine's own `effects/nitro`, used by 24
+scenes; `pow(vec3, float)`; `mix(vec4, vec3, float)`; `texture(s,
+vec4)`), `%` on floats (the `Simple_Audio_Bars` copies of effect
+3021673417, 20 scenes), truncation or broadcast in assignments and
+initializers, arithmetic between vectors of different sizes, float array
+indices, and varyings declared with different widths in the two stages.
+Fixing these needs the types of expressions, so a text rewrite cannot do
+it; the options are recorded in the phase report and decided before
+rendering builds on this. Until then such programs fail to compile and
+their effects are skipped (native) or the scene falls back (auto).
 
 ## 8. Program cache
 
@@ -192,7 +237,32 @@ binaries. A file is named by a 64 bit hash of the driver string and both
 sources but stores them in full, and a binary is used only when they
 match exactly, so hash collisions and driver updates fall back to
 compiling. Compiles use `GL_KHR_parallel_shader_compile` when present.
+All three drivers here offer both the extension and program binaries
+(`claude_tests/test_scene_gl`).
+
+## 9. Tracer bullet
+
+Wallpaper Engine's own `genericimage2`, translated with its default
+combos and the engine values set (MVP, `g_Color4`, texture unit and
+resolution, annotated defaults), draws a textured quad identically on
+NVIDIA, radeonsi and llvmpipe (`claude_tests/test_scene_gl`, 2026-10-30).
+Unannotated engine uniforms such as `g_Color4` default to zero in GL, so
+the renderer must always set them.
 
 ## Files
 
-(added with the implementation)
+Namespace `canvas::scene`, library `canvas_scene_core` (no GL).
+
+- `Preprocessor` sections 2 and 4: `ShaderPreprocessor` (includes once
+  per run inside active code, C rules for conditionals, macro tracking,
+  [req A2 (4)] repairs, `#require` and `#extension` collection) and
+  `normalizeLineEnds`.
+- `Translator` sections 3 to 6: `translateProgram` (combo resolution,
+  preprocessing of both stages, interface parsing, rewrites, uniform
+  hoisting, fixed attribute locations, [req A2 (1) to (3)], assembly),
+  `shaderPrelude`, `attributeLocation`, `replaceIdentifiers`.
+- `Programs` `collectPrograms` (every material and effect pass of a
+  loaded scene as a `ProgramRequest`) and `shaderLoader` (sources through
+  an `AssetLocator`).
+
+GL compilation and the program cache are in `../gl/`.

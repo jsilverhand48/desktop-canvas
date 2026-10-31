@@ -37,6 +37,8 @@
 #                   (asset readers: scene.pkg, file lookup, .tex parsing and
 #                   decoding with lz4, libjpeg-turbo, libpng; the scene
 #                   model and capability report).
+#   canvas_scene_gl  scene/gl/: the engine's GL 3.3 code through libepoxy
+#                   (the program cache; rendering from phase P4).
 #   canvas_scene_host  scene-host/: the helper's GL free pacing, surface
 #                   and daemon protocol code, linked by its tests.
 # The desktop-canvas executable is main.cpp plus those libraries, and adds
@@ -251,10 +253,20 @@ if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND)
         src/scene/model/Resources.cpp
         src/scene/model/SceneLoader.cpp
         src/scene/model/Capabilities.cpp
+        src/scene/shader/Preprocessor.cpp
+        src/scene/shader/Translator.cpp
+        src/scene/shader/Programs.cpp
     )
     target_link_libraries(canvas_scene_core
         PUBLIC canvas_core canvas_scene_props
         PRIVATE PkgConfig::LZ4 PkgConfig::TURBOJPEG PkgConfig::LIBPNG)
+endif()
+
+# canvas_scene_gl: the engine's GL code (src/scene/gl), GL 3.3 core
+# through libepoxy. Today the program cache; rendering lands in P4.
+if(TARGET canvas_scene_core AND EPOXY_FOUND)
+    add_library(canvas_scene_gl STATIC src/scene/gl/ProgramCache.cpp)
+    target_link_libraries(canvas_scene_gl PUBLIC canvas_scene_core PkgConfig::EPOXY)
 endif()
 
 # Native scene helper (src/scene-host). canvas_scene_host holds the GL free

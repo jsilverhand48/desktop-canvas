@@ -341,7 +341,8 @@ scene engine.
 - `Resources` sections 6 to 8: model, material and effect files.
 - `SceneLoader` everything above through an `AssetLocator`: each path
   parsed once and shared, referenced particle, sound and texture files
-  checked (texture headers parsed for video), bindings resolved against
+  checked (texture headers parsed: payload kind for video textures, format
+  code for the shaders' TEX<n>FORMAT), bindings resolved against
   defaults plus overrides; `applyProperties` for live changes;
   `texturePath` maps material texture names to `materials/<name>.tex`
   (every texture the 203 scenes reference resolves this way [corpus]).
