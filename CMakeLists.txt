@@ -125,6 +125,7 @@ if(CANVAS_HAVE_WAYLAND OR CANVAS_HAVE_X11)
         target_sources(canvas_display PRIVATE
             src/display/wayland/WaylandConnection.cpp
             src/display/wayland/WaylandLayerOutput.cpp
+            src/display/wayland/WaylandWindowOutput.cpp
             src/display/wayland/WaylandPlatform.cpp
             src/display/wayland/WaylandToplevels.cpp
         )

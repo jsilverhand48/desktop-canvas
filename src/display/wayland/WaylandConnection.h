@@ -2,8 +2,9 @@
 //
 // Binds the globals the daemon needs: wl_compositor, zwlr_layer_shell_v1
 // (background surfaces), zxdg_output_manager_v1 (output names and logical
-// geometry: size and position in the global layout), and wl_seat (pointer
-// motion and buttons over our own surfaces). A
+// geometry: size and position in the global layout), wl_seat (pointer
+// motion and buttons over our own surfaces) and xdg_wm_base (ordinary
+// windows for desktop-canvas-scene --window; pings are answered). A
 // zwlr_foreign_toplevel_manager_v1 global is only remembered; WaylandToplevels
 // binds it when the fullscreen pause asks for other clients' windows. Tracks wl_outputs as they
 // appear and disappear; each is described by OutputInfo. The display fd is
@@ -23,6 +24,7 @@
 #include <vector>
 
 struct zwlr_layer_shell_v1;
+struct xdg_wm_base;
 struct zxdg_output_manager_v1;
 struct zxdg_output_v1;
 
@@ -56,6 +58,7 @@ public:
     wl_display* display() const { return display_; }
     wl_compositor* compositor() const { return compositor_; }
     zwlr_layer_shell_v1* layerShell() const { return layer_shell_; }
+    xdg_wm_base* wmBase() const { return wm_base_; }  // null when absent
 
     const std::vector<std::unique_ptr<OutputInfo>>& outputs() const {
         return outputs_;
@@ -107,6 +110,7 @@ private:
     wl_registry* registry_ = nullptr;
     wl_compositor* compositor_ = nullptr;
     zwlr_layer_shell_v1* layer_shell_ = nullptr;
+    xdg_wm_base* wm_base_ = nullptr;
     zxdg_output_manager_v1* xdg_output_manager_ = nullptr;
     std::vector<std::unique_ptr<OutputInfo>> outputs_;
     std::function<void()> outputs_changed_cb_;

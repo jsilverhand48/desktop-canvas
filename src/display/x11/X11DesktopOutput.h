@@ -10,6 +10,10 @@
 // The window outlives individual wallpapers (see RenderSurface.h): hide()
 // unmaps it and cancels the frame timer, show() maps and lowers it again.
 // The EGLSurface stays valid while unmapped, so ready() is unaffected.
+//
+// With `window` set it is instead an ordinary titled window named "window"
+// (desktop-canvas-scene --window): normal type, not lowered, and closing it
+// (WM_DELETE_WINDOW) makes closed() true and runs the close callback.
 #pragma once
 
 #include <X11/Xlib.h>
@@ -31,7 +35,8 @@ class EventLoop;
 class X11DesktopOutput : public RenderSurface {
 public:
     X11DesktopOutput(EventLoop& loop, X11Connection& conn, EglContext& egl,
-                     const X11OutputInfo& info, int fps);
+                     const X11OutputInfo& info, int fps, bool window = false,
+                     std::function<void()> onClose = {});
     ~X11DesktopOutput() override;
 
     const std::string& name() const override { return name_; }
@@ -44,6 +49,7 @@ public:
     void setOnReady(std::function<void()> cb) override;
     void show() override;
     void hide() override;
+    bool closed() const override { return closed_; }
 
 private:
     EventLoop& loop_;
@@ -57,7 +63,10 @@ private:
     EGLSurface egl_surface_ = EGL_NO_SURFACE;
     uint64_t frame_timer_ = 0;
     bool shown_ = true;  // constructor maps the window
+    bool window_mode_ = false;
+    bool closed_ = false;
     std::function<void()> on_ready_;
+    std::function<void()> on_close_;
 };
 
 }  // namespace canvas

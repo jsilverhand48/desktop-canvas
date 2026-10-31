@@ -6,6 +6,7 @@
 
 #include "core/Log.h"
 #include "display/wayland/WaylandLayerOutput.h"
+#include "display/wayland/WaylandWindowOutput.h"
 
 namespace canvas {
 
@@ -42,6 +43,18 @@ std::unique_ptr<RenderSurface> WaylandPlatform::createSurface(
     }
     log::error() << "createSurface: unknown output " << outputName;
     return nullptr;
+}
+
+std::unique_ptr<RenderSurface> WaylandPlatform::createWindow(int width, int height,
+                                                             const std::string& title,
+                                                             std::function<void()> onClose) {
+    if (!conn_.wmBase()) {
+        log::error() << "createWindow: the compositor offers no xdg_wm_base";
+        return nullptr;
+    }
+    auto window = std::make_unique<WaylandWindowOutput>(conn_, egl_, width, height, title);
+    window->setOnClose(std::move(onClose));
+    return window;
 }
 
 }  // namespace canvas

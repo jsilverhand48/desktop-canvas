@@ -95,6 +95,25 @@ bool SceneHost::wanted(const std::string& name) const {
 }
 
 void SceneHost::syncOutputs() {
+    if (options_.windowWidth > 0 && options_.windowHeight > 0) {
+        Output& output = outputs_["window"];
+        if (!output.surface) {
+            output.surface = platform_.createWindow(
+                options_.windowWidth, options_.windowHeight, "desktop-canvas-scene",
+                [this] { loop_.quit(helper::kExitClean); });
+            if (!output.surface) {
+                log::error() << "could not create a window";
+                outputs_.erase("window");
+                loop_.quit(1);
+                return;
+            }
+            output.surface->setOnReady([this] { updateClock(); });
+            output.surface->show();
+        }
+        updateClock();
+        maybeSendReady();
+        return;
+    }
     auto present = platform_.outputs();
     // Drop outputs that disappeared or are no longer wanted.
     for (auto it = outputs_.begin(); it != outputs_.end();) {

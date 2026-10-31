@@ -153,9 +153,15 @@ them:
 Base and effect passes see `g_Color4` white: the layer's colour and
 alpha apply once, in its own passes [inference].
 
-In effect passes `g_ModelViewProjectionMatrix` maps the layer onto the
-pass target and `g_EffectModelViewProjectionMatrix` onto the screen
-[asset: effectcomposebackground.vert].
+Base and effect passes draw a quad already in clip space (texture
+(0,0) on row 0) with `g_ModelViewProjectionMatrix` the identity: some
+effect vertex shaders write `a_Position` straight to `gl_Position`
+(godrays_cast.vert and 53 more of the 173 in the assets; 209 package
+files), others multiply it by `g_ModelViewProjectionMatrix` (109 assets
+files, 471 package files) [asset; corpus], and both fill the target only
+this way. `g_EffectModelViewProjectionMatrix` maps that quad onto the
+screen where the layer is [asset: effectcomposebackground.vert], and
+`g_ModelMatrix`/`g_EffectModelMatrix` onto the scene.
 
 Layer composites: `_rt_imageLayerComposite_<id>_a` and `_b` name image
 layer `<id>`'s two composite buffers [corpus: 67 distinct names in 46
@@ -194,7 +200,7 @@ normal 2, effect passes all normal]:
 ## 5. The frame
 
 The scene draws into an offscreen frame at the size section 1 gives
-(RGBA8, `hdr` scenes too until their chain is specified), cleared to
+(RGBA8; RGBA16F only with the experimental `ultra` switch below), cleared to
 `clearcolor` unless `clearenabled` is false [corpus: true 162, null 34,
 never false]. `_rt_FullFrameBuffer` is a copy of the frame as drawn so
 far, made right before a pass that samples it (once until the frame
@@ -220,10 +226,39 @@ own bloom materials, each drawn over clip space:
    an eighth [inference: each material names only its input];
 4. `combine_ldr` writes frame plus bloom, alpha 1, back as the frame.
 `g_TexelSize` stays one frame texel throughout, which is what the taps
-are written in [asset]. Scenes with `hdr` (8 [corpus]) use the `hdr_*`
-and `combine_hdr` chain instead, whose engine values (`g_RenderVar0`)
-no source documents; they draw without bloom for now, and `hdr` stays an
-unsupported feature.
+are written in [asset].
+
+HDR (`hdr` true, 8 scenes [corpus]) is Wallpaper Engine's "Ultra"
+post-processing: HDR bloom shows only for users who set post-processing
+to Ultra, and "all users who only have normal bloom enabled will only see
+normal bloom on your wallpaper"; authors are told to configure the normal
+bloom settings for them [doc: Bloom Effects]. desktop-canvas renders
+`hdr` scenes that way: an RGBA8 frame and the normal bloom chain above
+with `bloomstrength` and `bloomthreshold`. The workshop previews come from
+the editor, which always shows the HDR look [doc: Bloom Effects], so those
+scenes compare darker.
+
+The HDR chain itself is behind the experimental `--render-debug ultra`
+switch while its behaviour is pinned down [asset: materials/util
+hdr_downsample_bloom, hdr_downsample, hdr_upsample,
+combine_hdr_upsample_linear; shaders hdr_downsample, combine_hdr]: the
+frame and `rgba_backbuffer` buffers become RGBA16F; `hdr_downsample_bloom`
+halves the frame into level 1 keeping what exceeds `bloomhdrthreshold`
+with a soft knee (`g_BloomBlendParams` = (threshold, threshold - feather,
+2 * feather, 0.25 / feather), feather `bloomhdrfeather` [inference: the
+usual soft knee curve the shader's arithmetic implements; "threshold
+smoothing ... if you set this to 1, then even dark part of the image will
+glow very slightly" doc: Bloom Effects]) times `bloomhdrstrength` and
+`bloomtint`; `hdr_downsample` halves level after level up to
+`bloomhdriterations` (8 when absent); `hdr_upsample` (additive) adds
+each level times `bloomhdrscatter` onto the next larger one; the
+`LINEAR` combine adds level 1 to the frame. `g_RenderVar0` is (0.5 /
+source width, 0.5 / source height, -0.5 / source width, -0.5 / source
+height): the shader's bicubic path recovers the source size as 0.5 /
+`g_RenderVar0.xy` [inference]. Open question: with scatter 2 and eight
+levels this compounds to white in 2404179953, whose preview shows a mild
+glow, so the levels must combine with less gain than this reading
+gives.
 
 Engine uniforms set for every pass: the matrices of section 3,
 `g_Time` (seconds since the scene started), `g_Texture<n>Resolution`,
@@ -239,25 +274,38 @@ the audio spectra (zeros until phase P7), `g_Color4`, `g_Color`,
 `--render-debug LIST` (comma separated, repeatable) helps find which
 layer or effect does what: `pass-log` logs every pass of the first
 frame (where, target, blending, slot kinds), `base-only` runs no
-effects and no bloom, `no-bloom` skips bloom, `no-solid-final` presents
+effects and no bloom, `no-bloom` skips bloom, `ultra` turns on the
+experimental HDR chain for `hdr` scenes (section 5), `no-solid-final` presents
 the frame's alpha, `object=ID` draws
 only the named objects, `skip-object=ID` leaves one out, and
 `skip-effect=ID[:N]` skips an object's effect N or all of them, and
 `dump-programs=DIR` writes every translated program (vertex, fragment,
 and the pass and request that asked for it) into DIR. Objects
-that others sample as composites are still computed. `--window` arrives
-with a later step.
+that others sample as composites are still computed.
+
+`desktop-canvas-scene --window WxH WALLPAPER_DIR` shows the scene in an
+ordinary window (xdg-shell on Wayland, a normal X11 window) instead of
+wallpaper surfaces, with the pointer reported over it; closing the
+window ends the helper. With `--render-debug` it is the interactive way
+to look at a scene.
 
 ## 7. Comparison
 
 Ground truth: every workshop item ships a preview image that Wallpaper
-Engine rendered when the author published it [corpus: preview.jpg 170,
-preview.gif 32, preview.png 1]. The comparison renders each scene
-headless at the preview's aspect and compares downscaled images
-(structural similarity and colour difference), alongside lwe screenshots
-taken through the black box wrapper. Scores are recorded for every scene;
-images are looked at only for scenes rated Everyone, and never for
-3826693905.
+Engine rendered when the author published it [corpus: preview.jpg 174,
+preview.gif 33, preview.png 1, all square]. Authors frame previews
+themselves (centre crops, zooms on a face), so the comparison
+(`claude_tests/corpus/compare_previews.py`) renders each scene headless
+at its own aspect, 1280 pixels wide, and searches square crops of
+several sizes and positions for the best structural similarity (grey,
+64x64) with the preview; it also reports the centred square and the
+colour difference of the best crop. lwe screenshots, taken through the
+black box wrapper, can be scored the same way (`--lwe`; each opens a
+window for a few seconds). Scores are recorded for every scene; images
+are looked at only for scenes rated Everyone, and never for 3826693905.
+Previews of `hdr` scenes show the HDR look (section 5), and previews of
+animated scenes catch one moment, so the scores are a review aid, not a
+gate.
 
 ## Files
 

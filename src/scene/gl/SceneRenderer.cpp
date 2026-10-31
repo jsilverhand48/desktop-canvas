@@ -56,6 +56,8 @@ bool RenderDebug::parse(const std::string& list, std::string& error) {
             baseOnly = true;
         } else if (item == "no-bloom") {
             noBloom = true;
+        } else if (item == "ultra") {
+            ultra = true;
         } else if (item == "no-solid-final") {
             keepAlpha = true;
         } else if (key == "dump-programs" && !value.empty()) {
@@ -97,6 +99,16 @@ struct BloomStep {
     const char* target;
     int divisor;
 };
+// The HDR chain (section 5): first and later downsamples, the additive
+// upsample and the combine.
+const char* const kHdrMaterials[] = {
+    "materials/util/hdr_downsample_bloom.json",
+    "materials/util/hdr_downsample.json",
+    "materials/util/hdr_upsample.json",
+    "materials/util/combine_hdr_upsample_linear.json",
+};
+constexpr int kHdrDefaultIterations = 8;
+
 constexpr BloomStep kBloomSteps[] = {
     {"materials/util/downsample_quarter_bloom.json", "_rt_4FrameBuffer", 4},
     {"materials/util/downsample_eighth_blur_v.json", "_rt_8FrameBuffer", 8},
@@ -143,7 +155,7 @@ void createTarget(Target& t, int width, int height, GLenum internal, bool mipmap
     int w = t.width, h = t.height;
     for (int level = 0; level < t.levels; level++) {
         glTexImage2D(GL_TEXTURE_2D, level, GLint(internal), w, h, 0, baseFormat(internal),
-                     GL_UNSIGNED_BYTE, nullptr);
+                     internal == GL_RGBA16F ? GL_FLOAT : GL_UNSIGNED_BYTE, nullptr);
         w = std::max(1, w / 2);
         h = std::max(1, h / 2);
     }
@@ -246,7 +258,7 @@ struct EngineLocations {
           modelInverse = -1, effectModel = -1, viewProjection = -1, normalModel = -1,
           time = -1, frameTime = -1, screen = -1, texelSize = -1, texelSizeHalf = -1,
           pointer = -1, pointerLast = -1, parallax = -1, color4 = -1, color = -1, alpha = -1,
-          eye = -1;
+          eye = -1, renderVar0 = -1;
     std::array<GLint, kSlots> resolution, rotation, translation, mipInfo;
     EngineLocations() {
         resolution.fill(-1);
@@ -349,9 +361,11 @@ struct ConstantSource {
     const Field<Floats>* material = nullptr;  // the material's constantshadervalues
     std::string property;                     // usershadervalues binding
     bool objectBrightness = false, objectAlpha = false;  // genericimage2 defaults
-    // Bloom passes: scene.json general values, when present.
+    // Bloom passes: scene.json general values, when present, or values
+    // the renderer works out each frame.
     const Field<float>* sceneFloat = nullptr;
     const Field<Vec3>* sceneVec3 = nullptr;
+    const Floats* computed = nullptr;
 };
 
 struct Pass {
@@ -417,12 +431,13 @@ Quad layerQuad(const LayerRect& r, float uMax, float vMax) {
             r.x1, r.y1, 0, uMax, 0};
 }
 
-// Clip space, texture (0,0) on row 0 (fullscreen layers).
-Quad clipQuad() {
-    return {-1, -1, 0, 0, 0,  //
-            1,  -1, 0, 1, 0,  //
-            -1, 1,  0, 0, 1,  //
-            1,  1,  0, 1, 1};
+// Clip space, texture (0,0) on row 0: fullscreen layers, base and effect
+// passes (section 3), bloom. uMax and vMax limit the texture region.
+Quad clipQuad(float uMax = 1, float vMax = 1) {
+    return {-1, -1, 0, 0,    0,     //
+            1,  -1, 0, uMax, 0,     //
+            -1, 1,  0, 0,    vMax,  //
+            1,  1,  0, uMax, vMax};
 }
 
 const char* const kBlitVertex = R"(#version 330 core
@@ -492,7 +507,9 @@ struct SceneRenderer::Impl {
         Mat4 model = Mat4::identity();
         Quad quad{};
         const Target* previous = nullptr;   // an effect's input
-        const Target* override0 = nullptr;  // replaces slot 0 (effect result)
+        // Buffers that replace slots (slot 0: an effect result; bloom levels).
+        std::array<const Target*, kSlots> overrides{};
+        Vec4 renderVar0{0, 0, 0, 0};  // g_RenderVar0 (bloom passes)
         const GpuTexture* layerTexture = nullptr;
         const std::map<std::string, const Target*>* named = nullptr;
         const SceneObject* object = nullptr;
@@ -523,6 +540,14 @@ struct SceneRenderer::Impl {
     uint64_t generation = 0;
     float pointer[2] = {0.5f, 0.5f};
     float projection[2] = {1920, 1080};
+    // RGBA16F for hdr scenes: the frame, its copies, layer buffers and
+    // rgba_backbuffer fbos (section 5).
+    GLenum frameFormat = GL_RGBA8;
+    struct HdrBloom {
+        Pass downsampleBloom, downsample, upsample, combine;
+        bool usable = false;
+        Floats blend;  // g_BloomBlendParams, worked out each frame
+    } hdr;
     std::set<std::string> problemSet;
     std::vector<std::string> problems;
 
@@ -655,6 +680,7 @@ struct SceneRenderer::Impl {
             e.color = loc("g_Color");
             e.alpha = loc("g_Alpha");
             e.eye = loc("g_EyePosition");
+            e.renderVar0 = loc("g_RenderVar0");
             for (int i = 0; i < kSlots; i++) {
                 std::string n = "g_Texture" + std::to_string(i);
                 e.resolution[size_t(i)] = loc((n + "Resolution").c_str());
@@ -775,10 +801,11 @@ struct SceneRenderer::Impl {
         return pass;
     }
 
-    static GLenum bufferFormat(const std::string& format) {
+    GLenum bufferFormat(const std::string& format) const {
         if (format == "r8") return GL_R8;
         if (format == "rg88") return GL_RG8;
-        return GL_RGBA8;  // rgba8888, rgba_backbuffer (HDR comes with bloom)
+        if (format == "rgba_backbuffer") return frameFormat;
+        return GL_RGBA8;  // rgba8888 and unknown names
     }
 
     EffectRun effectRun(const SceneObject& o, const EffectInstance& instance, size_t index) {
@@ -895,11 +922,16 @@ struct SceneRenderer::Impl {
     }
 
     // The bloom chain of section 5, for scenes whose bloom is on or bound.
-    // HDR scenes keep no bloom until the HDR chain is specified.
+    // hdr scenes get it too (what users without Ultra post-processing see)
+    // unless the experimental ultra switch asks for the HDR chain.
     void buildBloom() {
         const General& g = scene.scene.general;
         bloom.usable = false;
-        if (!(g.bloom.value || g.bloom.bound()) || g.hdr.value) return;
+        if (!(g.bloom.value || g.bloom.bound())) return;
+        if (g.hdr.value && options.debug.ultra) {
+            buildHdrBloom();
+            return;
+        }
         bloom.usable = true;
         bloom.where = "bloom";
         for (const auto& step : kBloomSteps) {
@@ -930,6 +962,43 @@ struct SceneRenderer::Impl {
                 }
             bloom.passes.push_back(std::move(pass));
         }
+    }
+
+    void buildHdrBloom() {
+        const General& g = scene.scene.general;
+        Pass* passes[] = {&hdr.downsampleBloom, &hdr.downsample, &hdr.upsample, &hdr.combine};
+        hdr.usable = true;
+        for (size_t i = 0; i < std::size(kHdrMaterials); i++) {
+            auto mat = material(kHdrMaterials[i]);
+            if (!mat || mat->passes.empty()) {
+                hdr.usable = false;
+                return;
+            }
+            const MaterialPass& mp = mat->passes.front();
+            Pass pass = materialPass(mp, programRequest(mp, scene, nullptr, nullptr),
+                                     "hdr bloom pass " + std::to_string(i), nullptr, nullptr,
+                                     nullptr, nullptr, false, 0);
+            if (pass.program)
+                for (size_t c = 0; c < pass.program->constants.size(); c++) {
+                    const std::string& name = pass.program->constants[c].material;
+                    if (name == "bloomstrength") pass.sources[c].sceneFloat = &g.bloomHdrStrength;
+                    if (name == "bloomtint") pass.sources[c].sceneVec3 = &g.bloomTint;
+                    if (name == "scatter") pass.sources[c].sceneFloat = &g.bloomHdrScatter;
+                    if (name == "blend") pass.sources[c].computed = &hdr.blend;
+                }
+            *passes[i] = std::move(pass);
+        }
+    }
+
+    // g_BloomBlendParams: threshold, knee start, knee width, curve (the
+    // soft knee of section 5); (t, t, 0, 1) without feather.
+    void updateHdrBlend() {
+        const General& g = scene.scene.general;
+        float t = g.bloomHdrThreshold.present ? g.bloomHdrThreshold.value : 1.0f;
+        float k = g.bloomHdrFeather.present ? std::max(0.0f, g.bloomHdrFeather.value) : 0.0f;
+        hdr.blend.count = 4;
+        hdr.blend.v = k > 0 ? std::array<float, 4>{t, t - k, 2 * k, 0.25f / k}
+                            : std::array<float, 4>{t, t, 0, 1};
     }
 
     // After finishPrograms(): drop what cannot draw.
@@ -970,6 +1039,8 @@ struct SceneRenderer::Impl {
         scene = std::move(loaded);
         layout = std::make_unique<SceneLayout>(scene.scene);
         const General& g = scene.scene.general;
+        const bool ultra = g.hdr.value && options.debug.ultra;
+        if (ultra) frameFormat = GL_RGBA16F;
         findReferencedComposites();
         for (size_t i = 0; i < scene.scene.objects.size(); i++) buildLayer(i);
         buildBloom();
@@ -977,6 +1048,8 @@ struct SceneRenderer::Impl {
         settleLayers();
         for (const auto& pass : bloom.passes)
             if (!pass.usable()) bloom.usable = false;
+        for (const Pass* pass : {&hdr.downsampleBloom, &hdr.downsample, &hdr.upsample, &hdr.combine})
+            if (!pass->usable()) hdr.usable = false;
         for (size_t i = 0; i < layers.size(); i++) layerById[layers[i].id] = i;
         for (const auto& t : textures.problems()) problem(t);
         projection[0] = g.projectionWidth.value;
@@ -1034,13 +1107,13 @@ struct SceneRenderer::Impl {
     void ensureFrameCopy(bool mip) {
         Frame& f = *frame;
         if (!mip && !f.copyValid) {
-            if (!f.copy.fbo) createTarget(f.copy, f.target.width, f.target.height, GL_RGBA8);
+            if (!f.copy.fbo) createTarget(f.copy, f.target.width, f.target.height, frameFormat);
             copyTarget(f.target, f.copy);
             f.copyValid = true;
         }
         if (mip && !f.mipValid) {
             if (!f.mipCopy.fbo)
-                createTarget(f.mipCopy, f.target.width, f.target.height, GL_RGBA8, true);
+                createTarget(f.mipCopy, f.target.width, f.target.height, frameFormat, true);
             copyTarget(f.target, f.mipCopy);
             glBindTexture(GL_TEXTURE_2D, f.mipCopy.texture);
             glGenerateMipmap(GL_TEXTURE_2D);
@@ -1100,6 +1173,7 @@ struct SceneRenderer::Impl {
                 auto it = scene.values.find(s.property);
                 if (it != scene.values.end()) f.count = textToFloats(it->second, f.v.data(), 4);
             }
+            if (s.computed && s.computed->count) f = *s.computed;
             if (!f.count && s.sceneFloat && s.sceneFloat->present) {
                 f.v[0] = s.sceneFloat->value;
                 f.count = 1;
@@ -1128,8 +1202,8 @@ struct SceneRenderer::Impl {
         const Slot& slot = pass.slots[size_t(i)];
         const GpuTexture* texture = nullptr;
         const Target* buffer = nullptr;
-        if (i == 0 && in.override0) {
-            buffer = in.override0;
+        if (in.overrides[size_t(i)]) {
+            buffer = in.overrides[size_t(i)];
         } else {
             switch (slot.kind) {
                 case SlotKind::Texture: texture = slot.texture; break;
@@ -1197,7 +1271,7 @@ struct SceneRenderer::Impl {
         for (int i = 0; i < kSlots; i++)
             if (pass.program->sampler[size_t(i)])
                 slots += " " + std::to_string(i) + ":" +
-                         (i == 0 && in.override0 ? "result" : slotName(pass.slots[size_t(i)].kind));
+                         (in.overrides[size_t(i)] ? "override" : slotName(pass.slots[size_t(i)].kind));
         log::info() << "pass " << pass.where << " -> "
                     << (in.destination ? "buffer " : "frame ") << dest.width << "x" << dest.height
                     << " blend " << int(pass.blend) << " slots" << slots;
@@ -1237,6 +1311,9 @@ struct SceneRenderer::Impl {
         if (e.pointerLast >= 0) glUniform2f(e.pointerLast, pointer[0], pointer[1]);
         if (e.parallax >= 0) glUniform2f(e.parallax, 0.5f, 0.5f);
         if (e.eye >= 0) glUniform3f(e.eye, projection[0] / 2, projection[1] / 2, 1000.0f);
+        if (e.renderVar0 >= 0)
+            glUniform4f(e.renderVar0, in.renderVar0[0], in.renderVar0[1], in.renderVar0[2],
+                        in.renderVar0[3]);
         const ImageLayer* image = in.object ? &*in.object->image : nullptr;
         if (e.color4 >= 0) {
             if (in.white || !image) {
@@ -1321,7 +1398,7 @@ struct SceneRenderer::Impl {
         in.previous = input;
         in.named = &named;
         in.white = true;
-        in.override0 = nullptr;
+        in.overrides.fill(nullptr);
         for (const Pass& pass : run.passes) {
             if (pass.copy) {
                 const Target* from = lookup(pass.source);
@@ -1386,46 +1463,53 @@ struct SceneRenderer::Impl {
         int bh = fullscreen ? frame->target.height : int(std::lround(size[1]));
         bw = std::clamp(bw, 1, kMaxBufferSize);
         bh = std::clamp(bh, 1, kMaxBufferSize);
+        // Base and effect passes draw a clip space quad with an identity
+        // matrix; fromClip takes it back to the layer rectangle, so the
+        // effect matrix still lands it where the layer is on screen
+        // (section 3).
         const Mat4 targetMvp = fullscreen ? Mat4::identity()
                                           : flipY() * Mat4::ortho(rect.x0, rect.x1, rect.y0, rect.y1,
                                                                   -10000, 10000);
-        const Quad fullQuad = fullscreen ? clipQuad() : layerQuad(rect, 1, 1);
+        const Mat4 fromClip = targetMvp.inverse();
+        const Quad onScreen = fullscreen ? clipQuad() : layerQuad(rect, 1, 1);
 
-        const Target* input = pool.acquire(bw, bh, GL_RGBA8, generation);
+        const Target* input = pool.acquire(bw, bh, frameFormat, generation);
         clearTarget(*input);
         in.destination = input;
+        in.mvp = Mat4::identity();
+        in.effectMvp = screenMvp * fromClip;
+        in.model = model * fromClip;
         switch (layer.kind) {
             case LayerKind::Image: {
                 bool sprite = layer.base.program->spriteSheet;
-                in.mvp = targetMvp;
-                in.quad = layerQuad(rect, sprite ? 1 : uMax, sprite ? 1 : vMax);
+                in.quad = clipQuad(sprite ? 1 : uMax, sprite ? 1 : vMax);
                 in.white = true;
                 drawPass(layer.base, in);
                 break;
             }
             case LayerKind::Solid:
-                in.mvp = targetMvp;
-                in.quad = fullQuad;
+            case LayerKind::Fullscreen:
+                in.quad = clipQuad();
                 for (const Pass& pass : layer.passes) drawPass(pass, in);
                 break;
             case LayerKind::Compose:
-                // composelayer fills its target from texture coordinates and
-                // samples the frame where the layer is on screen.
+                // The layer's own pass, as drawn on screen: composelayer
+                // fills its target from texture coordinates and samples the
+                // frame where the layer is.
                 in.mvp = screenMvp;
-                in.quad = fullQuad;
-                for (const Pass& pass : layer.passes) drawPass(pass, in);
-                break;
-            case LayerKind::Fullscreen:
-                in.mvp = Mat4::identity();
-                in.quad = fullQuad;
+                in.effectMvp = screenMvp;
+                in.model = model;
+                in.quad = onScreen;
                 for (const Pass& pass : layer.passes) drawPass(pass, in);
                 break;
         }
 
-        in.mvp = targetMvp;
-        in.quad = fullQuad;
+        in.mvp = Mat4::identity();
+        in.effectMvp = screenMvp * fromClip;
+        in.model = model * fromClip;
+        in.quad = clipQuad();
         for (EffectRun* run : active) {
-            const Target* output = pool.acquire(bw, bh, GL_RGBA8, generation);
+            const Target* output = pool.acquire(bw, bh, frameFormat, generation);
             runEffect(*run, input, output, bw, bh, in);
             pool.release(input);
             input = output;
@@ -1435,14 +1519,16 @@ struct SceneRenderer::Impl {
         in.previous = nullptr;
         in.named = nullptr;
         in.white = false;
+        in.effectMvp = screenMvp;
+        in.model = model;
         if (shown) {
             if (layer.kind == LayerKind::Image) {
                 in.mvp = screenMvp;
                 in.quad = layerQuad(rect, 1, 1);
-                in.override0 = input;
+                in.overrides[0] = input;
                 for (const Pass& pass : layer.passes) drawPass(pass, in);
             } else {
-                blit(*input, nullptr, screenMvp, fullQuad, Blend::Translucent);
+                blit(*input, nullptr, screenMvp, onScreen, Blend::Translucent);
             }
         }
         if (keep) layer.composite = input;  // released when the frame ends
@@ -1453,7 +1539,7 @@ struct SceneRenderer::Impl {
     // back into it (section 5).
     void applyBloom() {
         const Target& f = frame->target;
-        const Target* output = pool.acquire(f.width, f.height, GL_RGBA8, generation);
+        const Target* output = pool.acquire(f.width, f.height, frameFormat, generation);
         DrawInputs in;
         in.mvp = Mat4::identity();
         in.effectMvp = Mat4::identity();
@@ -1462,6 +1548,53 @@ struct SceneRenderer::Impl {
         copyTarget(*output, f);
         frame->copyValid = frame->mipValid = false;
         pool.release(output);
+    }
+
+    // The HDR chain of section 5 over the finished frame.
+    void applyHdrBloom() {
+        const General& g = scene.scene.general;
+        updateHdrBlend();
+        const Target& f = frame->target;
+        int iterations = g.bloomHdrIterations.present ? int(std::lround(g.bloomHdrIterations.value))
+                                                      : kHdrDefaultIterations;
+        iterations = std::clamp(iterations, 1, 16);
+        std::vector<const Target*> levels{&f};
+        int w = f.width, h = f.height;
+        for (int k = 1; k <= iterations; k++) {
+            w = std::max(1, w / 2);
+            h = std::max(1, h / 2);
+            levels.push_back(pool.acquire(w, h, GL_RGBA16F, generation));
+            if (w == 1 && h == 1) break;
+        }
+        auto halfTexel = [](const Target& t) {
+            return Vec4{0.5f / float(t.width), 0.5f / float(t.height), -0.5f / float(t.width),
+                        -0.5f / float(t.height)};
+        };
+        DrawInputs in;
+        in.quad = clipQuad();
+        in.white = true;
+        for (size_t k = 1; k < levels.size(); k++) {
+            in.destination = levels[k];
+            in.overrides[0] = levels[k - 1];
+            in.renderVar0 = halfTexel(*levels[k - 1]);
+            drawPass(k == 1 ? hdr.downsampleBloom : hdr.downsample, in);
+        }
+        for (size_t k = levels.size() - 1; k >= 2; k--) {
+            in.destination = levels[k - 1];
+            in.overrides[0] = levels[k];
+            in.renderVar0 = halfTexel(*levels[k]);
+            drawPass(hdr.upsample, in);  // additive (the material's blending)
+        }
+        const Target* output = pool.acquire(f.width, f.height, frameFormat, generation);
+        in.destination = output;
+        in.overrides.fill(nullptr);
+        in.overrides[1] = levels.size() > 1 ? levels[1] : nullptr;
+        in.renderVar0 = {1, 0, 0, 0};  // exposure 1 (used outside the LINEAR path)
+        drawPass(hdr.combine, in);
+        copyTarget(*output, f);
+        frame->copyValid = frame->mipValid = false;
+        pool.release(output);
+        for (size_t k = 1; k < levels.size(); k++) pool.release(levels[k]);
     }
 
     void drawFrame(Frame& f) {
@@ -1499,8 +1632,9 @@ struct SceneRenderer::Impl {
                 pool.release(layer.composite);
                 layer.composite = nullptr;
             }
-        if (bloom.usable && scene.scene.general.bloom.value && !debug.baseOnly && !debug.noBloom)
-            applyBloom();
+        const bool bloomOn = scene.scene.general.bloom.value && !debug.baseOnly && !debug.noBloom;
+        if (bloomOn && bloom.usable) applyBloom();
+        if (bloomOn && hdr.usable) applyHdrBloom();
         logPasses = false;
         f.generation = generation;
         pool.collect(generation);
@@ -1570,7 +1704,7 @@ struct SceneRenderer::Impl {
         if (!f) {
             frames.emplace_back();
             f = &frames.back();
-            createTarget(f->target, fw, fh, GL_RGBA8);
+            createTarget(f->target, fw, fh, frameFormat);
         }
         f->lastUse = generation;
         if (f->generation != generation) drawFrame(*f);

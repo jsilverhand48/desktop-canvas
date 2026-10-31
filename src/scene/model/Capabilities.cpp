@@ -53,7 +53,7 @@ const std::set<std::string>& supportedFeatures() {
     static const std::set<std::string> supported = {
         "scene",           "image",           "effects", "solid-layer",
         "fullscreen-layer", "composition-layer", "group", "user-properties",
-        "bloom"};  // bloom without hdr; hdr is its own feature
+        "bloom", "hdr"};  // hdr as users without Ultra post-processing see it
     return supported;
 }
 

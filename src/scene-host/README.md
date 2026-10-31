@@ -24,7 +24,8 @@ blocks the daemon's single threaded event loop.
 
 - `main.cpp` command line, mode dispatch, platform selection (Wayland, then
   X11) with a GL 3.3 core, robust, alpha-less EGL context, sandbox, then
-  SceneHost. Modes and flags are listed in its header comment; exit codes
+  SceneHost. `--window WxH` shows the scene in an ordinary window instead
+  of wallpaper surfaces. Modes and flags are listed in its header comment; exit codes
   follow HelperProtocol (0 clean, 2 usage, 3 unsupported, 1 failure).
   Without `--assets-dir` it looks for the Wallpaper Engine assets folder
   in the Steam library holding the wallpaper
@@ -50,7 +51,11 @@ blocks the daemon's single threaded event loop.
   pause, resume, quit, mute, volume, pointer, props, covered). Pointer
   motion and buttons the helper sees itself (its own Wayland surfaces on
   wlroots, polling on X11) go to the renderer too; on Plasma the daemon
-  forwards the KDE bridge's cursor as "pointer" messages. `--span`
+  forwards the KDE bridge's cursor as "pointer" messages. In window mode
+  (`SceneHostOptions::windowWidth`, `windowHeight`) it makes one window
+  through `Platform::createWindow` instead of output surfaces, ignores
+  output changes, and ends the event loop cleanly when the window is
+  closed. `--span`
   (`SceneHostOptions::span`) is accepted and logged; each output still
   renders the whole frame (spanning lands with the screen span step). No
   GL, so `claude_tests/test_scene_host` drives it with fakes.

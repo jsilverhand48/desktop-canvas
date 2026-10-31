@@ -305,8 +305,9 @@ clear colour and projection: every scene), `image`, `effects`, `solid-layer`, `f
 `sprite-animation` (a texture with sprite sheet frames). A build
 supports the features of the phases it contains; this one (phase P4a)
 supports `scene`, `image`, `effects`, `solid-layer`, `fullscreen-layer`,
-`composition-layer`, `group`, `user-properties` and `bloom` (`hdr` scenes
-also report `hdr`, which it does not support), so the "auto" engine
+`composition-layer`, `group`, `user-properties`, `bloom` and `hdr`
+(drawn as users without Ultra post-processing see it, `../render/README.md`
+section 5), so the "auto" engine
 uses the native renderer only for scenes made of those and keeps
 linux-wallpaperengine for the rest.
 `--check-all ROOT` runs the check on every scene folder in ROOT and

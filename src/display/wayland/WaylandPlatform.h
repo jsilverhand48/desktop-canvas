@@ -22,6 +22,9 @@ public:
     std::vector<OutputDesc> outputs() const override;
     std::unique_ptr<RenderSurface> createSurface(
         const std::string& outputName, const std::string& layer) override;
+    // xdg-shell toplevel (WaylandWindowOutput).
+    std::unique_ptr<RenderSurface> createWindow(int width, int height, const std::string& title,
+                                                std::function<void()> onClose) override;
     void setOnOutputsChanged(std::function<void()> cb) override {
         conn_.setOnOutputsChanged(std::move(cb));
     }

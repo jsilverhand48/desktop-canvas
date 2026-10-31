@@ -9,10 +9,14 @@
 #include "core/Log.h"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
+#include "xdg-shell-client-protocol.h"
 
 namespace canvas {
 
 namespace {
+
+void wmBasePing(void*, xdg_wm_base* base, uint32_t serial) { xdg_wm_base_pong(base, serial); }
+const xdg_wm_base_listener kWmBaseListener = {wmBasePing};
 
 void outputGeometry(void*, wl_output*, int32_t, int32_t, int32_t, int32_t,
                     int32_t, const char*, const char*, int32_t) {}
@@ -152,6 +156,10 @@ void WaylandConnection::registryGlobal(void* data, wl_registry* registry,
         self->layer_shell_ = static_cast<zwlr_layer_shell_v1*>(
             wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface,
                              std::min(version, 4u)));
+    } else if (strcmp(interface, xdg_wm_base_interface.name) == 0 && !self->wm_base_) {
+        self->wm_base_ = static_cast<xdg_wm_base*>(
+            wl_registry_bind(registry, name, &xdg_wm_base_interface, std::min(version, 2u)));
+        xdg_wm_base_add_listener(self->wm_base_, &kWmBaseListener, self);
     } else if (strcmp(interface, zxdg_output_manager_v1_interface.name) == 0) {
         self->xdg_output_manager_ = static_cast<zxdg_output_manager_v1*>(
             wl_registry_bind(registry, name,
@@ -261,6 +269,7 @@ void WaylandConnection::flush() {
 WaylandConnection::~WaylandConnection() {
     if (pointer_) wl_pointer_destroy(pointer_);
     if (seat_) wl_seat_destroy(seat_);
+    if (wm_base_) xdg_wm_base_destroy(wm_base_);
     for (auto& info : outputs_) {
         if (info->xdg_output) zxdg_output_v1_destroy(info->xdg_output);
         if (info->output) wl_output_destroy(info->output);

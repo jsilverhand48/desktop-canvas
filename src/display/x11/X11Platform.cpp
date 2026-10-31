@@ -36,4 +36,12 @@ std::unique_ptr<RenderSurface> X11Platform::createSurface(
     return nullptr;
 }
 
+std::unique_ptr<RenderSurface> X11Platform::createWindow(int width, int height,
+                                                         const std::string& /*title*/,
+                                                         std::function<void()> onClose) {
+    X11OutputInfo info{"window", 0, 0, width, height};
+    return std::make_unique<X11DesktopOutput>(*loop_, conn_, egl_, info, fps_, true,
+                                              std::move(onClose));
+}
+
 }  // namespace canvas

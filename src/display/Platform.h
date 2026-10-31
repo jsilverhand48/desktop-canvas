@@ -54,6 +54,15 @@ public:
         const std::string& outputName, const std::string& layer) = 0;
     virtual void setOnOutputsChanged(std::function<void()> cb) = 0;
 
+    // An ordinary resizable window named "window" (desktop-canvas-scene
+    // --window); onClose runs when the user closes it. nullptr when the
+    // platform cannot make one.
+    virtual std::unique_ptr<RenderSurface> createWindow(int /*width*/, int /*height*/,
+                                                        const std::string& /*title*/,
+                                                        std::function<void()> /*onClose*/) {
+        return nullptr;
+    }
+
     // True on Wayland; ExternalProcessInstance uses this to choose between
     // --screen-root and --window for linux-wallpaperengine.
     virtual bool isWayland() const = 0;

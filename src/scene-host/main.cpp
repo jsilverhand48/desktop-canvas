@@ -6,6 +6,9 @@
 //   desktop-canvas-scene [options] WALLPAPER_DIR
 //       show the scene on --output outputs (default all) as layer shell
 //       surfaces (Wayland) or desktop windows (X11)
+//   desktop-canvas-scene --window WxH [options] WALLPAPER_DIR
+//       show it in an ordinary window instead (previews, debugging with the
+//       pointer); closing the window ends the helper
 //   desktop-canvas-scene --screenshot FILE [--size WxH] [--frames N]
 //                        [--device NAME] WALLPAPER_DIR
 //       headless: render on an EGL device and write a PNG
@@ -162,6 +165,7 @@ int main(int argc, char** argv) {
     std::string checkAllRoot;
     bool jsonOutput = false;
     std::vector<std::string> renderDebug;
+    std::string window;
 
     app.add_option("wallpaper", wallpaper, "Wallpaper directory (has project.json)");
     app.add_option("--control-fd", controlFd, "Daemon control socket (HelperProtocol)");
@@ -181,6 +185,7 @@ int main(int argc, char** argv) {
     app.add_flag("--strict", strict, "Exit 3 when anything is unsupported");
     bool span = false;
     app.add_flag("--span", span, "Stretch one canvas over every --output");
+    app.add_option("--window", window, "WxH: show in an ordinary window instead");
     app.add_flag("--check", check, "Print the support report and exit");
     app.add_option("--screenshot", screenshot, "Render headless into this PNG");
     app.add_option("--size", size, "Screenshot size WxH");
@@ -196,7 +201,7 @@ int main(int argc, char** argv) {
     app.add_option("--check-all", checkAllRoot, "Check every scene folder in this root");
     app.add_flag("--json", jsonOutput, "With --check-all: print a JSON array");
     app.add_option("--render-debug", renderDebug,
-                   "pass-log, base-only, no-bloom, no-solid-final, object=ID, skip-object=ID, "
+                   "pass-log, base-only, no-bloom, ultra, no-solid-final, object=ID, skip-object=ID, "
                    "skip-effect=ID[:N], dump-programs=DIR (comma separated, repeatable)")
         ->allow_extra_args(false);
     try {
@@ -339,6 +344,10 @@ int main(int argc, char** argv) {
     if (!noSandbox) scenehost::applySandbox(writablePaths(""));
 
     scenehost::SceneHostOptions options;
+    if (!window.empty() && !parseSize(window, options.windowWidth, options.windowHeight)) {
+        std::cerr << "desktop-canvas-scene: bad --window '" << window << "'\n";
+        return helper::kExitUsage;
+    }
     options.outputs = outputs;
     options.layer = layer;
     options.fps = fps;

@@ -11,7 +11,7 @@ namespace canvas {
 
 X11DesktopOutput::X11DesktopOutput(EventLoop& loop, X11Connection& conn,
                                    EglContext& egl, const X11OutputInfo& info,
-                                   int fps)
+                                   int fps, bool window, std::function<void()> onClose)
     : loop_(loop),
       conn_(conn),
       egl_(egl),
@@ -19,7 +19,9 @@ X11DesktopOutput::X11DesktopOutput(EventLoop& loop, X11Connection& conn,
       width_(info.width),
       height_(info.height),
       frame_period_(std::chrono::nanoseconds(1000000000LL /
-                                             (fps > 0 ? fps : 30))) {
+                                             (fps > 0 ? fps : 30))),
+      window_mode_(window),
+      on_close_(std::move(onClose)) {
     Display* dpy = conn.display();
     // The window visual must match the EGL config's native visual, or
     // eglCreateWindowSurface fails with EGL_BAD_MATCH.
@@ -49,28 +51,40 @@ X11DesktopOutput::X11DesktopOutput(EventLoop& loop, X11Connection& conn,
                             InputOutput, visual, attr_mask, &attrs);
     if (vinfo) XFree(vinfo);
 
-    // Desktop type: EWMH window managers keep it below everything and skip
-    // it in taskbars/pagers.
-    Atom desktop = conn.atom("_NET_WM_WINDOW_TYPE_DESKTOP");
-    XChangeProperty(dpy, window_, conn.atom("_NET_WM_WINDOW_TYPE"), XA_ATOM,
-                    32, PropModeReplace,
-                    reinterpret_cast<unsigned char*>(&desktop), 1);
-    Atom states[2] = {conn.atom("_NET_WM_STATE_SKIP_TASKBAR"),
-                      conn.atom("_NET_WM_STATE_SKIP_PAGER")};
-    XChangeProperty(dpy, window_, conn.atom("_NET_WM_STATE"), XA_ATOM, 32,
-                    PropModeReplace,
-                    reinterpret_cast<unsigned char*>(states), 2);
-    XStoreName(dpy, window_, "desktop-canvas");
-
-    XMapWindow(dpy, window_);
-    XLowerWindow(dpy, window_);
+    Atom deleteWindow = conn.atom("WM_DELETE_WINDOW");
+    if (window_mode_) {
+        // An ordinary window: the window manager places and decorates it,
+        // and asks before closing it.
+        XSetWMProtocols(dpy, window_, &deleteWindow, 1);
+        XStoreName(dpy, window_, "desktop-canvas-scene");
+        XMapWindow(dpy, window_);
+    } else {
+        // Desktop type: EWMH window managers keep it below everything and
+        // skip it in taskbars/pagers.
+        Atom desktop = conn.atom("_NET_WM_WINDOW_TYPE_DESKTOP");
+        XChangeProperty(dpy, window_, conn.atom("_NET_WM_WINDOW_TYPE"), XA_ATOM,
+                        32, PropModeReplace,
+                        reinterpret_cast<unsigned char*>(&desktop), 1);
+        Atom states[2] = {conn.atom("_NET_WM_STATE_SKIP_TASKBAR"),
+                          conn.atom("_NET_WM_STATE_SKIP_PAGER")};
+        XChangeProperty(dpy, window_, conn.atom("_NET_WM_STATE"), XA_ATOM, 32,
+                        PropModeReplace,
+                        reinterpret_cast<unsigned char*>(states), 2);
+        XStoreName(dpy, window_, "desktop-canvas");
+        XMapWindow(dpy, window_);
+        XLowerWindow(dpy, window_);
+    }
     XFlush(dpy);
 
-    conn.addWindowHandler(window_, [this](const XEvent& ev) {
+    conn.addWindowHandler(window_, [this, deleteWindow](const XEvent& ev) {
         if (ev.type == ConfigureNotify) {
             width_ = ev.xconfigure.width;
             height_ = ev.xconfigure.height;
             if (on_ready_) on_ready_();
+        } else if (ev.type == ClientMessage && window_mode_ &&
+                   static_cast<Atom>(ev.xclient.data.l[0]) == deleteWindow) {
+            closed_ = true;
+            if (on_close_) on_close_();
         }
     });
 

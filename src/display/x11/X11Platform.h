@@ -27,6 +27,9 @@ public:
     std::vector<OutputDesc> outputs() const override;
     std::unique_ptr<RenderSurface> createSurface(
         const std::string& outputName, const std::string& layer) override;
+    // An ordinary X11 window (X11DesktopOutput in window mode).
+    std::unique_ptr<RenderSurface> createWindow(int width, int height, const std::string& title,
+                                                std::function<void()> onClose) override;
     void setOnOutputsChanged(std::function<void()> cb) override {
         conn_.setOnOutputsChanged(std::move(cb));
     }

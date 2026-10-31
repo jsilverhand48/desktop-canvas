@@ -10,7 +10,9 @@ X11 implementation of the display abstractions.
   created with the EGL config's native visual (avoids EGL_BAD_MATCH),
   skip taskbar/pager states, timer based frame pacing on absolute
   deadlines at the platform fps (no compositor callbacks on X11; no drift,
-  no catch up bursts).
+  no catch up bursts). In window mode (`createWindow`) it is an ordinary
+  titled window named "window" instead: not DESKTOP type, not lowered,
+  WM_DELETE_WINDOW makes `closed()` true and runs the close callback.
 - `X11Toplevels` other clients' windows for the fullscreen pause:
   `_NET_CLIENT_LIST`, `_NET_ACTIVE_WINDOW`, `_NET_WM_STATE_FULLSCREEN`,
   WM_CLASS, outputs from the root relative geometry; desktop and dock types
