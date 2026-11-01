@@ -46,7 +46,15 @@ context; the GPU free parts live in the other `src/scene/` modules.
   genericropeparticle's (Catmull-Rom subdivisions for ropes, kept
   positions for rope trails). Every system draws with its own model
   matrix, parents first; `noParticles` (`--disable-particles`) leaves
-  them out. GL objects need the context current, including at
+  them out. Text layers (`../text/README.md` section 6) keep a
+  `TextDraw`: the font (fonts load once per name: the wallpaper's lookup,
+  fontconfig for `systemfont_` names, the assets' fallback), the layout,
+  an R8 coverage texture rasterized at the layer's scale and the largest
+  frame's pixels per unit, and an RGBA image the font material paints
+  (straight alpha, or over the opaque background); each is redone only
+  when its inputs change. The image is the layer texture of the image
+  layer path: flattexture draws it, effects run on it through the base
+  pass. GL objects need the context current, including at
   destruction.
 
 Tests: `claude_tests/test_scene_gl` and `test_scene_render` (opt-in GL

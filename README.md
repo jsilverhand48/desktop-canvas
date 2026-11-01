@@ -21,9 +21,10 @@ Audio from wallpapers is muted by default; unmute with
   Sway, and other wlroots compositors), or X11 (backend in progress).
   GNOME Wayland is not supported (Mutter lacks layer-shell).
 - wayland (or X11) and EGL at runtime; libmpv for video wallpapers;
-  libepoxy, libpng, lz4 and libjpeg-turbo for desktop-canvas-scene;
-  libsystemd (sd-bus) for the KDE bridge; linux-wallpaperengine for scene
-  wallpapers on the `lwe` engine.
+  libepoxy, libpng, lz4, libjpeg-turbo and FreeType (fontconfig for
+  system font names) for desktop-canvas-scene; libsystemd (sd-bus) for
+  the KDE bridge; linux-wallpaperengine for scene wallpapers on the `lwe`
+  engine and for what desktop-canvas-scene does not draw yet.
 - Wallpaper Engine workshop content, e.g. a Steam library containing
   `steamapps/workshop/content/431960`. Content roots are autodetected from
   `~/.local/share/Steam`, `~/.steam/steam`, and

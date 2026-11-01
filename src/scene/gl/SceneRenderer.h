@@ -8,20 +8,20 @@
 // (materials/util/effectpassthrough or effectcomposebackground from the
 // assets folder). render() lays the scene out (SceneLayout, so parent
 // transforms and visibility follow the fields' current values), draws
-// image, solid, composition, fullscreen and particle layers in order into
-// an offscreen frame laid out top row first (section 1), running effects
-// through pooled ping pong buffers, then presents the frame into the
-// framebuffer that was bound when render() was called: fill and stretch
-// cover it, fit centres the frame and fills the bars by the clamp mode.
+// image, solid, composition, fullscreen, particle and text layers in
+// order into an offscreen frame laid out top row first (section 1),
+// running effects through pooled ping pong buffers, then presents the
+// frame into the framebuffer that was bound when render() was called:
+// fill and stretch cover it, fit centres the frame and fills the bars by
+// the clamp mode.
 //
 // A frame is drawn once per advance(): rendering the same size again
 // before the next advance() only presents it again, so outputs that share
 // a pixel size share the work; particle systems also step once per
-// advance(). Layers of kinds not drawn yet (text, shapes, ...) are
-// skipped, as are passes whose program
-// does not compile and effects with such a pass; each problem is logged
-// and listed once. Construction, load() and every other call need the GL
-// context current.
+// advance(). Layers of kinds not drawn yet (shapes, lights, ...) are
+// skipped, as are passes whose program does not compile and effects with
+// such a pass; each problem is logged and listed once. Construction,
+// load() and every other call need the GL context current.
 #pragma once
 
 #include <cstdint>

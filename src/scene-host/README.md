@@ -6,14 +6,15 @@ it for scene wallpapers on the "native" and "auto" engines (see
 over the control channel protocol in `process/HelperProtocol.h`. It also
 runs by hand for previews, screenshots and checks.
 
-Status: plan phase P5b. The engine draws image, solid, composition and
+Status: plan phase P6b. The engine draws image, solid, composition and
 fullscreen layers with their effects and bloom, and moves them: timeline
 animations, sprite sheets, video textures (when built with libmpv),
 camera shake, parallax and the pointer uniforms
 (`src/scene/render/README.md`); it draws particle systems with their
 control points (the cursor included), child systems, sprite trails,
-ropes and rope trails (`src/scene/particles/README.md`); text, sound,
-scripts and puppets arrive with later phases. "auto", the daemon's
+ropes and rope trails (`src/scene/particles/README.md`) and text layers
+(`src/scene/text/README.md`); sound, scripts and puppets arrive with
+later phases, so text set by scripts shows its scene file value. "auto", the daemon's
 default engine since this phase, uses it for 116 of the 208 scenes of
 the test library. The support check reports scenes made only of what this build
 draws as supported, so "auto" uses the native renderer for those and

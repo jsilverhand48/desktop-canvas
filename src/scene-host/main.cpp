@@ -34,12 +34,12 @@
 // falls back to linux-wallpaperengine. Without it ("native"), whatever is
 // supported is shown and the rest skipped. The scene engine
 // (NativeRenderer, scene/gl/SceneRenderer) draws image, solid, composition
-// and fullscreen layers with their effects, their motion and particle
-// layers (plan phases P4 and P5a); a scene it cannot read or with nothing
-// it can draw shows a solid placeholder colour. --scaling and --clamp say
-// how the scene meets the output (scene/render/README.md section 1);
-// --disable-particles leaves particle layers out (like --render-debug
-// no-particles). Compiled shader programs are cached in
+// and fullscreen layers with their effects, their motion, particle and
+// text layers (plan phases P4, P5 and P6b); a scene it cannot read or
+// with nothing it can draw shows a solid placeholder colour. --scaling
+// and --clamp say how the scene meets the output (scene/render/README.md
+// section 1); --disable-particles leaves particle layers out (like
+// --render-debug no-particles). Compiled shader programs are cached in
 // $XDG_CACHE_HOME/desktop-canvas/shaders.
 //
 // Exit codes follow process/HelperProtocol.h: 0 clean, 2 usage, 3

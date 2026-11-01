@@ -40,7 +40,7 @@ Appendix A; they are cited as **[req A<n>]**.
 | `render/` | how a scene becomes pixels and how it moves: coordinates, layers, effects, blending, the frame, time, animated textures, timeline animations, camera and parallax; the GPU free layout and animation math (implemented through P4b) | P4 |
 | `particles/` | particle systems: the particle file, emitters, initializers, operators, control points, children, sprite and trail rendering (implemented: P5a and P5b) | P5 |
 | `script/` | SceneScript (QuickJS-ng) | P6a |
-| `text/` | text layers: fonts, measuring, lines, placement, drawing (specified) | P6b |
+| `text/` | text layers: fonts, measuring, lines, placement, drawing (implemented) | P6b |
 | `audio/` | sound layers, spectrum | P7 |
 | `puppet/` | puppet warp meshes, skeletons, animation | P8 |
 
@@ -49,8 +49,8 @@ Appendix A; they are cited as **[req A<n>]**.
 `canvas_scene_core` holds everything that needs no GPU (parsing, decoding,
 simulation) and is deterministic, so tests run it headless. Today it is the
 `assets/` readers, the `model/`, the `shader/` translation, the
-`render/` layout and animation math and the `particles/` simulation; it
-links lz4, libjpeg-turbo and libpng privately
+`render/` layout and animation math, the `particles/` simulation and
+the `text/` layout (FreeType, fontconfig when found); it links lz4, libjpeg-turbo and libpng privately
 and canvas_core and `canvas_scene_props` publicly. `canvas_scene_props` is
 `model/UserProperties` alone, so the daemon shares it without linking the
 engine. `canvas_scene_gl` is `gl/` (libepoxy): all GL code.

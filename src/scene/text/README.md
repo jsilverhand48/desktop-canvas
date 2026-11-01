@@ -125,4 +125,21 @@ scenes whose texts come from scripts still need `script` (phase P6a).
 
 ## Files
 
-(added with the implementation)
+- `TextFont` a FreeType face from file bytes (section 2) with the size,
+  line height, ascender, whole pixel advances and 8 bit glyph bitmaps of
+  sections 3 and 6; `systemFontFile()` finds a family through fontconfig
+  (built with fontconfig only: `CANVAS_SCENE_HAVE_FONTCONFIG`).
+- `TextLayout` `layoutText()` (sections 3 to 5: paragraphs, wrapping,
+  row limit and ellipsis, alignment offsets, the box),
+  `rasterizeText()` (section 6's coverage image at a raster scale),
+  `textRasterScale()` (section 6), `decodeUtf8()`.
+- Drawing lives in `../gl/SceneRenderer.cpp` (text layers: fonts by name,
+  the coverage and coloured images, effects through the image layer
+  path).
+
+Library `canvas_scene_core` (FreeType, optional fontconfig). Tests:
+`claude_tests/test_scene_text` (a system font: measuring, lines, limits,
+rasterizing, raster scale; with `CANVAS_CORPUS`, the stored sizes: 62 of
+68 plain and bound text objects of 2026-10-31 match the measured box
+exactly) and the text part of `claude_tests/test_scene_render`
+(alignment at the origin, colour, an effect, on every GL device).

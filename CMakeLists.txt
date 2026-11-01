@@ -240,7 +240,11 @@ pkg_check_modules(LZ4 IMPORTED_TARGET liblz4)
 # 2.1 or later: the decoder uses the TurboJPEG 2.x interface with
 # TJFLAG_LIMITSCANS (Debian 12 and Ubuntu 22.04 ship 2.1; 3.x keeps it).
 pkg_check_modules(TURBOJPEG IMPORTED_TARGET libturbojpeg>=2.1)
-if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND)
+# Text layers (src/scene/text): FreeType for fonts, fontconfig (optional)
+# for system font names.
+pkg_check_modules(FREETYPE IMPORTED_TARGET freetype2)
+pkg_check_modules(FONTCONFIG IMPORTED_TARGET fontconfig)
+if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND AND FREETYPE_FOUND)
     add_library(canvas_scene_core STATIC
         src/scene/assets/MappedFile.cpp
         src/scene/assets/PackageArchive.cpp
@@ -264,10 +268,16 @@ if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND)
         src/scene/render/Animation.cpp
         src/scene/particles/ParticleFile.cpp
         src/scene/particles/ParticleSystem.cpp
+        src/scene/text/TextFont.cpp
+        src/scene/text/TextLayout.cpp
     )
     target_link_libraries(canvas_scene_core
         PUBLIC canvas_core canvas_scene_props
-        PRIVATE PkgConfig::LZ4 PkgConfig::TURBOJPEG PkgConfig::LIBPNG)
+        PRIVATE PkgConfig::LZ4 PkgConfig::TURBOJPEG PkgConfig::LIBPNG PkgConfig::FREETYPE)
+    if(FONTCONFIG_FOUND)
+        target_link_libraries(canvas_scene_core PRIVATE PkgConfig::FONTCONFIG)
+        target_compile_definitions(canvas_scene_core PRIVATE CANVAS_SCENE_HAVE_FONTCONFIG)
+    endif()
 endif()
 
 # canvas_scene_gl: the engine's GL code (src/scene/gl), GL 3.3 core

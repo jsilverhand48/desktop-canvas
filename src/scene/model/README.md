@@ -312,8 +312,8 @@ supports `scene`, `image`, `effects`, `solid-layer`, `fullscreen-layer`,
 (drawn as users without Ultra post-processing see it, `../render/README.md`
 section 5) from phase P4a, `timeline`, `parallax`, `camera-shake`,
 `sprite-animation` and `video-texture` (with libmpv only) from P4b,
-`particles` from P5a and `particle-controlpoints`, `particle-children` and
-`particle-trails` from P5b, so the "auto" engine
+`particles` from P5a, `particle-controlpoints`, `particle-children` and
+`particle-trails` from P5b, and `text` from P6b, so the "auto" engine
 uses the native renderer only for scenes made of those and keeps
 linux-wallpaperengine for the rest.
 `--check-all ROOT` runs the check on every scene folder in ROOT and

@@ -118,9 +118,10 @@ brightness and alpha; flat reads `g_Color` (color) and `g_Alpha`.
 
 Particle layers simulate and draw as `../particles/README.md` sections
 6 to 9 say (phases P5a and P5b), in `objects` order like other layers,
-child systems right after their parents. Shape layers
-(`shape` "quad", 4 objects) and text, sound and light layers belong to
-later phases.
+child systems right after their parents. Text layers draw like image
+layers whose texture is the coloured text (`../text/README.md` section 6,
+phase P6b). Shape layers (`shape` "quad", 4 objects) and sound and light
+layers belong to later phases.
 
 ## 3. Effects
 

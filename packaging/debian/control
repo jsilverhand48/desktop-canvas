@@ -17,6 +17,8 @@ Build-Depends: debhelper-compat (= 13),
                libpng-dev,
                liblz4-dev,
                libturbojpeg0-dev,
+               libfreetype-dev,
+               libfontconfig-dev,
                libsystemd-dev
 Standards-Version: 4.6.2
 

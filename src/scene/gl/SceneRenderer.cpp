@@ -11,6 +11,8 @@
 #include <cmath>
 #include <cstdio>
 #include <ctime>
+#include <fstream>
+#include <iterator>
 #include <list>
 #include <map>
 #include <optional>
@@ -25,6 +27,8 @@
 #include "scene/render/Animation.h"
 #include "scene/shader/Programs.h"
 #include "scene/shader/Translator.h"
+#include "scene/text/TextFont.h"
+#include "scene/text/TextLayout.h"
 
 namespace canvas::scene {
 
@@ -97,6 +101,11 @@ constexpr uint64_t kUnusedFrames = 120;  // pooled buffers idle this long are fr
 
 const char* const kPassthroughMaterial = "materials/util/effectpassthrough.json";
 const char* const kComposeBackgroundMaterial = "materials/util/effectcomposebackground.json";
+// Text layers (src/scene/text/README.md section 6): the font shader paints
+// the coverage, flattexture draws the coloured text; the fallback font.
+const char* const kFontMaterial = "materials/fonts/basefont.json";
+const char* const kTextMaterial = "materials/util/flattexture.json";
+const char* const kFallbackFont = "fonts/NotoSans-Regular.ttf";
 
 // Wallpaper Engine's bloom chain (section 5): material, target buffer
 // (empty: the output) and that buffer's size divisor.
@@ -409,7 +418,7 @@ struct EffectRun {
     bool usable = true;
 };
 
-enum class LayerKind : uint8_t { Image, Solid, Compose, Fullscreen, Particles };
+enum class LayerKind : uint8_t { Image, Solid, Compose, Fullscreen, Particles, Text };
 
 // Particle vertices (section 6 of src/scene/particles/README.md), as
 // floats. Sprites (genericparticle): a_Position 3, a_TexCoordVec4 4
@@ -436,6 +445,25 @@ struct ParticleDraw {
     size_t quads = 0;             // this frame's
 };
 
+// A text layer's state (src/scene/text/README.md section 6): the font, the
+// inputs of the current layout, coverage and image, the coverage texture
+// (R8) and the coloured text image (RGBA) the layer draws as its texture.
+struct TextDraw {
+    std::shared_ptr<TextFont> font;
+    TextStyle style;  // of the current layout
+    TextLayout layout;
+    bool laidOut = false;
+    float rasterScale = 0;  // of the current coverage
+    Vec4 color{1, 1, 1, 1};  // of the current image: rgb * brightness, alpha
+    bool opaque = false;
+    Vec3 background{0, 0, 0};
+    GpuTexture coverage;
+    Target image;
+    GpuTexture imageTexture;  // image as a layer texture
+    bool imageValid = false;
+    Pass fontPass;
+};
+
 struct Layer {
     size_t object = 0;
     int64_t id = 0;  // the object's id
@@ -451,6 +479,8 @@ struct Layer {
     // frame, shown or not, and kept until the frame ends.
     bool referenced = false;
     const Target* composite = nullptr;
+    // Text layers (src/scene/text/README.md section 6).
+    std::unique_ptr<TextDraw> text;
     // Particle layers (src/scene/particles/README.md sections 6 to 9):
     // the system with its children, drawn per particle file.
     const ParticleFile* particleFile = nullptr;
@@ -526,6 +556,10 @@ struct SceneRenderer::Impl {
                 if (draw.vbo) glDeleteBuffers(1, &draw.vbo);
                 if (draw.ibo) glDeleteBuffers(1, &draw.ibo);
             }
+            if (layer.text) {
+                if (layer.text->coverage.id) glDeleteTextures(1, &layer.text->coverage.id);
+                destroyTarget(layer.text->image);
+            }
         }
         for (auto& f : frames) {
             destroyTarget(f.target);
@@ -596,6 +630,8 @@ struct SceneRenderer::Impl {
     float framePointer[2] = {0.5f, 0.5f};  // g_PointerPosition this frame
     float frameCursor[2] = {0.5f, 0.5f};   // framePointer in the frame drawn (fit bars)
     Vec3 pointerScene{0, 0, 0};            // framePointer in scene space (particles)
+    std::map<std::string, std::shared_ptr<TextFont>> fonts;  // text layers, by font name
+    float framePixelsPerUnit = 1;  // the largest frame's pixels per scene unit (text)
     float lastPointer[2] = {0.5f, 0.5f};   // g_PointerPositionLast
     float parallaxPointer[2] = {0.5f, 0.5f};  // s of section 11, smoothed
     std::unique_ptr<Animator> animator;
@@ -1080,10 +1116,180 @@ struct SceneRenderer::Impl {
         return f;
     }
 
+    // A font by its scene name (src/scene/text/README.md section 2): a file
+    // through the wallpaper's lookup, a systemfont_ family through
+    // fontconfig, else the assets' fallback font.
+    std::shared_ptr<TextFont> textFont(const std::string& name, const std::string& where) {
+        if (auto it = fonts.find(name); it != fonts.end()) return it->second;
+        std::shared_ptr<TextFont> font;
+        std::string error = "not found";
+        const std::string system = "systemfont_";
+        if (name.compare(0, system.size(), system) == 0) {
+            const std::string file = systemFontFile(name.substr(system.size()));
+            std::ifstream in(file, std::ios::binary);
+            auto bytes = std::make_shared<std::vector<uint8_t>>(std::istreambuf_iterator<char>(in),
+                                                               std::istreambuf_iterator<char>());
+            if (!file.empty() && !bytes->empty()) font = TextFont::load(*bytes, bytes, error);
+        } else if (auto asset = assets.find(name)) {
+            font = TextFont::load(asset->bytes, asset->mapping, error);
+        }
+        if (!font && name != kFallbackFont) {
+            problem(where + ": font " + name + ": " + error + ", using " + kFallbackFont);
+            font = textFont(kFallbackFont, where);
+        }
+        fonts[name] = font;
+        return font;
+    }
+
+    // A text layer (src/scene/text/README.md): an image layer whose texture
+    // is the coloured text, drawn through flattexture, with its effects.
+    void buildTextLayer(size_t index) {
+        SceneObject& o = scene.scene.objects[index];
+        const std::string where = "object " + std::to_string(o.id);
+        auto font = textFont(o.text->font, where);
+        auto fontMaterial = material(kFontMaterial);
+        auto textMaterial = material(kTextMaterial);
+        if (!font || !fontMaterial || fontMaterial->passes.empty() || !textMaterial ||
+            textMaterial->passes.empty()) {
+            problem(where + ": text layer without a font or its materials");
+            return;
+        }
+        Layer layer;
+        layer.object = index;
+        layer.id = o.id;
+        layer.kind = LayerKind::Text;
+        layer.referenced = referencedComposites.count(o.id) != 0;
+        layer.text = std::make_unique<TextDraw>();
+        TextDraw& t = *layer.text;
+        t.font = font;
+        {
+            const MaterialPass& mp = fontMaterial->passes.front();
+            ProgramRequest request = programRequest(mp, scene, nullptr, nullptr);
+            request.textureSet[0] = true;
+            request.textureFormat[0] = 9;  // the coverage is R8
+            t.fontPass = materialPass(mp, request, where + " font pass", nullptr, nullptr, nullptr, nullptr,
+                                      false, o.id);
+            t.fontPass.slots[0].kind = SlotKind::Layer;
+        }
+        {
+            const MaterialPass& mp = textMaterial->passes.front();
+            ProgramRequest request = programRequest(mp, scene, nullptr, nullptr);
+            request.textureSet[0] = true;
+            Pass pass = materialPass(mp, request, where + " pass 0", nullptr, nullptr, nullptr, nullptr, false,
+                                     o.id);
+            pass.slots[0].kind = SlotKind::Layer;
+            layer.passes.push_back(std::move(pass));
+        }
+        layer.texture = &t.imageTexture;
+        for (size_t e = 0; e < o.effects.size(); e++) layer.effects.push_back(effectRun(o, o.effects[e], e));
+        if (!layer.effects.empty() || layer.referenced) {
+            auto util = material(kPassthroughMaterial);
+            if (util && !util->passes.empty()) {
+                const MaterialPass& mp = util->passes.front();
+                ProgramRequest request = programRequest(mp, scene, nullptr, nullptr);
+                request.textureSet[0] = true;
+                layer.base = materialPass(mp, request, where + " base pass", nullptr, nullptr, nullptr, nullptr,
+                                          false, o.id);
+                layer.base.slots[0].kind = SlotKind::Layer;
+                layer.hasBase = true;
+            }
+        }
+        layers.push_back(std::move(layer));
+    }
+
+    // Keeps a text layer's layout, coverage and image current (section 6
+    // of src/scene/text/README.md): layout when the text or its settings
+    // change, coverage when the layout or raster size does, the image when
+    // anything it shows does.
+    void updateText(Layer& layer) {
+        TextDraw& t = *layer.text;
+        const TextLayer& tl = *scene.scene.objects[layer.object].text;
+        TextStyle style;
+        style.text = tl.text.value;
+        style.pointSize = tl.pointSize.value > 0 ? tl.pointSize.value : 32;
+        style.padding = tl.padding.value;
+        style.horizontalAlign = tl.horizontalAlign.value;
+        style.limitRows = tl.limitRows.value;
+        style.maxRows = std::max(1, int(std::lround(tl.maxRows.value)));
+        style.limitWidth = tl.limitWidth.value;
+        style.maxWidth = tl.maxWidth.value;
+        style.ellipsis = tl.limitUseEllipsis.value;
+        const bool relayout = !t.laidOut || style.text != t.style.text || style.pointSize != t.style.pointSize ||
+                              style.padding != t.style.padding ||
+                              style.horizontalAlign != t.style.horizontalAlign ||
+                              style.limitRows != t.style.limitRows || style.maxRows != t.style.maxRows ||
+                              style.limitWidth != t.style.limitWidth || style.maxWidth != t.style.maxWidth ||
+                              style.ellipsis != t.style.ellipsis;
+        if (relayout) {
+            t.style = style;
+            t.layout = layoutText(*t.font, style);
+            t.laidOut = true;
+        }
+        const Vec3 worldScale = layout->world(layer.object).scale;
+        const float mean = (std::fabs(worldScale[0]) + std::fabs(worldScale[1])) / 2;
+        const float scale = textRasterScale(t.layout.pixelSize, mean, framePixelsPerUnit);
+        if (relayout || scale != t.rasterScale) {
+            t.rasterScale = scale;
+            CoverageImage img = rasterizeText(*t.font, t.layout, scale);
+            if (!t.coverage.id) glGenTextures(1, &t.coverage.id);
+            glBindTexture(GL_TEXTURE_2D, t.coverage.id);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, img.width, img.height, 0, GL_RED, GL_UNSIGNED_BYTE,
+                         img.pixels.data());
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            t.coverage.width = t.coverage.imageWidth = img.width;
+            t.coverage.height = t.coverage.imageHeight = img.height;
+            t.coverage.formatCode = 9;
+            if (t.image.width != img.width || t.image.height != img.height) {
+                destroyTarget(t.image);
+                createTarget(t.image, img.width, img.height, GL_RGBA8);
+            }
+            t.imageTexture.id = t.image.texture;
+            t.imageTexture.width = t.imageTexture.imageWidth = img.width;
+            t.imageTexture.height = t.imageTexture.imageHeight = img.height;
+            t.imageValid = false;
+        }
+        const float b = tl.brightness.value;
+        const Vec4 color{tl.color.value[0] * b, tl.color.value[1] * b, tl.color.value[2] * b, tl.alpha.value};
+        const float bb = tl.backgroundBrightness.value;
+        const Vec3 background{tl.backgroundColor.value[0] * bb, tl.backgroundColor.value[1] * bb,
+                              tl.backgroundColor.value[2] * bb};
+        if (t.imageValid && color == t.color && tl.opaqueBackground.value == t.opaque &&
+            background == t.background)
+            return;
+        t.color = color;
+        t.opaque = tl.opaqueBackground.value;
+        t.background = background;
+        // The coloured text: straight alpha on a clear image, or over the
+        // opaque background.
+        glBindFramebuffer(GL_FRAMEBUFFER, t.image.fbo);
+        glViewport(0, 0, t.image.width, t.image.height);
+        if (t.opaque)
+            glClearColor(background[0], background[1], background[2], 1);
+        else
+            glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        DrawInputs in;
+        in.destination = &t.image;
+        in.object = &scene.scene.objects[layer.object];
+        in.layerTexture = &t.coverage;
+        in.quad = clipQuad();
+        t.fontPass.blend = t.opaque ? Blend::Translucent : Blend::Normal;
+        drawPass(t.fontPass, in);
+        t.imageValid = true;
+    }
+
     void buildLayer(size_t index) {
         SceneObject& o = scene.scene.objects[index];
         if (o.particle) {
             buildParticleLayer(index);
+            return;
+        }
+        if (o.text) {
+            buildTextLayer(index);
             return;
         }
         if (!o.image) return;
@@ -1561,7 +1767,13 @@ struct SceneRenderer::Impl {
             setMatrix(e.textureProjectionInverse, toTexture.inverse());
         }
         const ImageLayer* image = in.object && in.object->image ? &*in.object->image : nullptr;
-        if (e.color4 >= 0) {
+        const TextLayer* textLayer = in.object && in.object->text ? &*in.object->text : nullptr;
+        if (e.color4 >= 0 && textLayer && !in.white) {
+            // Text: colour times brightness, and alpha (text section 6).
+            const Vec3& c = textLayer->color.value;
+            const float b = textLayer->brightness.value;
+            glUniform4f(e.color4, c[0] * b, c[1] * b, c[2] * b, textLayer->alpha.value);
+        } else if (e.color4 >= 0) {
             if (in.white || !image) {
                 glUniform4f(e.color4, 1, 1, 1, 1);
             } else {
@@ -1607,6 +1819,7 @@ struct SceneRenderer::Impl {
     }
 
     Vec2 layerSize(const Layer& layer) const {
+        if (layer.text) return layer.text->layout.box;
         const ImageLayer& image = *scene.scene.objects[layer.object].image;
         Vec2 s = image.size.value;
         if (s[0] > 0 && s[1] > 0) return s;
@@ -1942,9 +2155,21 @@ struct SceneRenderer::Impl {
             return;
         }
         const SceneObject& o = scene.scene.objects[layer.object];
+        const bool text = layer.kind == LayerKind::Text;
+        if (text) {
+            if (!shown && !layer.referenced) return;  // hidden text stays as it is
+            updateText(layer);
+        }
         const bool fullscreen = layer.kind == LayerKind::Fullscreen;
         const Vec2 size = layerSize(layer);
-        const LayerRect rect = fullscreen ? LayerRect{-1, -1, 1, 1} : layerRect(size, o.image->alignment.value);
+        // Text boxes sit at the origin by their alignments (text section 5).
+        const std::string alignment =
+            text ? (o.text->verticalAlign.value == "center" ? std::string() : o.text->verticalAlign.value) +
+                       (o.text->horizontalAlign.value == "center" ? std::string() : o.text->horizontalAlign.value)
+                 : std::string();
+        const LayerRect rect = fullscreen ? LayerRect{-1, -1, 1, 1}
+                               : text     ? layerRect(size, alignment)
+                                          : layerRect(size, o.image->alignment.value);
         float parallaxPosition[2] = {0.5f, 0.5f};
         const Vec2 offset = fullscreen ? Vec2{0, 0} : parallaxOffset(o, parallaxPosition);
         const Mat4 model = fullscreen ? Mat4::identity()
@@ -1961,7 +2186,7 @@ struct SceneRenderer::Impl {
                 continue;
             active.push_back(&run);
         }
-        if (layer.kind == LayerKind::Image && !layer.hasBase) active.clear();
+        if ((layer.kind == LayerKind::Image || text) && !layer.hasBase) active.clear();
 
         DrawInputs in;
         in.object = &o;
@@ -2008,6 +2233,7 @@ struct SceneRenderer::Impl {
         in.effectMvp = screenMvp * fromClip;
         in.model = model * fromClip;
         switch (layer.kind) {
+            case LayerKind::Text:
             case LayerKind::Image: {
                 bool sprite = layer.base.program->spriteSheet;
                 in.quad = clipQuad(sprite ? 1 : uMax, sprite ? 1 : vMax);
@@ -2020,6 +2246,7 @@ struct SceneRenderer::Impl {
                 in.quad = clipQuad();
                 for (const Pass& pass : layer.passes) drawPass(pass, in);
                 break;
+            case LayerKind::Particles: break;  // drawn by drawParticles
             case LayerKind::Compose:
                 // The layer's own pass, as drawn on screen: composelayer
                 // fills its target from texture coordinates and samples the
@@ -2050,7 +2277,7 @@ struct SceneRenderer::Impl {
         in.effectMvp = screenMvp;
         in.model = model;
         if (shown) {
-            if (layer.kind == LayerKind::Image) {
+            if (layer.kind == LayerKind::Image || text) {
                 in.mvp = screenMvp;
                 in.quad = layerQuad(rect, 1, 1);
                 in.overrides[0] = input;
@@ -2138,6 +2365,9 @@ struct SceneRenderer::Impl {
             localtime_r(&now, &local);
             daytime = float(local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec) / 86400.0f;
         }
+        // Text rasterizes for the largest frame drawn (text section 6).
+        framePixelsPerUnit = std::max({framePixelsPerUnit, float(w) / std::max(1.0f, projection[0]),
+                                       float(h) / std::max(1.0f, projection[1])});
         const Vec2 shake = shakeOffset();
         viewProj = flipY() *
                    viewProjection(projection[0], projection[1], g.zoom.value, w, h,
