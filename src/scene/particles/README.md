@@ -405,7 +405,10 @@ not nested again.
   `finished`, `stopEmitting`) and the rope trails' kept positions
   (section 6.1: `Particle::trail`, `trailFraction`);
   `particleRendering()` reads the renderer settings with their
-  defaults.
+  defaults. Phase P6a adds `setPaused` for scripts' `pause()` and
+  `play()` (`../script/README.md` section 4): a paused system's
+  emitters hold, its particles and children live on, and with nothing
+  left it counts as `finished`.
 - Drawing lives in `../gl/SceneRenderer.cpp` (particle layers) and the
   program request in `../shader/Programs.h` (`particleRequest`: the
   combos of section 6).

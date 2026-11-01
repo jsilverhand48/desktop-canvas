@@ -25,6 +25,7 @@
 #include "scene/model/Json.h"
 #include "scene/particles/ParticleSystem.h"
 #include "scene/render/Animation.h"
+#include "scene/script/ScriptEngine.h"
 #include "scene/shader/Programs.h"
 #include "scene/shader/Translator.h"
 #include "scene/text/TextFont.h"
@@ -453,6 +454,7 @@ struct TextDraw {
     TextStyle style;  // of the current layout
     TextLayout layout;
     bool laidOut = false;
+    bool rasterStale = false;  // laid out again since the coverage was made
     float rasterScale = 0;  // of the current coverage
     Vec4 color{1, 1, 1, 1};  // of the current image: rgb * brightness, alpha
     bool opaque = false;
@@ -487,6 +489,7 @@ struct Layer {
     std::unique_ptr<ParticleSystem> system;
     std::map<const ParticleFile*, ParticleDraw> particleDraws;
     uint64_t particleGeneration = ~0ull;  // the generation last simulated
+    bool particleStopped = false;  // a script's stop(): nothing left or emitted until play()
 };
 
 // Vertices of one quad as a triangle strip: x, y, z, u, v each.
@@ -542,7 +545,8 @@ GLuint compileStage(GLenum stage, const char* source) {
 
 // --------------------------------------------------------------------- Impl
 
-struct SceneRenderer::Impl {
+// The renderer is its scripts' host (src/scene/script/README.md section 4).
+struct SceneRenderer::Impl : ScriptHost {
     Impl(const AssetLocator& a, Options o)
         : assets(a), options(std::move(o)), programs(options.shaderCache), textures(a),
           loader(shaderLoader(a)) {}
@@ -635,6 +639,12 @@ struct SceneRenderer::Impl {
     float lastPointer[2] = {0.5f, 0.5f};   // g_PointerPositionLast
     float parallaxPointer[2] = {0.5f, 0.5f};  // s of section 11, smoothed
     std::unique_ptr<Animator> animator;
+    // Declared after the scene, the layers and the animator, which it uses
+    // up to its end (destroy() calls).
+    std::unique_ptr<ScriptEngine> scripts;
+    uint64_t scriptGeneration = ~0ull;  // the generation scripts last ran
+    int outputSize[2] = {1920, 1080};   // the output being rendered, pixels
+    bool pointerDown = false;           // the left button (cursor events)
     float projection[2] = {1920, 1080};
     // RGBA16F for hdr scenes: the frame, its copies, layer buffers and
     // rgba_backbuffer fbos (section 5).
@@ -1061,9 +1071,6 @@ struct SceneRenderer::Impl {
                     if (const ParticleFile* f = particleFile(child.file); f && f != file)
                         todo.push_back({f, depth + 1});
         }
-        const uint64_t seed = fnv1a64(o.particle->particle) ^ (uint64_t(o.id) * 0x9E3779B97F4A7C15ull);
-        layer.system = std::make_unique<ParticleSystem>(
-            *root, seed, [this](const std::string& path) { return particleFile(path); });
         {
             // The view centre until a frame maps the cursor (the projection
             // is resolved after the layers).
@@ -1072,9 +1079,19 @@ struct SceneRenderer::Impl {
             pointerScene = {sized ? g.projectionWidth.value / 2 : 960.0f,
                             sized ? g.projectionHeight.value / 2 : 540.0f, 0};
         }
-        feedParticles(layer, layout->world(index).matrix());
-        layer.system->prewarm();
+        startParticles(layer, true);
         layers.push_back(std::move(layer));
+    }
+
+    // A particle layer's system from the start, fed its inputs: at load
+    // (prewarmed) and when a script plays a stopped layer.
+    void startParticles(Layer& layer, bool prewarm) {
+        const SceneObject& o = scene.scene.objects[layer.object];
+        const uint64_t seed = fnv1a64(o.particle->particle) ^ (uint64_t(o.id) * 0x9E3779B97F4A7C15ull);
+        layer.system = std::make_unique<ParticleSystem>(
+            *layer.particleFile, seed, [this](const std::string& path) { return particleFile(path); });
+        feedParticles(layer, layout->world(layer.object).matrix());
+        if (prewarm) layer.system->prewarm();
     }
 
     // The system's inputs (sections 2 and 8): factors, transform, pointer,
@@ -1197,11 +1214,9 @@ struct SceneRenderer::Impl {
         layers.push_back(std::move(layer));
     }
 
-    // Keeps a text layer's layout, coverage and image current (section 6
-    // of src/scene/text/README.md): layout when the text or its settings
-    // change, coverage when the layout or raster size does, the image when
-    // anything it shows does.
-    void updateText(Layer& layer) {
+    // A text layer's layout, redone when its text or settings changed
+    // (true then); CPU only, so scripts may measure before the first draw.
+    bool layoutTextLayer(Layer& layer) {
         TextDraw& t = *layer.text;
         const TextLayer& tl = *scene.scene.objects[layer.object].text;
         TextStyle style;
@@ -1220,15 +1235,27 @@ struct SceneRenderer::Impl {
                               style.limitRows != t.style.limitRows || style.maxRows != t.style.maxRows ||
                               style.limitWidth != t.style.limitWidth || style.maxWidth != t.style.maxWidth ||
                               style.ellipsis != t.style.ellipsis;
-        if (relayout) {
-            t.style = style;
-            t.layout = layoutText(*t.font, style);
-            t.laidOut = true;
-        }
+        if (!relayout) return false;
+        t.style = style;
+        t.layout = layoutText(*t.font, style);
+        t.laidOut = true;
+        t.rasterStale = true;
+        return true;
+    }
+
+    // Keeps a text layer's layout, coverage and image current (section 6
+    // of src/scene/text/README.md): layout when the text or its settings
+    // change, coverage when the layout or raster size does, the image when
+    // anything it shows does.
+    void updateText(Layer& layer) {
+        TextDraw& t = *layer.text;
+        const TextLayer& tl = *scene.scene.objects[layer.object].text;
+        layoutTextLayer(layer);
         const Vec3 worldScale = layout->world(layer.object).scale;
         const float mean = (std::fabs(worldScale[0]) + std::fabs(worldScale[1])) / 2;
         const float scale = textRasterScale(t.layout.pixelSize, mean, framePixelsPerUnit);
-        if (relayout || scale != t.rasterScale) {
+        if (t.rasterStale || scale != t.rasterScale) {
+            t.rasterStale = false;
             t.rasterScale = scale;
             CoverageImage img = rasterizeText(*t.font, t.layout, scale);
             if (!t.coverage.id) glGenTextures(1, &t.coverage.id);
@@ -1511,7 +1538,131 @@ struct SceneRenderer::Impl {
             error = "no layer this renderer can draw yet";
             return false;
         }
+        startScripts();
         return true;
+    }
+
+    // ---------------------------------------------------------- scripts
+
+    // The scene's scripts (src/scene/script/README.md), last at load so
+    // they see every layer; none when no field has a script.
+    void startScripts() {
+        bool any = false;
+        scene.forEachField([&](auto& field) { any = any || field.scripted(); });
+        if (!any) return;
+        if (!ScriptEngine::available()) {
+            problem("scripts: built without QuickJS, not run");
+            return;
+        }
+        ScriptEngine::Options so;
+        so.storageFile = options.scriptStorage.string();
+        std::string error;
+        scripts = ScriptEngine::create(scene, assets, animator.get(), *this, so, error);
+        if (!scripts) {
+            problem("scripts: " + error);
+            return;
+        }
+        takeScriptOutput();
+    }
+
+    // Failures become problems; console lines go to the log ("object 7
+    // script 0: ..." both).
+    void takeScriptOutput() {
+        for (const auto& line : scripts->takeProblems()) problem(line);
+        for (const auto& line : scripts->takeLog()) log::info() << line;
+    }
+
+    // Scene to clip space for a frame of w x h pixels (section 1), with
+    // the camera shake of this moment.
+    Mat4 frameViewProjection(int w, int h) const {
+        const General& g = scene.scene.general;
+        const Vec2 shake = shakeOffset();
+        return flipY() *
+               viewProjection(projection[0], projection[1], g.zoom.value, w, h,
+                              options.scaling == Scaling::Stretch ? Scaling::Stretch : Scaling::Fill) *
+               Mat4::translate(-shake[0], -shake[1], 0);
+    }
+
+    // The topmost shown image or text layer under a scene position, and
+    // the position in that layer's own space (script section 5); -1 none.
+    int64_t layerAt(const Vec3& at, Vec3& local) {
+        for (auto it = layers.rbegin(); it != layers.rend(); ++it) {
+            Layer& layer = *it;
+            if (layer.kind == LayerKind::Particles || layer.kind == LayerKind::Fullscreen ||
+                !layout->visible(layer.object))
+                continue;
+            if (layer.text) layoutTextLayer(layer);
+            const LayerRect r = layerBounds(layer);
+            float position[2];
+            const Vec4 p = layerModel(layer, position).inverse() * Vec4{at[0], at[1], at[2], 1};
+            if (p[0] >= std::min(r.x0, r.x1) && p[0] <= std::max(r.x0, r.x1) && p[1] >= std::min(r.y0, r.y1) &&
+                p[1] <= std::max(r.y0, r.y1)) {
+                local = {p[0], p[1], 0};
+                return int64_t(layer.object);
+            }
+        }
+        return -1;
+    }
+
+    // One script frame, once per advance: after the animations, before
+    // the layout, so what scripts write shows in this frame.
+    void runScripts(int w, int h) {
+        layout->update();  // the layers where the animations left them
+        const Vec4 at = frameViewProjection(w, h).inverse() *
+                        Vec4{frameCursor[0] * 2 - 1, frameCursor[1] * 2 - 1, 0, 1};
+        ScriptFrame sf;
+        sf.frameTime = frameTime;
+        sf.runtime = time;
+        sf.timeOfDay = daytime;
+        sf.screen = {float(outputSize[0]), float(outputSize[1])};
+        sf.cursorWorld = {at[0], at[1], 0};
+        sf.cursorScreen = {framePointer[0] * float(outputSize[0]), framePointer[1] * float(outputSize[1])};
+        sf.cursorLeftDown = pointerDown;
+        sf.hovered = layerAt(sf.cursorWorld, sf.cursorLocal);
+        scripts->update(sf);
+        takeScriptOutput();
+    }
+
+    Layer* layerOf(size_t object) {
+        if (object >= scene.scene.objects.size()) return nullptr;
+        auto it = layerById.find(scene.scene.objects[object].id);
+        return it != layerById.end() ? &layers[it->second] : nullptr;
+    }
+
+    // ScriptHost: sizes as drawn (text measured now if need be), particle
+    // playback per the IParticleSystem reference (script section 4).
+    Vec2 layerSize(size_t object) override {
+        Layer* layer = layerOf(object);
+        if (!layer || layer->kind == LayerKind::Particles || layer->kind == LayerKind::Fullscreen) return {0, 0};
+        if (layer->text) layoutTextLayer(*layer);
+        return layerSize(*layer);
+    }
+
+    void particleCommand(size_t object, int command) override {
+        Layer* layer = layerOf(object);
+        if (!layer || !layer->system) return;
+        switch (command) {
+            case 0:  // play: a stopped layer starts over, a paused one emits again
+                if (layer->particleStopped) startParticles(*layer, false);
+                layer->particleStopped = false;
+                layer->system->setPaused(false);
+                break;
+            case 1:  // pause: no new particles, the others live on
+                layer->system->setPaused(true);
+                break;
+            case 2:  // stop: every particle gone at once, nothing emitted
+                if (!layer->particleStopped) startParticles(*layer, false);
+                layer->particleStopped = true;
+                layer->system->setPaused(true);
+                break;
+            default:
+                break;
+        }
+    }
+
+    bool particlePlaying(size_t object) override {
+        Layer* layer = layerOf(object);
+        return layer && layer->system && !layer->particleStopped && !layer->system->finished();
     }
 
     void makeBlitProgram() {
@@ -1884,6 +2035,29 @@ struct SceneRenderer::Impl {
 
     // Section 11: the parallax offset of a layer (scene units) and its
     // g_ParallaxPosition.
+    // A layer's rectangle in its own space; fullscreen layers cover clip
+    // space. Text boxes sit at the origin by their alignments (text
+    // section 5).
+    LayerRect layerBounds(const Layer& layer) const {
+        if (layer.kind == LayerKind::Fullscreen) return LayerRect{-1, -1, 1, 1};
+        const SceneObject& o = scene.scene.objects[layer.object];
+        if (layer.kind == LayerKind::Text) {
+            const std::string alignment =
+                (o.text->verticalAlign.value == "center" ? std::string() : o.text->verticalAlign.value) +
+                (o.text->horizontalAlign.value == "center" ? std::string() : o.text->horizontalAlign.value);
+            return layerRect(layerSize(layer), alignment);
+        }
+        return layerRect(layerSize(layer), o.image->alignment.value);
+    }
+
+    // A layer's model matrix: its world transform moved by parallax
+    // (position receives g_ParallaxPosition); identity for fullscreen.
+    Mat4 layerModel(const Layer& layer, float position[2]) const {
+        if (layer.kind == LayerKind::Fullscreen) return Mat4::identity();
+        const Vec2 offset = parallaxOffset(scene.scene.objects[layer.object], position);
+        return Mat4::translate(offset[0], offset[1], 0) * layout->world(layer.object).matrix();
+    }
+
     Vec2 parallaxOffset(const SceneObject& o, float position[2]) const {
         const General& g = scene.scene.general;
         if (!g.cameraParallax.value) return {0, 0};
@@ -1937,14 +2111,13 @@ struct SceneRenderer::Impl {
 
     // Simulates a particle layer once per generation and draws it with
     // its child systems (sections 6 to 9 of src/scene/particles/README.md);
-    // hidden systems stand still.
+    // hidden systems and those a script stopped stand still.
     void drawParticles(Layer& layer, bool shown) {
-        if (!shown || options.debug.noParticles) return;
+        if (!shown || options.debug.noParticles || layer.particleStopped) return;
         const SceneObject& o = scene.scene.objects[layer.object];
         ParticleSystem& system = *layer.system;
         float parallaxPosition[2] = {0.5f, 0.5f};
-        const Vec2 offset = parallaxOffset(o, parallaxPosition);
-        const Mat4 model = Mat4::translate(offset[0], offset[1], 0) * layout->world(layer.object).matrix();
+        const Mat4 model = layerModel(layer, parallaxPosition);
         if (layer.particleGeneration != generation) {
             // Once per advance, however many frame sizes are drawn.
             layer.particleGeneration = generation;
@@ -2162,19 +2335,9 @@ struct SceneRenderer::Impl {
         }
         const bool fullscreen = layer.kind == LayerKind::Fullscreen;
         const Vec2 size = layerSize(layer);
-        // Text boxes sit at the origin by their alignments (text section 5).
-        const std::string alignment =
-            text ? (o.text->verticalAlign.value == "center" ? std::string() : o.text->verticalAlign.value) +
-                       (o.text->horizontalAlign.value == "center" ? std::string() : o.text->horizontalAlign.value)
-                 : std::string();
-        const LayerRect rect = fullscreen ? LayerRect{-1, -1, 1, 1}
-                               : text     ? layerRect(size, alignment)
-                                          : layerRect(size, o.image->alignment.value);
+        const LayerRect rect = layerBounds(layer);
         float parallaxPosition[2] = {0.5f, 0.5f};
-        const Vec2 offset = fullscreen ? Vec2{0, 0} : parallaxOffset(o, parallaxPosition);
-        const Mat4 model = fullscreen ? Mat4::identity()
-                                      : Mat4::translate(offset[0], offset[1], 0) *
-                                            layout->world(layer.object).matrix();
+        const Mat4 model = layerModel(layer, parallaxPosition);
         const Mat4 screenMvp = fullscreen ? Mat4::identity() : viewProj * model;
 
         const RenderDebug& debug = options.debug;
@@ -2354,10 +2517,6 @@ struct SceneRenderer::Impl {
 
     void drawFrame(Frame& f) {
         frame = &f;
-        if (animator) animator->update(time);  // fields first: layout reads them
-        textures.updateVideos();
-        layout->update();
-        const General& g = scene.scene.general;
         const int w = f.target.width, h = f.target.height;
         {
             std::time_t now = std::time(nullptr);
@@ -2365,15 +2524,18 @@ struct SceneRenderer::Impl {
             localtime_r(&now, &local);
             daytime = float(local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec) / 86400.0f;
         }
+        if (animator) animator->update(time);  // fields first: layout reads them
+        if (scripts && scriptGeneration != generation) {
+            scriptGeneration = generation;
+            runScripts(w, h);
+        }
+        textures.updateVideos();
+        layout->update();
+        const General& g = scene.scene.general;
         // Text rasterizes for the largest frame drawn (text section 6).
         framePixelsPerUnit = std::max({framePixelsPerUnit, float(w) / std::max(1.0f, projection[0]),
                                        float(h) / std::max(1.0f, projection[1])});
-        const Vec2 shake = shakeOffset();
-        viewProj = flipY() *
-                   viewProjection(projection[0], projection[1], g.zoom.value, w, h,
-                                  options.scaling == Scaling::Stretch ? Scaling::Stretch
-                                                                      : Scaling::Fill) *
-                   Mat4::translate(-shake[0], -shake[1], 0);
+        viewProj = frameViewProjection(w, h);
         {
             // The cursor in scene space; rows run top first here, so the
             // frame's top is y -1 in viewProj's clip space.
@@ -2482,6 +2644,8 @@ struct SceneRenderer::Impl {
             createTarget(f->target, fw, fh, frameFormat);
         }
         f->lastUse = generation;
+        outputSize[0] = width;
+        outputSize[1] = height;
         frameCursor[0] = (framePointer[0] * float(width) - float(x)) / float(fw);
         frameCursor[1] = (framePointer[1] * float(height) - float(y)) / float(fh);
         if (f->generation != generation) drawFrame(*f);
@@ -2531,6 +2695,7 @@ void SceneRenderer::render(int width, int height) { impl_->render(width, height)
 
 void SceneRenderer::setProperty(const std::string& name, const std::string& value) {
     applyProperties(impl_->scene, PropertyValues{{name, value}});
+    if (impl_->scripts) impl_->scripts->userPropertiesChanged({name});
     impl_->generation++;  // the next render draws again
 }
 
@@ -2538,6 +2703,10 @@ void SceneRenderer::setPointer(float x, float y) {
     impl_->pointer[0] = std::clamp(x, 0.0f, 1.0f);
     impl_->pointer[1] = std::clamp(y, 0.0f, 1.0f);
 }
+
+void SceneRenderer::setPointerDown(bool down) { impl_->pointerDown = down; }
+
+size_t SceneRenderer::scriptCount() const { return impl_->scripts ? impl_->scripts->scriptCount() : 0; }
 
 const std::vector<std::string>& SceneRenderer::problems() const { return impl_->problems; }
 

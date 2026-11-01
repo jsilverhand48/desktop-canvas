@@ -91,6 +91,7 @@ std::optional<Timeline> parseTimeline(const nlohmann::json& animation) {
         if (auto v = o->find("wraploop"); v != o->end() && v->is_boolean()) t.wrapLoop = v->get<bool>();
         if (auto v = o->find("startpaused"); v != o->end() && v->is_boolean())
             t.startPaused = v->get<bool>();
+        if (auto v = o->find("name"); v != o->end() && v->is_string()) t.name = v->get<std::string>();
     }
     if (auto v = animation.find("relative"); v != animation.end() && v->is_boolean())
         t.relative = v->get<bool>();
@@ -105,7 +106,6 @@ std::optional<Timeline> parseTimeline(const nlohmann::json& animation) {
 }
 
 double Timeline::framePosition(double t) const {
-    if (startPaused) return 0;
     double f = std::max(0.0, t * fps);
     if (!(length > 0)) return f;
     switch (mode) {
@@ -148,10 +148,12 @@ std::vector<double> Timeline::evaluate(double t) const {
 }
 
 Animator::Animator(LoadedScene& scene) {
-    scene.forEachField([&](auto& field) {
+    int64_t owner = -1;
+    auto visit = [&](auto& field) {
         if (!field.animated()) return;
         auto timeline = parseTimeline(field.dynamics->animation);
         if (!timeline) return;
+        const size_t before = appliers_.size();
         using T = std::decay_t<decltype(field.value)>;
         auto* target = &field;
         const T base = field.value;
@@ -186,11 +188,39 @@ Animator::Animator(LoadedScene& scene) {
             });
         }
         // Text and integer fields are not animated (none in the corpus).
-    });
+        if (appliers_.size() == before) return;
+        auto playback = std::make_unique<AnimationPlayback>();
+        playback->timeline = *timeline;
+        playback->object = owner;
+        playback->playing = !timeline->startPaused;
+        playbacks_.push_back(std::move(playback));
+    };
+    // Objects first, so each animation knows its object.
+    for (size_t i = 0; i < scene.scene.objects.size(); i++) {
+        owner = int64_t(i);
+        scene.scene.objects[i].forEachField(visit);
+    }
+    owner = -1;
+    scene.scene.camera.forEachField(visit);
+    scene.scene.general.forEachField(visit);
+    for (auto& [path, material] : scene.materials)
+        if (material) material->forEachField(visit);
 }
 
 void Animator::update(double t) {
-    for (auto& apply : appliers_) apply(t);
+    const double dt = std::max(0.0, t - last_);
+    last_ = t;
+    for (size_t i = 0; i < appliers_.size(); i++) {
+        AnimationPlayback& p = *playbacks_[i];
+        if (p.playing) p.time += dt * p.rate;
+        appliers_[i](p.time);
+    }
+}
+
+AnimationPlayback* Animator::find(int64_t object, const std::string& name) {
+    for (auto& p : playbacks_)
+        if (p->object == object && (name.empty() || p->timeline.name == name)) return p.get();
+    return nullptr;
 }
 
 }  // namespace canvas::scene

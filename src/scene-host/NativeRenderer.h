@@ -8,7 +8,7 @@
 // If the scene turns out to have nothing drawable, render() clears to the
 // placeholder colour instead. Pointer positions arrive in output logical
 // pixels and are normalised by the size of the last frame rendered (phase
-// P4b keeps per output state).
+// P4b keeps per output state); the left button feeds script cursor events.
 //
 // GL objects can only be deleted with their context current: shutdown()
 // frees them and must run while it is. Without it the destructor leaves
@@ -33,6 +33,7 @@ public:
         scene::Scaling scaling = scene::Scaling::Fill;
         scene::Clamp clamp = scene::Clamp::Clamp;
         std::filesystem::path shaderCache;  // empty: no disk cache
+        std::filesystem::path scriptStorage;  // scripts' localStorage file; empty: memory only
         float placeholder[3] = {0, 0, 0};   // shown when nothing draws
         scene::RenderDebug debug;
     };
@@ -48,6 +49,7 @@ public:
     void advance(double dt) override;
     void render(int width, int height) override;
     void setPointer(const std::string& output, double x, double y) override;
+    void setPointerButton(const std::string& output, uint32_t button, bool pressed) override;
     void setProperty(const std::string& name, const std::string& value) override;
 
     // Problems the engine met so far (empty before the first render).
@@ -67,6 +69,7 @@ private:
     bool failed_ = false;
     double elapsed_ = 0;  // time advanced before the engine existed
     double pointer_[2] = {-1, -1};
+    bool leftDown_ = false;
     int lastWidth_ = 0, lastHeight_ = 0;
 };
 

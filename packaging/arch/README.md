@@ -93,7 +93,8 @@ ever tracked, add a `check()` running `ctest --test-dir build`.
 
 `desktop-canvas-scene` (the native scene renderer helper) is part of the
 base package and adds `libepoxy`, `libpng`, `lz4`, `libjpeg-turbo`
-(2.1 or later), `freetype2` and `fontconfig` (text layers) to `depends`;
+(2.1 or later), `freetype2` and `fontconfig` (text layers) and
+`quickjs-ng` (scene scripts) to `depends`;
 `systemd-libs`
 (sd-bus) backs the KDE bridge, whose KWin script installs to
 `share/desktop-canvas/kwin/`. `.SRCINFO` lists them too.

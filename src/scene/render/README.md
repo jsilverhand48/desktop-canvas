@@ -378,13 +378,18 @@ a control point angle]:
   then forwards again) [doc: Modes; corpus], `wraploop` (6; loop mode
   moves from the last keyframe back to the first keyframe's value at
   `length`: "a smooth transition to the first frame" [doc]),
-  `startpaused` (7; stays on frame 0 until SceneScript plays it, phase P6
-  [doc]); `parent`, `children` and `name` link animations that share
-  settings [doc: Combined], and each still stores its own options
-  [corpus]; `smoothing`, `stiffness` and `previewvalue` are editor
-  values;
+  `startpaused` (7; stays on frame 0 until a script plays it [doc]);
+  `parent`, `children` and `name` link animations that share settings
+  [doc: Combined], and each still stores its own options [corpus];
+  `name` is also what scripts find an animation by
+  (`../script/README.md` section 4); `smoothing`, `stiffness` and
+  `previewvalue` are editor values;
 - `relative` true (4: origin and scale) adds the animated value to the
   field's own value [inference: their keyframe values are offsets];
+- each animation keeps its own clock t, seconds into it: playing ones
+  advance with scene time times their rate (1 unless a script sets it),
+  paused ones hold, `startpaused` ones begin paused at 0; scripts play,
+  pause, stop (pause and rewind) and seek it [doc: IAnimation];
 - frame position f = t * fps; single: min(f, length); loop: f modulo
   length; mirror: a triangle wave of period 2 * length;
 - between two keyframes A and B, L frames apart, the value follows the
@@ -449,8 +454,9 @@ otherwise [inference: depthparallax.frag centres it with `* 2 - 1`
   transforms through parents [req A3], visibility [req A4], layer
   rectangles, view projection.
 - `Animation.h`, `Animation.cpp` (`canvas_scene_core`): section 10,
-  `parseTimeline`, `Timeline::evaluate`, and `Animator`, which writes
-  every animated field's value each frame.
+  `parseTimeline`, `Timeline::evaluate`, and `Animator`, which keeps one
+  `AnimationPlayback` clock per animation (found by object and name for
+  scripts) and writes every animated field's value each frame.
 - `../gl/Textures.h`, `../gl/Textures.cpp`: texture upload (section 2's
   texture region), sprite sheet frames (section 9).
 - `../gl/VideoTexture.h`, `.cpp`: video textures (section 9).

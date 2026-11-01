@@ -2,6 +2,7 @@
 #include "scene/model/Capabilities.h"
 
 #include "scene/particles/ParticleSystem.h"
+#include "scene/script/ScriptEngine.h"
 
 namespace canvas::scene {
 
@@ -35,6 +36,10 @@ std::set<std::string> sceneFeatures(LoadedScene& scene) {
     }
     scene.forEachField([&](auto& field) {
         if (field.scripted()) f.insert("script");
+        // Scripts that make layers at run time (src/scene/script/README.md
+        // section 3): a feature of its own, not drawn yet.
+        if (field.scripted() && field.dynamics->script.find("createLayer") != std::string::npos)
+            f.insert("script-layers");
         if (field.animated()) f.insert("timeline");
         if (field.bound()) f.insert("user-properties");
     });
@@ -58,16 +63,21 @@ std::set<std::string> sceneFeatures(LoadedScene& scene) {
 }
 
 const std::set<std::string>& supportedFeatures() {
-    // What phases P4, P5 and P6b draw (src/scene/render/README.md,
-    // src/scene/particles/README.md, src/scene/text/README.md).
-    // hdr as users without Ultra post-processing see it; video-texture
-    // needs libmpv, which the helper checks (SceneCheck).
-    static const std::set<std::string> supported = {
-        "scene",       "image",           "effects",          "solid-layer",
-        "fullscreen-layer", "composition-layer", "group",     "user-properties",
-        "bloom",       "hdr",             "timeline",         "parallax",
-        "camera-shake", "sprite-animation", "video-texture", "particles",
-        "particle-controlpoints", "particle-children", "particle-trails", "text"};
+    // What phases P4, P5 and P6 draw (src/scene/render/README.md,
+    // src/scene/particles/README.md, src/scene/text/README.md,
+    // src/scene/script/README.md). hdr as users without Ultra
+    // post-processing see it; video-texture needs libmpv, which the helper
+    // checks (SceneCheck); script needs QuickJS in the build.
+    static const std::set<std::string> supported = [] {
+        std::set<std::string> s = {
+            "scene",       "image",           "effects",          "solid-layer",
+            "fullscreen-layer", "composition-layer", "group",     "user-properties",
+            "bloom",       "hdr",             "timeline",         "parallax",
+            "camera-shake", "sprite-animation", "video-texture", "particles",
+            "particle-controlpoints", "particle-children", "particle-trails", "text"};
+        if (ScriptEngine::available()) s.insert("script");
+        return s;
+    }();
     return supported;
 }
 

@@ -6,17 +6,19 @@ it for scene wallpapers on the "native" and "auto" engines (see
 over the control channel protocol in `process/HelperProtocol.h`. It also
 runs by hand for previews, screenshots and checks.
 
-Status: plan phase P6b. The engine draws image, solid, composition and
+Status: plan phase P6a. The engine draws image, solid, composition and
 fullscreen layers with their effects and bloom, and moves them: timeline
 animations, sprite sheets, video textures (when built with libmpv),
 camera shake, parallax and the pointer uniforms
 (`src/scene/render/README.md`); it draws particle systems with their
 control points (the cursor included), child systems, sprite trails,
 ropes and rope trails (`src/scene/particles/README.md`) and text layers
-(`src/scene/text/README.md`); sound, scripts and puppets arrive with
-later phases, so text set by scripts shows its scene file value. "auto", the daemon's
-default engine since this phase, uses it for 116 of the 208 scenes of
-the test library. The support check reports scenes made only of what this build
+(`src/scene/text/README.md`), and runs scene scripts when built with
+QuickJS-ng (`src/scene/script/README.md`; scripts that create layers
+are not supported yet); sound and puppets arrive with later phases.
+"auto", the daemon's default engine, uses it for 158 of the 208 scenes
+of the test library with QuickJS-ng (116 without). The support check
+reports scenes made only of what this build
 draws as supported, so "auto" uses the native renderer for those and
 linux-wallpaperengine for the rest; "native" draws what it can and skips
 the rest. A scene that cannot be read, or has nothing drawable, shows a
@@ -70,14 +72,19 @@ blocks the daemon's single threaded event loop.
   catch up burst after a stall (it restarts from now).
 - `Renderer` the interface SceneHost drives: `advance(dt)` once per tick,
   then `render(width, height)` per output into the bound framebuffer, plus
-  live pointer, property, mute and volume inputs.
+  live pointer (motion and buttons), property, mute and volume inputs.
 - `NativeRenderer` the scene engine (`scene/gl/SceneRenderer`) behind
   that interface: `create()` reads the wallpaper and loads the scene
   before GL exists (and before the sandbox), the first `render()` builds
   the GL side; `--scaling`, `--clamp`, `--render-debug` and
   `--disable-particles` reach the engine through it, and compiled
   programs are cached in
-  `$XDG_CACHE_HOME/desktop-canvas/shaders`. GL objects are freed only by
+  `$XDG_CACHE_HOME/desktop-canvas/shaders`. Scripts keep their
+  localStorage in
+  `$XDG_DATA_HOME/desktop-canvas/localstorage/<wallpaper folder>.json`
+  (`~/.local/share/...` without the variable; none for `--screenshot`),
+  and the left pointer button (BTN_LEFT) feeds their cursor events. GL
+  objects are freed only by
   `shutdown()` with the context current (the screenshot path does so);
   otherwise the driver frees them at exit.
 - `PlaceholderRenderer` clears to one colour (libepoxy); shown when the
@@ -88,7 +95,8 @@ blocks the daemon's single threaded event loop.
   for AssetTools.
 - `Sandbox` Landlock self restriction applied after the display connection
   and GL context exist: no file writes outside the cache, runtime and temp
-  directories (device nodes stay writable for the GPU driver), no TCP bind
+  directories and the scripts' localStorage directory (device nodes stay
+  writable for the GPU driver), no TCP bind
   or connect, PR_SET_NO_NEW_PRIVS. Reads stay open. Logs and continues
   unsandboxed on kernels without Landlock; `--no-sandbox` turns it off.
 

@@ -17,8 +17,10 @@
 //
 // A frame is drawn once per advance(): rendering the same size again
 // before the next advance() only presents it again, so outputs that share
-// a pixel size share the work; particle systems also step once per
-// advance(). Layers of kinds not drawn yet (shapes, lights, ...) are
+// a pixel size share the work; particle systems and the scene's scripts
+// (src/scene/script/README.md, run before the layout so their writes show
+// in the same frame) also step once per advance(). Layers of kinds not
+// drawn yet (shapes, lights, ...) are
 // skipped, as are passes whose program does not compile and effects with
 // such a pass; each problem is logged and listed once. Construction,
 // load() and every other call need the GL context current.
@@ -75,6 +77,9 @@ public:
         Scaling scaling = Scaling::Fill;
         Clamp clamp = Clamp::Clamp;
         std::filesystem::path shaderCache;  // program binaries; empty: none
+        // The scripts' localStorage file (src/scene/script/README.md
+        // section 3); empty: kept in memory only.
+        std::filesystem::path scriptStorage;
         RenderDebug debug;
     };
 
@@ -92,9 +97,12 @@ public:
     void setProperty(const std::string& name, const std::string& value);
     // Pointer position, 0..1 across the output, y down.
     void setPointer(float x, float y);
+    // The left pointer button, for script cursor events.
+    void setPointerDown(bool down);
 
     const std::vector<std::string>& problems() const;
     size_t layerCount() const;
+    size_t scriptCount() const;  // scripts loaded and still running
 
     struct Impl;
 

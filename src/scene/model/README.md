@@ -305,7 +305,8 @@ clear colour and projection: every scene), `image`, `effects`, `solid-layer`, `f
 `sprite-animation` (a texture with sprite sheet frames),
 `particle-controlpoints`, `particle-children`, `particle-trails`
 (particle systems using what phase P5b brings,
-`../particles/README.md` section 7). A build
+`../particles/README.md` section 7), `script-layers` (a script that
+calls `createLayer`). A build
 supports the features of the phases it contains; this one (phase P4a)
 supports `scene`, `image`, `effects`, `solid-layer`, `fullscreen-layer`,
 `composition-layer`, `group`, `user-properties`, `bloom` and `hdr`
@@ -313,9 +314,11 @@ supports `scene`, `image`, `effects`, `solid-layer`, `fullscreen-layer`,
 section 5) from phase P4a, `timeline`, `parallax`, `camera-shake`,
 `sprite-animation` and `video-texture` (with libmpv only) from P4b,
 `particles` from P5a, `particle-controlpoints`, `particle-children` and
-`particle-trails` from P5b, and `text` from P6b, so the "auto" engine
-uses the native renderer only for scenes made of those and keeps
-linux-wallpaperengine for the rest.
+`particle-trails` from P5b, `text` from P6b, and `script` from P6a
+(only in builds with QuickJS-ng, `../script/README.md` section 6;
+`script-layers`, scripts that call `createLayer`, is not supported yet), so
+the "auto" engine uses the native renderer only for scenes made of those
+and keeps linux-wallpaperengine for the rest.
 `--check-all ROOT` runs the check on every scene folder in ROOT and
 prints a summary (scenes, fully supported, feature counts), or a JSON
 array with `--json`.

@@ -62,7 +62,8 @@ is `config/`, `source/`, `render/` except VideoBackend, `process/`, `audio/`,
 `canvas_scene_props` is `scene/model/UserProperties` (no dependencies;
 linked by `canvas_daemon` for SceneOptions and by the engine).
 `canvas_scene_core` is the rest of `scene/` except `gl/` (no GPU code;
-links lz4, libjpeg-turbo, libpng, FreeType and, when found, fontconfig);
+links lz4, libjpeg-turbo, libpng, FreeType and, when found, fontconfig
+and QuickJS-ng);
 `canvas_scene_gl` is `scene/gl/`
 (libepoxy). `canvas_scene_host` (scene-host pacing and protocol, no GL) plus
 the GL parts and asset tools, canvas_scene_core, canvas_display, libepoxy

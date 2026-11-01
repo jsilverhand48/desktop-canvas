@@ -54,8 +54,19 @@ context; the GPU free parts live in the other `src/scene/` modules.
   (straight alpha, or over the opaque background); each is redone only
   when its inputs change. The image is the layer texture of the image
   layer path: flattexture draws it, effects run on it through the base
-  pass. GL objects need the context current, including at
+  pass. Scenes with scripts (`../script/README.md`) get a `ScriptEngine`
+  after their layers, with the renderer as its `ScriptHost` (layer sizes,
+  text measured on demand; particle play, pause and stop: a stopped
+  layer's system starts over when played); the scripts run once per
+  `advance()` at the first frame drawn, after the timeline animations and
+  before the layout, with the time, the output size, the cursor in scene
+  space, the left button (`setPointerDown()`) and the topmost shown image
+  or text layer under the cursor. Live property changes reach them
+  (`setProperty()`), their failures become problems and their console
+  lines go to the log; `Options::scriptStorage` names the localStorage
+  file. GL objects need the context current, including at
   destruction.
 
 Tests: `claude_tests/test_scene_gl` and `test_scene_render` (opt-in GL
-parts; llvmpipe, every device with `CANVAS_GPU_ALL=1`).
+parts; llvmpipe, every device with `CANVAS_GPU_ALL=1`); the script runtime
+in `test_scene_script`.

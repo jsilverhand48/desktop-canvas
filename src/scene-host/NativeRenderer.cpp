@@ -42,6 +42,7 @@ void NativeRenderer::start() {
     o.scaling = options_.scaling;
     o.clamp = options_.clamp;
     o.shaderCache = options_.shaderCache;
+    o.scriptStorage = options_.scriptStorage;
     o.debug = options_.debug;
     renderer_ = std::make_unique<scene::SceneRenderer>(assets_, o);
     std::string error;
@@ -52,7 +53,7 @@ void NativeRenderer::start() {
     pending_.reset();
     if (elapsed_ > 0) renderer_->advance(elapsed_);
     log::info() << "native renderer: " << renderer_->layerCount() << " layers, "
-                << renderer_->problems().size() << " problems";
+                << renderer_->scriptCount() << " scripts, " << renderer_->problems().size() << " problems";
 }
 
 void NativeRenderer::advance(double dt) {
@@ -72,12 +73,18 @@ void NativeRenderer::render(int width, int height) {
     }
     if (pointer_[0] >= 0)
         renderer_->setPointer(float(pointer_[0] / width), float(pointer_[1] / height));
+    renderer_->setPointerDown(leftDown_);
     renderer_->render(width, height);
 }
 
 void NativeRenderer::setPointer(const std::string& /*output*/, double x, double y) {
     pointer_[0] = x;
     pointer_[1] = y;
+}
+
+void NativeRenderer::setPointerButton(const std::string& /*output*/, uint32_t button, bool pressed) {
+    constexpr uint32_t kButtonLeft = 272;  // BTN_LEFT, linux/input-event-codes.h
+    if (button == kButtonLeft) leftDown_ = pressed;
 }
 
 void NativeRenderer::setProperty(const std::string& name, const std::string& value) {

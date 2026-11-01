@@ -794,7 +794,7 @@ float ParticleSystem::trailFraction() const {
 }
 
 bool ParticleSystem::finished() const {
-    if (!stopped_)
+    if (!stopped_ && !paused_)
         for (const auto& e : emitters_)
             if (!e->finished()) return false;
     if (!particles_.empty()) return false;
@@ -953,7 +953,7 @@ void ParticleSystem::step(double dtIn) {
     placeControlPoints();
     // Emit (section 3), up to the maximum count.
     std::vector<uint32_t> born;
-    if (!stopped_)
+    if (!stopped_ && !paused_)
         for (auto& emitter : emitters_) {
             int64_t n = emitter->update(dt, factors_.count, rng_);
             n = std::min<int64_t>(n, file_.maxCount - int64_t(particles_.size()));

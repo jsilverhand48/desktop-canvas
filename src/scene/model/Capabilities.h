@@ -8,7 +8,8 @@
 // puppet, camera-path, 3d-model, script, timeline, user-properties,
 // parallax, camera-shake, bloom, hdr, video-texture, sprite-animation,
 // particle-controlpoints, particle-children, particle-trails (particle
-// systems that use what phase P5b brings).
+// systems that use what phase P5b brings), script-layers (scripts that
+// create layers at run time).
 // "scene" (camera, clear colour, projection) is used by every scene.
 #pragma once
 
@@ -29,7 +30,8 @@ std::set<std::string> sceneFeatures(LoadedScene& scene);
 // user-properties, bloom, hdr; P4b: timeline, parallax, camera-shake,
 // sprite-animation, video-texture, the last only with libmpv, which the
 // helper's SceneCheck checks; P5a: particles; P5b: particle-controlpoints,
-// particle-children, particle-trails; P6b: text).
+// particle-children, particle-trails; P6b: text; P6a: script, only when
+// built with QuickJS).
 const std::set<std::string>& supportedFeatures();
 
 std::vector<std::string> unsupportedOf(const std::set<std::string>& features);

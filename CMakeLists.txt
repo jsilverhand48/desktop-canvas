@@ -244,6 +244,27 @@ pkg_check_modules(TURBOJPEG IMPORTED_TARGET libturbojpeg>=2.1)
 # for system font names.
 pkg_check_modules(FREETYPE IMPORTED_TARGET freetype2)
 pkg_check_modules(FONTCONFIG IMPORTED_TARGET fontconfig)
+# SceneScript (src/scene/script): QuickJS-ng, optional; without it scripts
+# are reported unsupported.
+find_path(QUICKJS_INCLUDE_DIR quickjs.h PATH_SUFFIXES quickjs-ng quickjs)
+find_library(QUICKJS_LIBRARY NAMES qjs quickjs-ng)
+if(QUICKJS_INCLUDE_DIR AND QUICKJS_LIBRARY)
+    # A library that cannot link (for example one built for a newer C
+    # library than the system's), or the original QuickJS rather than
+    # QuickJS-ng, counts as absent.
+    include(CheckCSourceCompiles)
+    unset(CANVAS_QUICKJS_LINKS CACHE)  # checked again at every configure
+    set(CMAKE_REQUIRED_INCLUDES ${QUICKJS_INCLUDE_DIR})
+    set(CMAKE_REQUIRED_LIBRARIES ${QUICKJS_LIBRARY} m)
+    check_c_source_compiles("#include <quickjs.h>
+#ifndef QJS_VERSION_MAJOR
+#error not QuickJS-ng
+#endif
+int main(void) { JSRuntime* rt = JS_NewRuntime(); JS_FreeRuntime(rt); return JS_GetVersion() ? 0 : 1; }"
+        CANVAS_QUICKJS_LINKS)
+    unset(CMAKE_REQUIRED_INCLUDES)
+    unset(CMAKE_REQUIRED_LIBRARIES)
+endif()
 if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND AND FREETYPE_FOUND)
     add_library(canvas_scene_core STATIC
         src/scene/assets/MappedFile.cpp
@@ -270,6 +291,7 @@ if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND AND F
         src/scene/particles/ParticleSystem.cpp
         src/scene/text/TextFont.cpp
         src/scene/text/TextLayout.cpp
+        src/scene/script/ScriptEngine.cpp
     )
     target_link_libraries(canvas_scene_core
         PUBLIC canvas_core canvas_scene_props
@@ -277,6 +299,18 @@ if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND AND F
     if(FONTCONFIG_FOUND)
         target_link_libraries(canvas_scene_core PRIVATE PkgConfig::FONTCONFIG)
         target_compile_definitions(canvas_scene_core PRIVATE CANVAS_SCENE_HAVE_FONTCONFIG)
+    endif()
+    if(QUICKJS_INCLUDE_DIR AND QUICKJS_LIBRARY AND CANVAS_QUICKJS_LINKS)
+        target_include_directories(canvas_scene_core PRIVATE ${QUICKJS_INCLUDE_DIR})
+        # libqjs leaves libm (sinh, cosh) to the program.
+        target_link_libraries(canvas_scene_core PRIVATE ${QUICKJS_LIBRARY} m)
+        target_compile_definitions(canvas_scene_core PRIVATE CANVAS_SCENE_HAVE_QUICKJS)
+        message(STATUS "SceneScript: QuickJS at ${QUICKJS_LIBRARY}")
+    elseif(QUICKJS_LIBRARY)
+        message(WARNING "SceneScript: ${QUICKJS_LIBRARY} is not a QuickJS-ng that links (built for "
+                        "a newer system? update the system), scene scripts unsupported")
+    else()
+        message(STATUS "SceneScript: QuickJS-ng not found, scene scripts unsupported")
     endif()
 endif()
 

@@ -96,10 +96,15 @@ public:
     Vec3 controlPoint(int index) const;
     // Rope trails: how far the current keeping interval has run, 0..1.
     float trailFraction() const;
-    // Emitters done (or stopped) and no particles or children left.
+    // Emitters done (or stopped or paused) and no particles or children left.
     bool finished() const;
     // Stops emitting for good (a followed particle died).
     void stopEmitting();
+    // A script's pause() and play() (../script/README.md section 4): no
+    // new particles from this system's emitters while paused, their clocks
+    // held; the particles there live on. Child systems are not paused.
+    void setPaused(bool paused) { paused_ = paused; }
+    bool paused() const { return paused_; }
     // This system and every child instance, parents first.
     void forEachSystem(const std::function<void(const ParticleSystem&)>& f) const;
     size_t childInstances() const;  // live child systems, all levels
@@ -130,6 +135,7 @@ private:
     bool hasPointer_ = false;
     double time_ = 0;
     bool stopped_ = false;
+    bool paused_ = false;
     uint32_t nextId_ = 1;
     float trailClock_ = 0;  // seconds into the current keeping interval
     ParticleRendering rendering_;

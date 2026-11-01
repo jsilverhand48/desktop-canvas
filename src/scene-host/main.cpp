@@ -116,6 +116,17 @@ std::vector<std::string> writablePaths(const std::string& extra) {
     return paths;
 }
 
+// $XDG_DATA_HOME/desktop-canvas/localstorage (or ~/.local/share/...),
+// where scripts keep their localStorage (src/scene/script/README.md
+// section 3); empty without either variable.
+fs::path localStorageDir() {
+    const char* data = std::getenv("XDG_DATA_HOME");
+    const char* home = std::getenv("HOME");
+    if (data && *data) return fs::path(data) / "desktop-canvas" / "localstorage";
+    if (home && *home) return fs::path(home) / ".local" / "share" / "desktop-canvas" / "localstorage";
+    return {};
+}
+
 // $XDG_CACHE_HOME/desktop-canvas/shaders (or ~/.cache/...); empty without
 // either variable.
 fs::path shaderCacheDir() {
@@ -286,6 +297,21 @@ int main(int argc, char** argv) {
     nativeOptions.scaling = scene::scalingFromName(scaling);
     nativeOptions.clamp = scene::clampFromName(clamp);
     nativeOptions.shaderCache = shaderCacheDir();
+    // Scripts keep localStorage in <dir>/<wallpaper folder name>.json, but
+    // not for screenshots: one-off runs leave what the wallpaper remembers.
+    fs::path storageDir;
+    if (screenshot.empty()) {
+        storageDir = localStorageDir();
+        std::error_code ec;
+        if (!storageDir.empty()) fs::create_directories(storageDir, ec);  // must exist to be sandbox writable
+        if (!storageDir.empty() && !ec) {
+            fs::path item = fs::absolute(wallpaper).lexically_normal();
+            if (item.filename().empty()) item = item.parent_path();
+            nativeOptions.scriptStorage = storageDir / (item.filename().string() + ".json");
+        } else {
+            storageDir.clear();
+        }
+    }
     std::copy_n(kPlaceholder, 3, nativeOptions.placeholder);
     nativeOptions.debug.noParticles = disableParticles;
     for (const auto& list : renderDebug) {
@@ -346,7 +372,7 @@ int main(int argc, char** argv) {
                      << (x11Display ? x11Display : "") << ")";
         return 1;
     }
-    if (!noSandbox) scenehost::applySandbox(writablePaths(""));
+    if (!noSandbox) scenehost::applySandbox(writablePaths(storageDir.string()));
 
     scenehost::SceneHostOptions options;
     if (!window.empty() && !parseSize(window, options.windowWidth, options.windowHeight)) {
