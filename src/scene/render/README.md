@@ -116,8 +116,9 @@ brightness and alpha; flat reads `g_Color` (color) and `g_Alpha`.
 (genericimage2 blends against `_rt_FullFrameBuffer` through
 `common_blending.h` [asset]); 19 layers use a mode other than 0 [corpus].
 
-Particle layers simulate and draw as `../particles/README.md` section 6
-says (phase P5a), in `objects` order like other layers. Shape layers
+Particle layers simulate and draw as `../particles/README.md` sections
+6 to 9 say (phases P5a and P5b), in `objects` order like other layers,
+child systems right after their parents. Shape layers
 (`shape` "quad", 4 objects) and text, sound and light layers belong to
 later phases.
 
@@ -432,7 +433,10 @@ read as a fraction of the view, moving against the cursor].
 Pointer [doc: Variables]: `g_PointerPosition` is the cursor in 0..1
 screen space, (0.5, 0.5) until a pointer position arrives, y down from
 the top of the output [inference: screen space like texture v];
-`g_PointerPositionLast` the value of the previous frame;
+`g_PointerPositionLast` the value of the previous frame; particle
+control points that follow the cursor get it in scene space, the output
+position mapped through the fit bars and the view (zoom and shake
+included) [inference];
 `g_ParallaxPosition`, the "normalized parallax offset of current layer",
 is 0.5 + (s - 0.5) * depth per axis with parallax on and (0.5, 0.5)
 otherwise [inference: depthparallax.frag centres it with `* 2 - 1`

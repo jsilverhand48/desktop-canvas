@@ -2,6 +2,10 @@
 // Programs.h.
 #include "scene/shader/Programs.h"
 
+#include <set>
+
+#include "scene/particles/ParticleSystem.h"
+
 namespace canvas::scene {
 
 namespace {
@@ -47,6 +51,13 @@ ProgramRequest particleRequest(const ParticleFile& file, const LoadedScene& scen
             request.combos["SPRITESHEETBLEND"] = 1;
     }
     if (pass.blending == "alphatocoverage") request.combos["ALPHATOCOVERAGE"] = 1;
+    // The renderer (section 6.1): trails stretch sprites; ropes swap in
+    // Wallpaper Engine's rope shader.
+    using Kind = ParticleRendering::Kind;
+    const Kind kind = particleRendering(file).kind;
+    if (kind == Kind::Rope || kind == Kind::RopeTrail) request.shader = "genericropeparticle";
+    if (kind != Kind::Sprite) request.combos["THICKFORMAT"] = 1;
+    if (kind == Kind::SpriteTrail || kind == Kind::RopeTrail) request.combos["TRAILRENDERER"] = 1;
     return request;
 }
 
@@ -90,13 +101,28 @@ std::vector<PassProgram> collectPrograms(const LoadedScene& scene) {
             }
         }
         if (object.particle) {
-            auto file = scene.particles.find(object.particle->particle);
-            if (file != scene.particles.end() && file->second) {
+            // The layer's particle file and every child file it reaches
+            // (src/scene/particles/README.md section 9), each once.
+            auto find = [&](const std::string& path) -> const ParticleFile* {
+                auto it = scene.particles.find(path);
+                return it != scene.particles.end() ? it->second.get() : nullptr;
+            };
+            std::vector<std::pair<const ParticleFile*, int>> todo;
+            if (const ParticleFile* f = find(object.particle->particle)) todo.push_back({f, 0});
+            std::set<const ParticleFile*> seen;
+            while (!todo.empty()) {
+                auto [file, depth] = todo.back();
+                todo.pop_back();
+                if (!seen.insert(file).second) continue;
                 PassProgram program;
                 program.object = object.id;
-                program.material = file->second->material;
-                program.request = particleRequest(*file->second, scene);
+                program.pass = int(seen.size()) - 1;
+                program.material = file->material;
+                program.request = particleRequest(*file, scene);
                 if (!program.request.shader.empty()) out.push_back(std::move(program));
+                if (depth < 4)
+                    for (const auto& child : file->children)
+                        if (const ParticleFile* f = find(child.file)) todo.push_back({f, depth + 1});
             }
         }
         for (size_t e = 0; e < object.effects.size(); e++) {

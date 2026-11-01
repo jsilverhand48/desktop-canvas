@@ -142,9 +142,9 @@ ParticleFile parseParticleFile(const json& j, LoadReport& report, const std::str
             if (const json* v = field(c, "offset")) cp.offset = toVec3(*v, cp.offset);
             if (const json* v = field(c, "angles")) cp.angles = toVec3(*v, cp.angles);
             if (const json* v = field(c, "parentcontrolpoint"); v && toNumber(*v, n)) cp.parent = int(n);
+            // Flag 1 locks the point to the pointer; the older locktopointer
+            // key alone does not (section 8).
             cp.lockToPointer = (cp.flags & 1) != 0;
-            if (const json* v = field(c, "locktopointer"); v && v->is_boolean())
-                cp.lockToPointer = cp.lockToPointer || v->get<bool>();
             p.controlPoints.push_back(cp);
         }
     }

@@ -337,10 +337,11 @@ Namespace `canvas::scene`, library `canvas_scene_core` (no GL).
   hoisting, fixed attribute locations, [req A2 (1) to (3)], assembly),
   `shaderPrelude`, `attributeLocation`, `replaceIdentifiers`.
 - `Programs` `collectPrograms` (every material and effect pass of a
-  loaded scene, and every particle layer's material, as a
-  `ProgramRequest`), `particleRequest` (a particle material's combos,
-  `../particles/README.md` section 6) and `shaderLoader` (sources through
-  an `AssetLocator`).
+  loaded scene, and the material of every particle file a particle layer
+  draws, children included, as a `ProgramRequest`), `particleRequest` (a
+  particle material's combos and, for ropes, genericropeparticle,
+  `../particles/README.md` sections 6 and 6.1) and `shaderLoader`
+  (sources through an `AssetLocator`).
 - `Tokens` section 6.1's tokenizer and macro expander (`expandProgram`).
 - `Syntax` GLSL types (`GlslType`, `builtinType`), the syntax tree, the
   recursive descent parser (`parseGlsl`) and printer (`printGlsl`). The

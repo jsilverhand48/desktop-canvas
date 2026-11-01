@@ -42,7 +42,7 @@ struct ParticleControlPoint {
     int id = 0;
     int64_t flags = 0;
     Vec3 offset{0, 0, 0};
-    bool lockToPointer = false;  // flag 1 or `locktopointer`
+    bool lockToPointer = false;  // flag 1 (the `locktopointer` key is not read)
     int parent = -1;             // `parentcontrolpoint`
     Vec3 angles{0, 0, 0};
 };

@@ -314,13 +314,17 @@ particles, of them 53 control points, 77 children and 81 trails
 Each system has 8 control points, `0` always "tied to the origin
 position of the particle system" [doc: Control Points]. Entries `{id,
 flags, offset, locktopointer, parentcontrolpoint, angles}` [corpus 4731
-entries]: `offset` "the (relative) position"; flag 1 (or
-`locktopointer` true) locks the point "to the mouse cursor" [doc;
-asset: the presets' cursor follow and avoid examples set flag 1 on the
-point they use]; flag 2 "Worldspace": the offset is a fixed scene
-position [doc; inference: 11 of its 15 entries move the offset off 0];
-flag 4 "Copy from parent" with `parentcontrolpoint` [doc; corpus 8/8];
-flag 8 "Raw value" copies the parent's point without converting it
+entries]: `offset` "the (relative) position"; flag 1 locks the point
+"to the mouse cursor" [doc; asset: the presets' cursor follow and avoid
+examples set flag 1 on the point they use]; the older `locktopointer`
+key alone does not [inference: 3636723645's point 1 says `locktopointer`
+true without flag 1, and its layers override that point with a fixed
+position across the screen, their particles' line; another scene keeps
+an override on a flag 1 point that its controlpointattract uses as the
+cursor]; flag 2 "Worldspace": the offset is a fixed scene position
+[doc; inference: 11 of its 15 entries move the offset off 0]; flag 4
+"Copy from parent" with `parentcontrolpoint` [doc; corpus 8/8]; flag 8
+"Raw value" copies the parent's point without converting it
 [doc: listed after copy from parent; inference: the bit]; flag 16
 hides the editor gizmo [doc: last option; inference: the bit] and
 changes nothing here.
@@ -338,8 +342,9 @@ system's space (section 2):
 3. point 0 otherwise: the system origin (its offset ignored [doc]);
 4. a worldspace point: its offset as a scene position;
 5. any other point: its offset in the system's space.
-The layer overrides `controlpoint<n>` (vec3) replace point n's offset,
-in the space its flags give it [doc: IParticleSystemInstance "Position
+The layer overrides `controlpoint<n>` (vec3) replace point n's offset
+(a point locked to the pointer keeps following it), in the space its
+flags give it [doc: IParticleSystemInstance "Position
 of control point n"; corpus: the 23 overrides of worldspace points hold
 scene positions next to their objects]; `controlpointangle<n>` is kept
 for scripts (phase P6). Child systems with "set control points" take
@@ -394,15 +399,21 @@ not nested again.
   `prewarm()`, the layer factors (`setFactors`), the spawn transform of
   worldspace systems; `particleNeeds()` says what a file needs beyond
   P5a (section 7); `valueNoise()` is the noise of sections 4 and 5.
-  Phase P5b adds control points (section 8), the control point
-  components, children (section 9) and the trail renderers' data
-  (section 6.1).
+  Phase P5b adds control points (section 8: `setPointer`,
+  `setControlPointOffset`, `controlPoint`), the control point
+  components, children (section 9: `forEachSystem`, `childInstances`,
+  `finished`, `stopEmitting`) and the rope trails' kept positions
+  (section 6.1: `Particle::trail`, `trailFraction`);
+  `particleRendering()` reads the renderer settings with their
+  defaults.
 - Drawing lives in `../gl/SceneRenderer.cpp` (particle layers) and the
   program request in `../shader/Programs.h` (`particleRequest`: the
   combos of section 6).
 
 Library `canvas_scene_core` (no GPU). Tests:
 `claude_tests/test_scene_particles` (parsing, needs, emission,
-initializers, operators, determinism, program requests) and the particle
-part of `claude_tests/test_scene_render` (drawing and blending on every
-GL device).
+initializers, operators, determinism, program requests; P5b: control
+points, sequences, the control point operators, children, rope trails,
+renderer settings) and the particle part of
+`claude_tests/test_scene_render` (drawing and blending, a static child
+system and a rope, on every GL device).

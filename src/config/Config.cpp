@@ -76,7 +76,7 @@ Config Config::load(const fs::path& path) {
     }
     if (j.contains("scene") && j["scene"].is_object()) {
         std::string engine = j["scene"].value("engine", cfg.sceneEngine);
-        cfg.sceneEngine = validEngine(engine) ? engine : "lwe";
+        cfg.sceneEngine = validEngine(engine) ? engine : Config{}.sceneEngine;
         cfg.sceneEnginePath = j["scene"].value("engine_path", "");
         cfg.sceneAssetsDir = j["scene"].value("assets_dir", "");
         cfg.sceneDisableMouse =

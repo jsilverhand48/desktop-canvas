@@ -7,8 +7,9 @@
 // material (commands such as copy) have no program. An image layer's
 // colorBlendMode becomes the BLENDMODE combo of its own passes
 // (src/scene/render/README.md section 2). A particle layer adds one
-// request for its particle file's material (particleRequest); text layer
-// materials join in phase P6b.
+// request per particle file it draws, its own and its children's
+// (particleRequest; pass numbers count the files); text layer materials
+// join in phase P6b.
 #pragma once
 
 #include <cstdint>
@@ -43,8 +44,11 @@ ProgramRequest programRequest(const MaterialPass& pass, const LoadedScene& scene
 // src/scene/particles/README.md: TEX0FORMAT from the albedo's format; when
 // the albedo is a sprite sheet SPRITESHEET, THICKFORMAT and, unless frames
 // are random or flag 4 turns blending off, SPRITESHEETBLEND;
-// ALPHATOCOVERAGE for that blending. An empty shader when the material did
-// not load.
+// ALPHATOCOVERAGE for that blending; for the renderer (section 6.1)
+// TRAILRENDERER and THICKFORMAT for sprite trails, genericropeparticle
+// with THICKFORMAT for ropes and with TRAILRENDERER too for rope trails.
+// An empty shader when the material did not load. Padded sprite sheets'
+// SPRITESHEETBLENDNPOT is the renderer's (it knows the uploaded size).
 ProgramRequest particleRequest(const ParticleFile& file, const LoadedScene& scene);
 
 // Shader sources through a wallpaper's lookup layers.

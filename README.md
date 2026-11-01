@@ -7,7 +7,7 @@ Supported wallpaper types:
 
 | Type | How it renders | Notes |
 |---|---|---|
-| scene (scene.pkg) | supervised linux-wallpaperengine child process, or desktop-canvas-scene (the native renderer, in development) | `scene.engine`: `lwe` (default), `native` or `auto` (native where it can, linux-wallpaperengine for the rest); the native renderer does not draw scenes yet, so `lwe` needs linux-wallpaperengine installed (or bundled) |
+| scene (scene.pkg) | supervised desktop-canvas-scene (the native renderer, in development) or linux-wallpaperengine child process | `scene.engine`: `auto` (default: native where it can, linux-wallpaperengine for the rest), `native` or `lwe`; the native renderer draws image, effect and particle scenes (116 of the 208 scenes of the test library), not yet scripts, text, sound, puppets or lights, so other scenes still need linux-wallpaperengine installed (or bundled) |
 | video (mp4 etc.) | in process via libmpv into a layer shell surface | hardware decoded when available |
 | web (HTML/JS) | supervised Qt6 WebEngine (Quick) child process | build with -DDESKTOP_CANVAS_WEB=ON; audio reactive visualizers render their static state (no spectrum feed yet) |
 | presets | not supported | items whose project.json has a "dependency" key |

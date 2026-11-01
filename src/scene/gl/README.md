@@ -33,12 +33,21 @@ context; the GPU free parts live in the other `src/scene/` modules.
   textures, layout, camera shake and parallax, draws a frame once per
   `advance()` and presents it into the bound framebuffer by the scaling
   and clamp modes; `RenderDebug` holds the `--render-debug` switches.
-  Particle layers (`../particles/README.md` section 6) own a
-  `ParticleSystem`, stepped once per drawn frame while shown, and a
-  vertex buffer of four corners per particle in genericparticle's
-  attribute layout, growing by doubling up to the system's maximum
-  count; `noParticles` (`--disable-particles`) leaves them out. GL
-  objects need the context current, including at destruction.
+  Particle layers (`../particles/README.md` sections 6 to 9) own a
+  `ParticleSystem` with its child systems, stepped once per `advance()`
+  while shown (whatever the number of frame sizes drawn) with the layer's
+  factors, transform, control point overrides and the cursor in scene
+  space (the output position through the fit bars and the view), and a
+  `ParticleDraw` per particle file among them: the material's program
+  with the renderer's combos (genericropeparticle for ropes), the sprite
+  sheet layout (`SPRITESHEETBLENDNPOT` for padded sheets), trail values,
+  orientation, and a vertex buffer growing by doubling: four corners per
+  particle in genericparticle's layout, or per rope piece in
+  genericropeparticle's (Catmull-Rom subdivisions for ropes, kept
+  positions for rope trails). Every system draws with its own model
+  matrix, parents first; `noParticles` (`--disable-particles`) leaves
+  them out. GL objects need the context current, including at
+  destruction.
 
 Tests: `claude_tests/test_scene_gl` and `test_scene_render` (opt-in GL
 parts; llvmpipe, every device with `CANVAS_GPU_ALL=1`).

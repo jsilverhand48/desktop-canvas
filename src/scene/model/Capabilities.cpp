@@ -58,7 +58,7 @@ std::set<std::string> sceneFeatures(LoadedScene& scene) {
 }
 
 const std::set<std::string>& supportedFeatures() {
-    // What phases P4 and P5a draw (src/scene/render/README.md,
+    // What phases P4 and P5 draw (src/scene/render/README.md,
     // src/scene/particles/README.md).
     // hdr as users without Ultra post-processing see it; video-texture
     // needs libmpv, which the helper checks (SceneCheck).
@@ -66,7 +66,8 @@ const std::set<std::string>& supportedFeatures() {
         "scene",       "image",           "effects",          "solid-layer",
         "fullscreen-layer", "composition-layer", "group",     "user-properties",
         "bloom",       "hdr",             "timeline",         "parallax",
-        "camera-shake", "sprite-animation", "video-texture", "particles"};
+        "camera-shake", "sprite-animation", "video-texture", "particles",
+        "particle-controlpoints", "particle-children", "particle-trails"};
     return supported;
 }
 

@@ -13,7 +13,7 @@
 //   "scaling": "fill",                            // fill | fit | stretch
 //   "layer": "background",                        // background | bottom
 //   "audio": {"muted": true, "volume": 15},
-//   "scene": {"engine": "lwe",                // lwe | native | auto
+//   "scene": {"engine": "auto",               // lwe | native | auto
 //             "engine_path": "", "assets_dir": "", "disable_mouse": false,
 //             "randomize_options": false,     // random dropdown values
 //             "include_nsfw_options": false}, // ...including NSFW ones
@@ -49,8 +49,9 @@
 // external linux-wallpaperengine; "native" runs desktop-canvas-scene and
 // shows whatever it supports; "auto" tries desktop-canvas-scene strictly and
 // falls back to lwe for content it reports unsupported (verdicts cached, see
-// render/NativeSupportCache.h). Unknown values read as "lwe", and an empty
-// per wallpaper value means "use scene.engine".
+// render/NativeSupportCache.h); it is the default since plan phase P5b.
+// Unknown values read as the default, and an empty per wallpaper value
+// means "use scene.engine".
 //
 // Fullscreen pause: wallpapers on outputs a fullscreen application covers
 // pause (desktop/FullscreenPolicy.h). Windows come from the platform (EWMH on
@@ -85,7 +86,7 @@ struct Config {
     std::string layer = "background";
     bool audioMuted = true;   // requirement: audio defaults to muted
     int audioVolume = 15;
-    std::string sceneEngine = "lwe";  // lwe | native | auto
+    std::string sceneEngine = "auto";  // lwe | native | auto
     std::string sceneEnginePath;  // empty = search PATH
     std::string sceneAssetsDir;   // empty = autodetect from content roots
     bool sceneDisableMouse = false;

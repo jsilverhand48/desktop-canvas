@@ -24,10 +24,10 @@ user's own choice and the config file is not rewritten every interval.
 random value for each dropdown property; `scene.include_nsfw_options`
 (default false) lets those picks include options labelled NSFW / nude.
 
-`scene.engine` picks the scene renderer: `lwe` (default,
-linux-wallpaperengine), `native` (desktop-canvas-scene, showing whatever it
-supports) or `auto` (desktop-canvas-scene in strict mode, falling back to
-lwe for content it reports unsupported). A wallpaper's own `engine`
+`scene.engine` picks the scene renderer: `lwe` (linux-wallpaperengine),
+`native` (desktop-canvas-scene, showing whatever it supports) or `auto`
+(the default since plan phase P5b: desktop-canvas-scene in strict mode,
+falling back to lwe for content it reports unsupported). A wallpaper's own `engine`
 overrides it; `engineFor(id)` resolves the two and `validEngine()` is the
 accepted set. Unknown names load as the default, and a wallpaper entry
 whose only setting is its engine is still written.

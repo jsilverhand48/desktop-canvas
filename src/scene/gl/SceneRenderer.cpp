@@ -411,16 +411,29 @@ struct EffectRun {
 
 enum class LayerKind : uint8_t { Image, Solid, Compose, Fullscreen, Particles };
 
-// One particle corner (section 6 of src/scene/particles/README.md):
-// a_Position, a_TexCoordVec4 (corner u, corner v, rotation z, size),
-// a_TexCoordC2 (rotation x, y), a_TexCoordVec4C1 (velocity, frame value),
-// a_Color.
-struct ParticleVertex {
-    float position[3];
-    float texCoord[4];
-    float rotation[2];
-    float extra[4];
-    float color[4];
+// Particle vertices (section 6 of src/scene/particles/README.md), as
+// floats. Sprites (genericparticle): a_Position 3, a_TexCoordVec4 4
+// (corner u, corner v, rotation z, size), a_TexCoordC2 2 (rotation x, y),
+// a_TexCoordVec4C1 4 (velocity, frame value), a_Color 4. Ropes
+// (genericropeparticle, section 6.1): a_PositionVec4 4 (start, start
+// size), a_TexCoordVec4 4 (end, trail length), a_TexCoordVec4C1 4 (the
+// point before the start, trail position), a_TexCoordVec4C2 4 (the point
+// after the end, end size), a_TexCoordVec4C3 4 (end colour), a_TexCoordC4
+// 2 (corner across, along), a_Color 4 (start colour).
+constexpr size_t kSpriteFloats = 17, kRopeFloats = 26;
+
+// One particle file's drawing in a layer: the layer's own system or one
+// of its child systems (section 9).
+struct ParticleDraw {
+    std::vector<Pass> passes;
+    ParticleRendering rendering;
+    bool rope = false;  // genericropeparticle's layout
+    Vec4 renderVar0{0, 0, 0, 0}, renderVar1{0, 0, 0, 0};
+    Vec3 orientation[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    GLuint vao = 0, vbo = 0, ibo = 0;
+    size_t capacity = 0;          // quads the buffers hold
+    std::vector<float> vertices;  // this frame's, every system of the file
+    size_t quads = 0;             // this frame's
 };
 
 struct Layer {
@@ -438,13 +451,12 @@ struct Layer {
     // frame, shown or not, and kept until the frame ends.
     bool referenced = false;
     const Target* composite = nullptr;
-    // Particle layers (src/scene/particles/README.md section 6).
+    // Particle layers (src/scene/particles/README.md sections 6 to 9):
+    // the system with its children, drawn per particle file.
     const ParticleFile* particleFile = nullptr;
     std::unique_ptr<ParticleSystem> system;
-    GLuint particleVao = 0, particleVbo = 0, particleIbo = 0;
-    size_t particleCapacity = 0;  // quads the buffers hold
-    std::vector<ParticleVertex> particleVertices;  // reused every frame
-    Vec4 renderVar1{0, 0, 0, 0};  // sprite sheet frames
+    std::map<const ParticleFile*, ParticleDraw> particleDraws;
+    uint64_t particleGeneration = ~0ull;  // the generation last simulated
 };
 
 // Vertices of one quad as a triangle strip: x, y, z, u, v each.
@@ -509,9 +521,11 @@ struct SceneRenderer::Impl {
         for (auto& layer : layers) {
             for (auto& run : layer.effects)
                 for (auto& b : run.buffers) destroyTarget(b.persistent);
-            if (layer.particleVao) glDeleteVertexArrays(1, &layer.particleVao);
-            if (layer.particleVbo) glDeleteBuffers(1, &layer.particleVbo);
-            if (layer.particleIbo) glDeleteBuffers(1, &layer.particleIbo);
+            for (auto& [file, draw] : layer.particleDraws) {
+                if (draw.vao) glDeleteVertexArrays(1, &draw.vao);
+                if (draw.vbo) glDeleteBuffers(1, &draw.vbo);
+                if (draw.ibo) glDeleteBuffers(1, &draw.ibo);
+            }
         }
         for (auto& f : frames) {
             destroyTarget(f.target);
@@ -543,9 +557,11 @@ struct SceneRenderer::Impl {
         Vec4 renderVar0{0, 0, 0, 0};  // g_RenderVar0 (bloom passes)
         Mat4 layerModel = Mat4::identity();  // g_LayerModelMatrix
         Vec4 renderVar1{0, 0, 0, 0};         // g_RenderVar1 (particle sprite sheets)
-        // Particle layers draw this instead of the quad.
+        // Particle layers draw these indices of this vertex array instead
+        // of the quad, with these sprite orientation vectors.
         GLuint particleVao = 0;
-        GLsizei particleIndices = 0;
+        GLsizei particleIndices = 0, particleFirstIndex = 0;
+        Vec3 orientation[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
         float parallax[2] = {0.5f, 0.5f};    // g_ParallaxPosition
         const GpuTexture* layerTexture = nullptr;
         const std::map<std::string, const Target*>* named = nullptr;
@@ -578,6 +594,8 @@ struct SceneRenderer::Impl {
     uint64_t generation = 0;
     float pointer[2] = {0.5f, 0.5f};       // latest pointer target
     float framePointer[2] = {0.5f, 0.5f};  // g_PointerPosition this frame
+    float frameCursor[2] = {0.5f, 0.5f};   // framePointer in the frame drawn (fit bars)
+    Vec3 pointerScene{0, 0, 0};            // framePointer in scene space (particles)
     float lastPointer[2] = {0.5f, 0.5f};   // g_PointerPositionLast
     float parallaxPointer[2] = {0.5f, 0.5f};  // s of section 11, smoothed
     std::unique_ptr<Animator> animator;
@@ -914,52 +932,130 @@ struct SceneRenderer::Impl {
         return run;
     }
 
-    // A particle layer (section 6 of src/scene/particles/README.md): its
-    // material's program with the sprite sheet combos, and its system.
-    void buildParticleLayer(size_t index) {
-        SceneObject& o = scene.scene.objects[index];
-        const std::string where = "object " + std::to_string(o.id);
-        auto pf = scene.particles.find(o.particle->particle);
-        if (pf == scene.particles.end() || !pf->second) {
-            problem(where + ": particles " + o.particle->particle + " not loaded");
-            return;
-        }
-        const ParticleFile& file = *pf->second;
+    // One particle file's drawing (section 6 of
+    // src/scene/particles/README.md): its material's program with the
+    // renderer's combos, the frame layout, trail values and orientation.
+    bool buildParticleDraw(const ParticleFile& file, const std::string& where, int64_t objectId,
+                           ParticleDraw& draw) {
         auto mat = scene.materials.find(file.material);
         if (mat == scene.materials.end() || !mat->second || mat->second->passes.empty()) {
             problem(where + ": particle material " + file.material + " not loaded");
-            return;
+            return false;
         }
         const MaterialPass& mp = mat->second->passes.front();
         ProgramRequest request = particleRequest(file, scene);
-        // Sprite sheets: the frame layout from the uploaded albedo.
-        Layer layer;
+        draw.rendering = particleRendering(file);
+        using Kind = ParticleRendering::Kind;
+        draw.rope = draw.rendering.kind == Kind::Rope || draw.rendering.kind == Kind::RopeTrail;
         if (request.combos.count("SPRITESHEET")) {
+            // The frame layout from the uploaded albedo; padded sheets lay
+            // their frames out in the image's part.
             const bool named = !mp.textures.empty() && mp.textures[0];
             const GpuTexture* sheet = &textures.get(named ? *mp.textures[0] : std::string("util/white"));
             if (!sheet->frames.empty()) {
                 const TextureFrame& f = sheet->frames.front();
                 const float w = float(std::max(1, sheet->width)), h = float(std::max(1, sheet->height));
-                layer.renderVar1 = {f.ux / w, f.vy / h, float(sheet->frames.size()),
-                                    f.ux > 0 ? f.vy / f.ux : 1.0f};
+                draw.renderVar1 = {f.ux / w, f.vy / h, float(sheet->frames.size()), f.ux > 0 ? f.vy / f.ux : 1.0f};
+                if (sheet->imageWidth < sheet->width || sheet->imageHeight < sheet->height)
+                    request.combos["SPRITESHEETBLENDNPOT"] = 1;
             } else {
-                for (const char* c : {"SPRITESHEET", "THICKFORMAT", "SPRITESHEETBLEND"}) request.combos.erase(c);
+                for (const char* c : {"SPRITESHEET", "SPRITESHEETBLEND"}) request.combos.erase(c);
+                if (draw.rendering.kind == Kind::Sprite) request.combos.erase("THICKFORMAT");
             }
         }
+        if (draw.rendering.kind == Kind::SpriteTrail)
+            draw.renderVar0 = {draw.rendering.length, draw.rendering.maxLength, draw.rendering.minLength, 0};
+        if (draw.rendering.orientation == "fixed") {
+            // forward along the axis, right = up x forward, up = forward x right.
+            Vec3 a = draw.rendering.axis;
+            float len = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+            if (len > 1e-6f) {
+                const Vec3 fw{a[0] / len, a[1] / len, a[2] / len};
+                Vec3 right{fw[2], 0, -fw[0]};  // (0 1 0) x forward
+                float rl = std::sqrt(right[0] * right[0] + right[2] * right[2]);
+                right = rl > 1e-6f ? Vec3{right[0] / rl, 0, right[2] / rl} : Vec3{1, 0, 0};
+                const Vec3 up{fw[1] * right[2] - fw[2] * right[1], fw[2] * right[0] - fw[0] * right[2],
+                              fw[0] * right[1] - fw[1] * right[0]};
+                draw.orientation[0] = right;
+                draw.orientation[1] = up;
+                draw.orientation[2] = fw;
+            }
+        }
+        Pass pass = materialPass(mp, request, where, nullptr, nullptr, nullptr, nullptr, false, objectId);
+        if (mp.blending == "alphatocoverage") pass.blend = Blend::Translucent;
+        draw.passes.push_back(std::move(pass));
+        return true;
+    }
+
+    const ParticleFile* particleFile(const std::string& path) const {
+        auto it = scene.particles.find(path);
+        return it != scene.particles.end() ? it->second.get() : nullptr;
+    }
+
+    // A particle layer (sections 6 to 9 of src/scene/particles/README.md):
+    // its system with the child systems it can create, and the drawing of
+    // every particle file among them.
+    void buildParticleLayer(size_t index) {
+        SceneObject& o = scene.scene.objects[index];
+        const std::string where = "object " + std::to_string(o.id);
+        const ParticleFile* root = particleFile(o.particle->particle);
+        if (!root) {
+            problem(where + ": particles " + o.particle->particle + " not loaded");
+            return;
+        }
+        Layer layer;
         layer.object = index;
         layer.id = o.id;
         layer.kind = LayerKind::Particles;
-        layer.particleFile = &file;
-        Pass pass = materialPass(mp, request, where + " particles", nullptr, nullptr, nullptr,
-                                 nullptr, false, o.id);
-        if (mp.blending == "alphatocoverage") pass.blend = Blend::Translucent;
-        layer.passes.push_back(std::move(pass));
+        layer.particleFile = root;
+        // The file and every child file within the nesting limit.
+        std::vector<std::pair<const ParticleFile*, int>> todo{{root, 0}};
+        while (!todo.empty()) {
+            auto [file, depth] = todo.back();
+            todo.pop_back();
+            if (layer.particleDraws.count(file)) continue;
+            ParticleDraw draw;
+            if (!buildParticleDraw(*file, where + " particles", o.id, draw)) {
+                if (file == root) return;
+                continue;  // a child without a material simulates undrawn
+            }
+            layer.particleDraws.emplace(file, std::move(draw));
+            if (depth < ParticleSystem::kMaxDepth)
+                for (const auto& child : file->children)
+                    if (const ParticleFile* f = particleFile(child.file); f && f != file)
+                        todo.push_back({f, depth + 1});
+        }
         const uint64_t seed = fnv1a64(o.particle->particle) ^ (uint64_t(o.id) * 0x9E3779B97F4A7C15ull);
-        layer.system = std::make_unique<ParticleSystem>(file, seed);
-        layer.system->setFactors(particleFactors(o, file));
-        layer.system->setSpawnTransform(layout->world(index).matrix());
+        layer.system = std::make_unique<ParticleSystem>(
+            *root, seed, [this](const std::string& path) { return particleFile(path); });
+        {
+            // The view centre until a frame maps the cursor (the projection
+            // is resolved after the layers).
+            const General& g = scene.scene.general;
+            const bool sized = g.projectionWidth.value > 0 && g.projectionHeight.value > 0;
+            pointerScene = {sized ? g.projectionWidth.value / 2 : 960.0f,
+                            sized ? g.projectionHeight.value / 2 : 540.0f, 0};
+        }
+        feedParticles(layer, layout->world(index).matrix());
         layer.system->prewarm();
         layers.push_back(std::move(layer));
+    }
+
+    // The system's inputs (sections 2 and 8): factors, transform, pointer,
+    // control point overrides.
+    void feedParticles(Layer& layer, const Mat4& model) {
+        const SceneObject& o = scene.scene.objects[layer.object];
+        ParticleSystem& system = *layer.system;
+        system.setFactors(particleFactors(o, *layer.particleFile));
+        system.setTransform(model);
+        system.setPointer(pointerScene);
+        if (!o.particle || !o.particle->overrides) return;
+        for (const auto& [name, field] : o.particle->overrides->controlPoints) {
+            const std::string prefix = "controlpoint";
+            if (name.size() == prefix.size() + 1 && name.compare(0, prefix.size(), prefix) == 0 &&
+                name.back() >= '0' && name.back() <= '7')
+                system.setControlPointOffset(name.back() - '0', field.value);
+        }
     }
 
     // The layer's override factors without the ones the system disables
@@ -1448,10 +1544,13 @@ struct SceneRenderer::Impl {
         if (e.renderVar1 >= 0)
             glUniform4f(e.renderVar1, in.renderVar1[0], in.renderVar1[1], in.renderVar1[2],
                         in.renderVar1[3]);
-        // Screen orientation in these orthographic scenes (particles).
-        if (e.orientationRight >= 0) glUniform3f(e.orientationRight, 1, 0, 0);
-        if (e.orientationUp >= 0) glUniform3f(e.orientationUp, 0, 1, 0);
-        if (e.orientationForward >= 0) glUniform3f(e.orientationForward, 0, 0, 1);
+        // Sprite orientation (particles; screen unless fixed).
+        if (e.orientationRight >= 0)
+            glUniform3f(e.orientationRight, in.orientation[0][0], in.orientation[0][1], in.orientation[0][2]);
+        if (e.orientationUp >= 0)
+            glUniform3f(e.orientationUp, in.orientation[1][0], in.orientation[1][1], in.orientation[1][2]);
+        if (e.orientationForward >= 0)
+            glUniform3f(e.orientationForward, in.orientation[2][0], in.orientation[2][1], in.orientation[2][2]);
         if (e.viewRight >= 0) glUniform3f(e.viewRight, 1, 0, 0);
         if (e.viewUp >= 0) glUniform3f(e.viewUp, 0, 1, 0);
         setMatrix(e.layerModel, in.layerModel);
@@ -1482,7 +1581,8 @@ struct SceneRenderer::Impl {
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, pass.alphaWrite ? GL_TRUE : GL_FALSE);
         if (in.particleVao) {
             glBindVertexArray(in.particleVao);
-            glDrawElements(GL_TRIANGLES, in.particleIndices, GL_UNSIGNED_INT, nullptr);
+            glDrawElements(GL_TRIANGLES, in.particleIndices, GL_UNSIGNED_INT,
+                           reinterpret_cast<const void*>(size_t(in.particleFirstIndex) * sizeof(uint32_t)));
         } else {
             drawQuad(in.quad);
         }
@@ -1622,9 +1722,9 @@ struct SceneRenderer::Impl {
         return {float(x * scale), float(y * scale)};
     }
 
-    // Draws a layer when shown; computes its composite when referenced.
-    // Simulates and draws a particle layer (section 6 of
-    // src/scene/particles/README.md); hidden systems stand still.
+    // Simulates a particle layer once per generation and draws it with
+    // its child systems (sections 6 to 9 of src/scene/particles/README.md);
+    // hidden systems stand still.
     void drawParticles(Layer& layer, bool shown) {
         if (!shown || options.debug.noParticles) return;
         const SceneObject& o = scene.scene.objects[layer.object];
@@ -1632,85 +1732,210 @@ struct SceneRenderer::Impl {
         float parallaxPosition[2] = {0.5f, 0.5f};
         const Vec2 offset = parallaxOffset(o, parallaxPosition);
         const Mat4 model = Mat4::translate(offset[0], offset[1], 0) * layout->world(layer.object).matrix();
-        system.setFactors(particleFactors(o, *layer.particleFile));
-        system.setSpawnTransform(model);
-        system.step(frameTime);
-        const auto& particles = system.particles();
-        if (particles.empty()) return;
-        if (particles.size() > layer.particleCapacity) growParticleBuffers(layer, particles.size());
-        std::vector<ParticleVertex>& vertices = layer.particleVertices;
-        vertices.resize(particles.size() * 4);
-        static constexpr float kCorners[4][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};
-        for (size_t i = 0; i < particles.size(); i++) {
-            const Particle& p = particles[i];
-            for (int c = 0; c < 4; c++) {
-                ParticleVertex& v = vertices[i * 4 + size_t(c)];
-                std::copy_n(p.position.begin(), 3, v.position);
-                v.texCoord[0] = kCorners[c][0];
-                v.texCoord[1] = kCorners[c][1];
-                v.texCoord[2] = p.rotation[2];
-                v.texCoord[3] = p.size;
-                v.rotation[0] = p.rotation[0];
-                v.rotation[1] = p.rotation[1];
-                std::copy_n(p.velocity.begin(), 3, v.extra);
-                v.extra[3] = p.frame;
-                std::copy_n(p.color.begin(), 3, v.color);
-                v.color[3] = p.alpha;
-            }
+        if (layer.particleGeneration != generation) {
+            // Once per advance, however many frame sizes are drawn.
+            layer.particleGeneration = generation;
+            feedParticles(layer, model);
+            system.step(frameTime);
         }
-        glBindBuffer(GL_ARRAY_BUFFER, layer.particleVbo);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, GLsizeiptr(vertices.size() * sizeof(ParticleVertex)),
-                        vertices.data());
-        DrawInputs in;
-        in.object = &o;
-        in.model = system.worldSpace() ? Mat4::identity() : model;
-        in.layerModel = model;
-        in.mvp = system.worldSpace() ? viewProj : viewProj * model;
-        in.effectMvp = in.mvp;
-        in.renderVar1 = layer.renderVar1;
-        std::copy_n(parallaxPosition, 2, in.parallax);
-        in.particleVao = layer.particleVao;
-        in.particleIndices = GLsizei(particles.size() * 6);
-        for (const Pass& pass : layer.passes) drawPass(pass, in);
+        // Vertices per file, batches (one per system) in drawing order.
+        struct Batch {
+            ParticleDraw* draw;
+            size_t first, quads;
+            Mat4 model;
+            bool worldSpace;
+            float trail;
+        };
+        std::vector<Batch> batches;
+        for (auto& [file, draw] : layer.particleDraws) {
+            draw.vertices.clear();
+            draw.quads = 0;
+        }
+        system.forEachSystem([&](const ParticleSystem& s) {
+            auto it = layer.particleDraws.find(&s.file());
+            if (it == layer.particleDraws.end() || s.particles().empty()) return;
+            ParticleDraw& draw = it->second;
+            const size_t first = draw.quads;
+            if (draw.rope)
+                appendRope(draw, s);
+            else
+                appendSprites(draw, s);
+            if (draw.quads > first)
+                batches.push_back({&draw, first, draw.quads - first, s.transform(), s.worldSpace(), s.trailFraction()});
+        });
+        for (auto& [file, draw] : layer.particleDraws) {
+            if (!draw.quads) continue;
+            if (draw.quads > draw.capacity) growParticleBuffers(draw, draw.quads);
+            glBindBuffer(GL_ARRAY_BUFFER, draw.vbo);
+            glBufferSubData(GL_ARRAY_BUFFER, 0, GLsizeiptr(draw.vertices.size() * sizeof(float)),
+                            draw.vertices.data());
+        }
+        for (const Batch& b : batches) {
+            DrawInputs in;
+            in.object = &o;
+            in.model = b.worldSpace ? Mat4::identity() : b.model;
+            in.layerModel = model;
+            in.mvp = viewProj * in.model;
+            in.effectMvp = in.mvp;
+            in.renderVar0 = b.draw->renderVar0;
+            if (b.draw->rendering.kind == ParticleRendering::Kind::RopeTrail) {
+                // Section 6.1: kept positions plus the particle; how far
+                // the keeping interval has run.
+                const float points = float(b.draw->rendering.segments + 1);
+                in.renderVar0 = {points, 0, b.trail, points};
+            }
+            in.renderVar1 = b.draw->renderVar1;
+            std::copy_n(b.draw->orientation, 3, in.orientation);
+            std::copy_n(parallaxPosition, 2, in.parallax);
+            in.particleVao = b.draw->vao;
+            in.particleFirstIndex = GLsizei(b.first * 6);
+            in.particleIndices = GLsizei(b.quads * 6);
+            for (const Pass& pass : b.draw->passes) drawPass(pass, in);
+        }
     }
 
-    void growParticleBuffers(Layer& layer, size_t needed) {
-        // Doubling from 256 quads, never past the system's maximum count.
-        size_t capacity = std::max<size_t>({256, needed, layer.particleCapacity * 2});
-        capacity = std::max(needed, std::min(capacity, size_t(std::max<int64_t>(1, layer.particleFile->maxCount))));
-        if (!layer.particleVao) {
-            glGenVertexArrays(1, &layer.particleVao);
-            glGenBuffers(1, &layer.particleVbo);
-            glGenBuffers(1, &layer.particleIbo);
+    // Four corners per particle in genericparticle's layout (section 6).
+    static void appendSprites(ParticleDraw& draw, const ParticleSystem& s) {
+        static constexpr float kCorners[4][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};
+        const auto& particles = s.particles();
+        draw.vertices.reserve(draw.vertices.size() + particles.size() * 4 * kSpriteFloats);
+        for (const Particle& p : particles) {
+            for (const auto& corner : kCorners) {
+                const float v[kSpriteFloats] = {p.position[0], p.position[1], p.position[2],
+                                                corner[0],     corner[1],     p.rotation[2],
+                                                p.size,        p.rotation[0], p.rotation[1],
+                                                p.velocity[0], p.velocity[1], p.velocity[2],
+                                                p.frame,       p.color[0],    p.color[1],
+                                                p.color[2],    p.alpha};
+                draw.vertices.insert(draw.vertices.end(), v, v + kSpriteFloats);
+            }
+            draw.quads++;
         }
-        glBindVertexArray(layer.particleVao);
-        glBindBuffer(GL_ARRAY_BUFFER, layer.particleVbo);
-        glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(capacity * 4 * sizeof(ParticleVertex)), nullptr,
-                     GL_DYNAMIC_DRAW);
-        const GLsizei stride = sizeof(ParticleVertex);
+    }
+
+    // Ropes (section 6.1): a strip through the particles, oldest first,
+    // split along a Catmull-Rom curve; rope trails: a strip per particle
+    // from it through its kept positions.
+    struct Knot {
+        Vec3 position;
+        float size;
+        Vec4 color;
+    };
+
+    static void appendStrip(ParticleDraw& draw, const std::vector<Knot>& knots) {
+        if (knots.size() < 2) return;
+        static constexpr float kCorners[4][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};
+        const size_t n = knots.size();
+        for (size_t j = 0; j + 1 < n; j++) {
+            const Knot& a = knots[j];
+            const Knot& b = knots[j + 1];
+            const Vec3& before = knots[j > 0 ? j - 1 : j].position;
+            const Vec3& after = knots[j + 2 < n ? j + 2 : j + 1].position;
+            for (const auto& corner : kCorners) {
+                const float v[kRopeFloats] = {
+                    a.position[0], a.position[1], a.position[2], a.size,         //
+                    b.position[0], b.position[1], b.position[2], float(n),       //
+                    before[0],     before[1],     before[2],     float(j),       //
+                    after[0],      after[1],      after[2],      b.size,         //
+                    b.color[0],    b.color[1],    b.color[2],    b.color[3],     //
+                    corner[0],     corner[1],                                    //
+                    a.color[0],    a.color[1],    a.color[2],    a.color[3]};
+                draw.vertices.insert(draw.vertices.end(), v, v + kRopeFloats);
+            }
+            draw.quads++;
+        }
+    }
+
+    static void appendRope(ParticleDraw& draw, const ParticleSystem& s) {
+        auto knot = [](const Particle& p, const Vec3& at) {
+            return Knot{at, p.size, Vec4{p.color[0], p.color[1], p.color[2], p.alpha}};
+        };
+        const auto& particles = s.particles();
+        if (draw.rendering.kind == ParticleRendering::Kind::RopeTrail) {
+            std::vector<Knot> knots;
+            for (const Particle& p : particles) {
+                knots.clear();
+                knots.push_back(knot(p, p.position));
+                for (const Vec3& at : p.trail) knots.push_back(knot(p, at));
+                appendStrip(draw, knots);
+            }
+            return;
+        }
+        const int sub = draw.rendering.subdivision;
+        std::vector<Knot> knots;
+        knots.reserve(particles.size() * size_t(sub + 1));
+        const size_t n = particles.size();
+        for (size_t k = 0; k < n; k++) {
+            const Particle& p1 = particles[k];
+            knots.push_back(knot(p1, p1.position));
+            if (k + 1 == n) break;
+            const Particle& p2 = particles[k + 1];
+            const Vec3& p0 = particles[k > 0 ? k - 1 : k].position;
+            const Vec3& p3 = particles[k + 2 < n ? k + 2 : k + 1].position;
+            for (int j = 1; j <= sub; j++) {
+                const float t = float(j) / float(sub + 1), t2 = t * t, t3 = t2 * t;
+                Vec3 at;
+                for (size_t c = 0; c < 3; c++)
+                    at[c] = 0.5f * (2 * p1.position[c] + (p2.position[c] - p0[c]) * t +
+                                    (2 * p0[c] - 5 * p1.position[c] + 4 * p2.position[c] - p3[c]) * t2 +
+                                    (3 * p1.position[c] - p0[c] - 3 * p2.position[c] + p3[c]) * t3);
+                Knot mid{at, p1.size + (p2.size - p1.size) * t, {}};
+                const Vec4 c1{p1.color[0], p1.color[1], p1.color[2], p1.alpha};
+                const Vec4 c2{p2.color[0], p2.color[1], p2.color[2], p2.alpha};
+                for (size_t c = 0; c < 4; c++) mid.color[c] = c1[c] + (c2[c] - c1[c]) * t;
+                knots.push_back(mid);
+            }
+        }
+        appendStrip(draw, knots);
+    }
+
+    void growParticleBuffers(ParticleDraw& draw, size_t needed) {
+        // Doubling from 256 quads.
+        const size_t capacity = std::max<size_t>({256, needed, draw.capacity * 2});
+        if (!draw.vao) {
+            glGenVertexArrays(1, &draw.vao);
+            glGenBuffers(1, &draw.vbo);
+            glGenBuffers(1, &draw.ibo);
+        }
+        const size_t floats = draw.rope ? kRopeFloats : kSpriteFloats;
+        glBindVertexArray(draw.vao);
+        glBindBuffer(GL_ARRAY_BUFFER, draw.vbo);
+        glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(capacity * 4 * floats * sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
+        const GLsizei stride = GLsizei(floats * sizeof(float));
         auto attribute = [&](GLuint location, GLint size, size_t offset) {
             glEnableVertexAttribArray(location);
             glVertexAttribPointer(location, size, GL_FLOAT, GL_FALSE, stride,
-                                  reinterpret_cast<const void*>(offset));
+                                  reinterpret_cast<const void*>(offset * sizeof(float)));
         };
-        attribute(0, 3, offsetof(ParticleVertex, position));  // a_Position
-        attribute(7, 4, offsetof(ParticleVertex, texCoord));  // a_TexCoordVec4
-        attribute(9, 2, offsetof(ParticleVertex, rotation));  // a_TexCoordC2
-        attribute(8, 4, offsetof(ParticleVertex, extra));     // a_TexCoordVec4C1
-        attribute(4, 4, offsetof(ParticleVertex, color));     // a_Color
+        if (draw.rope) {
+            attribute(5, 4, 0);    // a_PositionVec4
+            attribute(7, 4, 4);    // a_TexCoordVec4
+            attribute(8, 4, 8);    // a_TexCoordVec4C1
+            attribute(9, 4, 12);   // a_TexCoordVec4C2
+            attribute(10, 4, 16);  // a_TexCoordVec4C3
+            attribute(11, 2, 20);  // a_TexCoordC4
+            attribute(4, 4, 22);   // a_Color
+        } else {
+            attribute(0, 3, 0);    // a_Position
+            attribute(7, 4, 3);    // a_TexCoordVec4
+            attribute(9, 2, 7);    // a_TexCoordC2
+            attribute(8, 4, 9);    // a_TexCoordVec4C1
+            attribute(4, 4, 13);   // a_Color
+        }
         std::vector<uint32_t> indices(capacity * 6);
         for (uint32_t q = 0; q < capacity; q++) {
             const uint32_t b = q * 4;
             const uint32_t quad[6] = {b, b + 1, b + 2, b + 2, b + 1, b + 3};
             std::copy_n(quad, 6, indices.begin() + q * 6);
         }
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, layer.particleIbo);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, GLsizeiptr(indices.size() * sizeof(uint32_t)),
-                     indices.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, draw.ibo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, GLsizeiptr(indices.size() * sizeof(uint32_t)), indices.data(),
+                     GL_STATIC_DRAW);
         glBindVertexArray(0);
-        layer.particleCapacity = capacity;
+        draw.capacity = capacity;
     }
 
+    // Draws a layer when shown; computes its composite when referenced.
     void drawLayer(Layer& layer, bool shown) {
         if (layer.kind == LayerKind::Particles) {
             drawParticles(layer, shown);
@@ -1919,6 +2144,12 @@ struct SceneRenderer::Impl {
                                   options.scaling == Scaling::Stretch ? Scaling::Stretch
                                                                       : Scaling::Fill) *
                    Mat4::translate(-shake[0], -shake[1], 0);
+        {
+            // The cursor in scene space; rows run top first here, so the
+            // frame's top is y -1 in viewProj's clip space.
+            const Vec4 at = viewProj.inverse() * Vec4{frameCursor[0] * 2 - 1, frameCursor[1] * 2 - 1, 0, 1};
+            pointerScene = {at[0], at[1], 0};
+        }
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
         glDisable(GL_SCISSOR_TEST);
@@ -2021,6 +2252,8 @@ struct SceneRenderer::Impl {
             createTarget(f->target, fw, fh, frameFormat);
         }
         f->lastUse = generation;
+        frameCursor[0] = (framePointer[0] * float(width) - float(x)) / float(fw);
+        frameCursor[1] = (framePointer[1] * float(height) - float(y)) / float(fh);
         if (f->generation != generation) drawFrame(*f);
         present(*f, GLuint(bound), width, height, x, y);
         // Frames for sizes no output has used for a while go away.

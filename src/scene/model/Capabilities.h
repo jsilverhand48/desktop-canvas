@@ -28,7 +28,8 @@ std::set<std::string> sceneFeatures(LoadedScene& scene);
 // effects, solid-layer, fullscreen-layer, composition-layer, group,
 // user-properties, bloom, hdr; P4b: timeline, parallax, camera-shake,
 // sprite-animation, video-texture, the last only with libmpv, which the
-// helper's SceneCheck checks; P5a: particles).
+// helper's SceneCheck checks; P5a: particles; P5b: particle-controlpoints,
+// particle-children, particle-trails).
 const std::set<std::string>& supportedFeatures();
 
 std::vector<std::string> unsupportedOf(const std::set<std::string>& features);
