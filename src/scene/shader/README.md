@@ -118,7 +118,8 @@ define is 1 when its texture slot is set by the material or the instance
 and 0 otherwise [doc: Variables: the combo "is set to 1 when the user
 paints or selects a texture, and to 0 when no texture is bound"]; a
 sampler with `formatcombo` defines `TEX<n>FORMAT` as its texture's format
-code, the codes of `../assets/README.md` section 3.3, which the assets
+code (particle materials also get `TEX0FORMAT` from their albedo,
+`../particles/README.md` section 6), the codes of `../assets/README.md` section 3.3, which the assets
 headers name `FORMAT_RGBA8888` 0, `FORMAT_DXT5` 4, `FORMAT_DXT3` 6,
 `FORMAT_DXT1` 7, `FORMAT_RG88` 8, `FORMAT_R8` 9 [asset: common_fragment.h;
 5 package shaders use TEX2FORMAT]. `GLSL` is defined as 1 [doc: Syntax
@@ -164,8 +165,10 @@ comments:
 - vertex: `attribute` becomes `in`, `varying` becomes `out`; the
   documented attributes get fixed locations (`a_Position` 0, `a_TexCoord`
   1, `a_Normal` 2, `a_Tangent4` 3, `a_Color` 4, `a_PositionVec4` 5,
-  `a_TexCoordVec3` 6, `a_TexCoordVec4` 7, `a_TexCoordC1` to `C5` 8 to 12),
-  so every program takes the same vertex layout;
+  `a_TexCoordVec3` 6, `a_TexCoordVec4` 7, `a_TexCoordC1` to `C5` 8 to 12,
+  their Vec3 and Vec4 forms written either way round: `a_TexCoordC1Vec4`
+  or `a_TexCoordVec4C1` as genericparticle.vert has it [asset]), so every
+  program takes the same vertex layout;
 - fragment: `varying` becomes `in`, and `gl_FragColor` becomes a declared
   `out vec4` (a macro may not take a `gl_` name);
 - the compatibility fixes of [req A2], in this order, each logged: (1) a
@@ -334,7 +337,9 @@ Namespace `canvas::scene`, library `canvas_scene_core` (no GL).
   hoisting, fixed attribute locations, [req A2 (1) to (3)], assembly),
   `shaderPrelude`, `attributeLocation`, `replaceIdentifiers`.
 - `Programs` `collectPrograms` (every material and effect pass of a
-  loaded scene as a `ProgramRequest`) and `shaderLoader` (sources through
+  loaded scene, and every particle layer's material, as a
+  `ProgramRequest`), `particleRequest` (a particle material's combos,
+  `../particles/README.md` section 6) and `shaderLoader` (sources through
   an `AssetLocator`).
 - `Tokens` section 6.1's tokenizer and macro expander (`expandProgram`).
 - `Syntax` GLSL types (`GlslType`, `builtinType`), the syntax tree, the

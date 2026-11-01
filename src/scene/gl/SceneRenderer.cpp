@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstddef>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
@@ -20,6 +21,7 @@
 #include "scene/gl/ProgramCache.h"
 #include "scene/gl/Textures.h"
 #include "scene/model/Json.h"
+#include "scene/particles/ParticleSystem.h"
 #include "scene/render/Animation.h"
 #include "scene/shader/Programs.h"
 #include "scene/shader/Translator.h"
@@ -58,6 +60,8 @@ bool RenderDebug::parse(const std::string& list, std::string& error) {
             baseOnly = true;
         } else if (item == "no-bloom") {
             noBloom = true;
+        } else if (item == "no-particles") {
+            noParticles = true;
         } else if (item == "ultra") {
             ultra = true;
         } else if (item == "no-solid-final") {
@@ -261,7 +265,8 @@ struct EngineLocations {
           time = -1, frameTime = -1, screen = -1, texelSize = -1, texelSizeHalf = -1,
           pointer = -1, pointerLast = -1, parallax = -1, color4 = -1, color = -1, alpha = -1,
           eye = -1, renderVar0 = -1, daytime = -1, layerModel = -1, textureProjection = -1,
-          textureProjectionInverse = -1;
+          textureProjectionInverse = -1, renderVar1 = -1, orientationRight = -1,
+          orientationUp = -1, orientationForward = -1, viewRight = -1, viewUp = -1;
     std::array<GLint, kSlots> resolution, rotation, translation, mipInfo;
     EngineLocations() {
         resolution.fill(-1);
@@ -404,7 +409,19 @@ struct EffectRun {
     bool usable = true;
 };
 
-enum class LayerKind : uint8_t { Image, Solid, Compose, Fullscreen };
+enum class LayerKind : uint8_t { Image, Solid, Compose, Fullscreen, Particles };
+
+// One particle corner (section 6 of src/scene/particles/README.md):
+// a_Position, a_TexCoordVec4 (corner u, corner v, rotation z, size),
+// a_TexCoordC2 (rotation x, y), a_TexCoordVec4C1 (velocity, frame value),
+// a_Color.
+struct ParticleVertex {
+    float position[3];
+    float texCoord[4];
+    float rotation[2];
+    float extra[4];
+    float color[4];
+};
 
 struct Layer {
     size_t object = 0;
@@ -421,6 +438,13 @@ struct Layer {
     // frame, shown or not, and kept until the frame ends.
     bool referenced = false;
     const Target* composite = nullptr;
+    // Particle layers (src/scene/particles/README.md section 6).
+    const ParticleFile* particleFile = nullptr;
+    std::unique_ptr<ParticleSystem> system;
+    GLuint particleVao = 0, particleVbo = 0, particleIbo = 0;
+    size_t particleCapacity = 0;  // quads the buffers hold
+    std::vector<ParticleVertex> particleVertices;  // reused every frame
+    Vec4 renderVar1{0, 0, 0, 0};  // sprite sheet frames
 };
 
 // Vertices of one quad as a triangle strip: x, y, z, u, v each.
@@ -482,9 +506,13 @@ struct SceneRenderer::Impl {
           loader(shaderLoader(a)) {}
 
     ~Impl() {
-        for (auto& layer : layers)
+        for (auto& layer : layers) {
             for (auto& run : layer.effects)
                 for (auto& b : run.buffers) destroyTarget(b.persistent);
+            if (layer.particleVao) glDeleteVertexArrays(1, &layer.particleVao);
+            if (layer.particleVbo) glDeleteBuffers(1, &layer.particleVbo);
+            if (layer.particleIbo) glDeleteBuffers(1, &layer.particleIbo);
+        }
         for (auto& f : frames) {
             destroyTarget(f.target);
             destroyTarget(f.copy);
@@ -514,6 +542,10 @@ struct SceneRenderer::Impl {
         std::array<const Target*, kSlots> overrides{};
         Vec4 renderVar0{0, 0, 0, 0};  // g_RenderVar0 (bloom passes)
         Mat4 layerModel = Mat4::identity();  // g_LayerModelMatrix
+        Vec4 renderVar1{0, 0, 0, 0};         // g_RenderVar1 (particle sprite sheets)
+        // Particle layers draw this instead of the quad.
+        GLuint particleVao = 0;
+        GLsizei particleIndices = 0;
         float parallax[2] = {0.5f, 0.5f};    // g_ParallaxPosition
         const GpuTexture* layerTexture = nullptr;
         const std::map<std::string, const Target*>* named = nullptr;
@@ -691,6 +723,12 @@ struct SceneRenderer::Impl {
             e.alpha = loc("g_Alpha");
             e.eye = loc("g_EyePosition");
             e.renderVar0 = loc("g_RenderVar0");
+            e.renderVar1 = loc("g_RenderVar1");
+            e.orientationRight = loc("g_OrientationRight");
+            e.orientationUp = loc("g_OrientationUp");
+            e.orientationForward = loc("g_OrientationForward");
+            e.viewRight = loc("g_ViewRight");
+            e.viewUp = loc("g_ViewUp");
             e.daytime = loc("g_Daytime");
             e.layerModel = loc("g_LayerModelMatrix");
             e.textureProjection = loc("g_EffectTextureProjectionMatrix");
@@ -876,8 +914,82 @@ struct SceneRenderer::Impl {
         return run;
     }
 
+    // A particle layer (section 6 of src/scene/particles/README.md): its
+    // material's program with the sprite sheet combos, and its system.
+    void buildParticleLayer(size_t index) {
+        SceneObject& o = scene.scene.objects[index];
+        const std::string where = "object " + std::to_string(o.id);
+        auto pf = scene.particles.find(o.particle->particle);
+        if (pf == scene.particles.end() || !pf->second) {
+            problem(where + ": particles " + o.particle->particle + " not loaded");
+            return;
+        }
+        const ParticleFile& file = *pf->second;
+        auto mat = scene.materials.find(file.material);
+        if (mat == scene.materials.end() || !mat->second || mat->second->passes.empty()) {
+            problem(where + ": particle material " + file.material + " not loaded");
+            return;
+        }
+        const MaterialPass& mp = mat->second->passes.front();
+        ProgramRequest request = particleRequest(file, scene);
+        // Sprite sheets: the frame layout from the uploaded albedo.
+        Layer layer;
+        if (request.combos.count("SPRITESHEET")) {
+            const bool named = !mp.textures.empty() && mp.textures[0];
+            const GpuTexture* sheet = &textures.get(named ? *mp.textures[0] : std::string("util/white"));
+            if (!sheet->frames.empty()) {
+                const TextureFrame& f = sheet->frames.front();
+                const float w = float(std::max(1, sheet->width)), h = float(std::max(1, sheet->height));
+                layer.renderVar1 = {f.ux / w, f.vy / h, float(sheet->frames.size()),
+                                    f.ux > 0 ? f.vy / f.ux : 1.0f};
+            } else {
+                for (const char* c : {"SPRITESHEET", "THICKFORMAT", "SPRITESHEETBLEND"}) request.combos.erase(c);
+            }
+        }
+        layer.object = index;
+        layer.id = o.id;
+        layer.kind = LayerKind::Particles;
+        layer.particleFile = &file;
+        Pass pass = materialPass(mp, request, where + " particles", nullptr, nullptr, nullptr,
+                                 nullptr, false, o.id);
+        if (mp.blending == "alphatocoverage") pass.blend = Blend::Translucent;
+        layer.passes.push_back(std::move(pass));
+        const uint64_t seed = fnv1a64(o.particle->particle) ^ (uint64_t(o.id) * 0x9E3779B97F4A7C15ull);
+        layer.system = std::make_unique<ParticleSystem>(file, seed);
+        layer.system->setFactors(particleFactors(o, file));
+        layer.system->setSpawnTransform(layout->world(index).matrix());
+        layer.system->prewarm();
+        layers.push_back(std::move(layer));
+    }
+
+    // The layer's override factors without the ones the system disables
+    // (section 2 of src/scene/particles/README.md).
+    static ParticleFactors particleFactors(const SceneObject& o, const ParticleFile& file) {
+        ParticleFactors f;
+        if (!o.particle || !o.particle->overrides) return f;
+        const ParticleOverride& ov = *o.particle->overrides;
+        f.rate = ov.rate.value;
+        f.alpha = ov.alpha.value;
+        if (!file.has(ParticleFile::kNoCountOverride)) f.count = ov.count.value;
+        if (!file.has(ParticleFile::kNoLifetimeOverride)) f.lifetime = ov.lifetime.value;
+        if (!file.has(ParticleFile::kNoSizeOverride)) f.size = ov.size.value;
+        if (!file.has(ParticleFile::kNoSpeedOverride)) f.speed = ov.speed.value;
+        if (!file.has(ParticleFile::kNoColorOverride)) {
+            Vec3 c = ov.colorn.present ? ov.colorn.value
+                     : ov.color.present ? Vec3{ov.color.value[0] / 255, ov.color.value[1] / 255,
+                                               ov.color.value[2] / 255}
+                                        : Vec3{1, 1, 1};
+            for (size_t k = 0; k < 3; k++) f.color[k] = c[k] * ov.brightness.value;
+        }
+        return f;
+    }
+
     void buildLayer(size_t index) {
         SceneObject& o = scene.scene.objects[index];
+        if (o.particle) {
+            buildParticleLayer(index);
+            return;
+        }
         if (!o.image) return;
         const std::string where = "object " + std::to_string(o.id);
         auto model = scene.models.find(o.image->model);
@@ -1153,8 +1265,10 @@ struct SceneRenderer::Impl {
                                     GL_ONE_MINUS_SRC_ALPHA);
                 break;
             case Blend::Additive:
+                // Colour times source alpha onto the target; alpha kept
+                // (src/scene/render/README.md section 4).
                 glEnable(GL_BLEND);
-                glBlendFunc(GL_ONE, GL_ONE);
+                glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ZERO, GL_ONE);
                 break;
         }
     }
@@ -1331,6 +1445,15 @@ struct SceneRenderer::Impl {
             glUniform4f(e.renderVar0, in.renderVar0[0], in.renderVar0[1], in.renderVar0[2],
                         in.renderVar0[3]);
         if (e.daytime >= 0) glUniform1f(e.daytime, daytime);
+        if (e.renderVar1 >= 0)
+            glUniform4f(e.renderVar1, in.renderVar1[0], in.renderVar1[1], in.renderVar1[2],
+                        in.renderVar1[3]);
+        // Screen orientation in these orthographic scenes (particles).
+        if (e.orientationRight >= 0) glUniform3f(e.orientationRight, 1, 0, 0);
+        if (e.orientationUp >= 0) glUniform3f(e.orientationUp, 0, 1, 0);
+        if (e.orientationForward >= 0) glUniform3f(e.orientationForward, 0, 0, 1);
+        if (e.viewRight >= 0) glUniform3f(e.viewRight, 1, 0, 0);
+        if (e.viewUp >= 0) glUniform3f(e.viewUp, 0, 1, 0);
         setMatrix(e.layerModel, in.layerModel);
         if (e.textureProjection >= 0 || e.textureProjectionInverse >= 0) {
             // Clip space of the effect quad to its texture coordinates.
@@ -1338,7 +1461,7 @@ struct SceneRenderer::Impl {
             setMatrix(e.textureProjection, toTexture);
             setMatrix(e.textureProjectionInverse, toTexture.inverse());
         }
-        const ImageLayer* image = in.object ? &*in.object->image : nullptr;
+        const ImageLayer* image = in.object && in.object->image ? &*in.object->image : nullptr;
         if (e.color4 >= 0) {
             if (in.white || !image) {
                 glUniform4f(e.color4, 1, 1, 1, 1);
@@ -1357,7 +1480,12 @@ struct SceneRenderer::Impl {
         for (int i = 0; i < kSlots; i++) bindSlot(pass, i, in);
         setBlend(pass.blend);
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, pass.alphaWrite ? GL_TRUE : GL_FALSE);
-        drawQuad(in.quad);
+        if (in.particleVao) {
+            glBindVertexArray(in.particleVao);
+            glDrawElements(GL_TRIANGLES, in.particleIndices, GL_UNSIGNED_INT, nullptr);
+        } else {
+            drawQuad(in.quad);
+        }
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         if (!in.destination) frame->copyValid = frame->mipValid = false;
     }
@@ -1495,7 +1623,99 @@ struct SceneRenderer::Impl {
     }
 
     // Draws a layer when shown; computes its composite when referenced.
+    // Simulates and draws a particle layer (section 6 of
+    // src/scene/particles/README.md); hidden systems stand still.
+    void drawParticles(Layer& layer, bool shown) {
+        if (!shown || options.debug.noParticles) return;
+        const SceneObject& o = scene.scene.objects[layer.object];
+        ParticleSystem& system = *layer.system;
+        float parallaxPosition[2] = {0.5f, 0.5f};
+        const Vec2 offset = parallaxOffset(o, parallaxPosition);
+        const Mat4 model = Mat4::translate(offset[0], offset[1], 0) * layout->world(layer.object).matrix();
+        system.setFactors(particleFactors(o, *layer.particleFile));
+        system.setSpawnTransform(model);
+        system.step(frameTime);
+        const auto& particles = system.particles();
+        if (particles.empty()) return;
+        if (particles.size() > layer.particleCapacity) growParticleBuffers(layer, particles.size());
+        std::vector<ParticleVertex>& vertices = layer.particleVertices;
+        vertices.resize(particles.size() * 4);
+        static constexpr float kCorners[4][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};
+        for (size_t i = 0; i < particles.size(); i++) {
+            const Particle& p = particles[i];
+            for (int c = 0; c < 4; c++) {
+                ParticleVertex& v = vertices[i * 4 + size_t(c)];
+                std::copy_n(p.position.begin(), 3, v.position);
+                v.texCoord[0] = kCorners[c][0];
+                v.texCoord[1] = kCorners[c][1];
+                v.texCoord[2] = p.rotation[2];
+                v.texCoord[3] = p.size;
+                v.rotation[0] = p.rotation[0];
+                v.rotation[1] = p.rotation[1];
+                std::copy_n(p.velocity.begin(), 3, v.extra);
+                v.extra[3] = p.frame;
+                std::copy_n(p.color.begin(), 3, v.color);
+                v.color[3] = p.alpha;
+            }
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, layer.particleVbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, GLsizeiptr(vertices.size() * sizeof(ParticleVertex)),
+                        vertices.data());
+        DrawInputs in;
+        in.object = &o;
+        in.model = system.worldSpace() ? Mat4::identity() : model;
+        in.layerModel = model;
+        in.mvp = system.worldSpace() ? viewProj : viewProj * model;
+        in.effectMvp = in.mvp;
+        in.renderVar1 = layer.renderVar1;
+        std::copy_n(parallaxPosition, 2, in.parallax);
+        in.particleVao = layer.particleVao;
+        in.particleIndices = GLsizei(particles.size() * 6);
+        for (const Pass& pass : layer.passes) drawPass(pass, in);
+    }
+
+    void growParticleBuffers(Layer& layer, size_t needed) {
+        // Doubling from 256 quads, never past the system's maximum count.
+        size_t capacity = std::max<size_t>({256, needed, layer.particleCapacity * 2});
+        capacity = std::max(needed, std::min(capacity, size_t(std::max<int64_t>(1, layer.particleFile->maxCount))));
+        if (!layer.particleVao) {
+            glGenVertexArrays(1, &layer.particleVao);
+            glGenBuffers(1, &layer.particleVbo);
+            glGenBuffers(1, &layer.particleIbo);
+        }
+        glBindVertexArray(layer.particleVao);
+        glBindBuffer(GL_ARRAY_BUFFER, layer.particleVbo);
+        glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(capacity * 4 * sizeof(ParticleVertex)), nullptr,
+                     GL_DYNAMIC_DRAW);
+        const GLsizei stride = sizeof(ParticleVertex);
+        auto attribute = [&](GLuint location, GLint size, size_t offset) {
+            glEnableVertexAttribArray(location);
+            glVertexAttribPointer(location, size, GL_FLOAT, GL_FALSE, stride,
+                                  reinterpret_cast<const void*>(offset));
+        };
+        attribute(0, 3, offsetof(ParticleVertex, position));  // a_Position
+        attribute(7, 4, offsetof(ParticleVertex, texCoord));  // a_TexCoordVec4
+        attribute(9, 2, offsetof(ParticleVertex, rotation));  // a_TexCoordC2
+        attribute(8, 4, offsetof(ParticleVertex, extra));     // a_TexCoordVec4C1
+        attribute(4, 4, offsetof(ParticleVertex, color));     // a_Color
+        std::vector<uint32_t> indices(capacity * 6);
+        for (uint32_t q = 0; q < capacity; q++) {
+            const uint32_t b = q * 4;
+            const uint32_t quad[6] = {b, b + 1, b + 2, b + 2, b + 1, b + 3};
+            std::copy_n(quad, 6, indices.begin() + q * 6);
+        }
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, layer.particleIbo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, GLsizeiptr(indices.size() * sizeof(uint32_t)),
+                     indices.data(), GL_STATIC_DRAW);
+        glBindVertexArray(0);
+        layer.particleCapacity = capacity;
+    }
+
     void drawLayer(Layer& layer, bool shown) {
+        if (layer.kind == LayerKind::Particles) {
+            drawParticles(layer, shown);
+            return;
+        }
         const SceneObject& o = scene.scene.objects[layer.object];
         const bool fullscreen = layer.kind == LayerKind::Fullscreen;
         const Vec2 size = layerSize(layer);

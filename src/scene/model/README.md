@@ -302,14 +302,17 @@ clear colour and projection: every scene), `image`, `effects`, `solid-layer`, `f
 `shape-layer`, `group`, `particles`, `text`, `sound`, `light`, `puppet`,
 `camera-path`, `3d-model`, `script`, `timeline`, `user-properties`,
 `parallax`, `camera-shake`, `bloom`, `hdr`, `video-texture`,
-`sprite-animation` (a texture with sprite sheet frames). A build
+`sprite-animation` (a texture with sprite sheet frames),
+`particle-controlpoints`, `particle-children`, `particle-trails`
+(particle systems using what phase P5b brings,
+`../particles/README.md` section 7). A build
 supports the features of the phases it contains; this one (phase P4a)
 supports `scene`, `image`, `effects`, `solid-layer`, `fullscreen-layer`,
 `composition-layer`, `group`, `user-properties`, `bloom` and `hdr`
 (drawn as users without Ultra post-processing see it, `../render/README.md`
-section 5) from phase P4a, and `timeline`, `parallax`, `camera-shake`,
-`sprite-animation` and `video-texture` (with libmpv only) from P4b, so the
-"auto" engine
+section 5) from phase P4a, `timeline`, `parallax`, `camera-shake`,
+`sprite-animation` and `video-texture` (with libmpv only) from P4b, and
+`particles` from P5a, so the "auto" engine
 uses the native renderer only for scenes made of those and keeps
 linux-wallpaperengine for the rest.
 `--check-all ROOT` runs the check on every scene folder in ROOT and

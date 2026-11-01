@@ -89,7 +89,8 @@ const std::string& shaderPrelude();
 // Fixed vertex attribute locations (section 6): a_Position 0, a_TexCoord
 // 1, a_Normal 2, a_Tangent4 3, a_Color 4, a_PositionVec4 5,
 // a_TexCoordVec3 6, a_TexCoordVec4 7, a_TexCoordC1 to C5 8 to 12 (their
-// Vec3 and Vec4 forms share the index); -1 for other names.
+// Vec3 and Vec4 forms share the index, written either a_TexCoordC1Vec4 or
+// a_TexCoordVec4C1); -1 for other names.
 int attributeLocation(const std::string& name);
 
 // Whole identifier replacement outside comments (exposed for tests).

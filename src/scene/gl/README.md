@@ -32,7 +32,12 @@ context; the GPU free parts live in the other `src/scene/` modules.
   smoothing; `render(width, height)` runs the timeline animations, video
   textures, layout, camera shake and parallax, draws a frame once per
   `advance()` and presents it into the bound framebuffer by the scaling
-  and clamp modes; `RenderDebug` holds the `--render-debug` switches. GL
+  and clamp modes; `RenderDebug` holds the `--render-debug` switches.
+  Particle layers (`../particles/README.md` section 6) own a
+  `ParticleSystem`, stepped once per drawn frame while shown, and a
+  vertex buffer of four corners per particle in genericparticle's
+  attribute layout, growing by doubling up to the system's maximum
+  count; `noParticles` (`--disable-particles`) leaves them out. GL
   objects need the context current, including at destruction.
 
 Tests: `claude_tests/test_scene_gl` and `test_scene_render` (opt-in GL

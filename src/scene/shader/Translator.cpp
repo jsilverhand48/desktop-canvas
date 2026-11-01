@@ -266,7 +266,8 @@ int attributeLocation(const std::string& name) {
         {"a_TexCoordVec3", 6},   {"a_TexCoordVec4", 7},
     };
     if (auto it = fixed.find(name); it != fixed.end()) return it->second;
-    static const std::regex extra(R"(^a_TexCoordC([1-5])(Vec[34])?$)");
+    // a_TexCoordC2, a_TexCoordC1Vec4 and a_TexCoordVec4C1 (genericparticle).
+    static const std::regex extra(R"(^a_TexCoord(?:Vec[34])?C([1-5])(?:Vec[34])?$)");
     std::smatch m;
     if (std::regex_match(name, m, extra)) return 7 + std::stoi(m[1].str());
     return -1;

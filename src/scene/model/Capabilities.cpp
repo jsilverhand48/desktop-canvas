@@ -1,6 +1,8 @@
 // Implementation of the capability report declared in Capabilities.h.
 #include "scene/model/Capabilities.h"
 
+#include "scene/particles/ParticleSystem.h"
+
 namespace canvas::scene {
 
 std::set<std::string> sceneFeatures(LoadedScene& scene) {
@@ -41,6 +43,13 @@ std::set<std::string> sceneFeatures(LoadedScene& scene) {
     if (g.cameraShake.value) f.insert("camera-shake");
     if (g.bloom.value) f.insert("bloom");
     if (g.hdr.value) f.insert("hdr");
+    for (const auto& [path, file] : scene.particles) {
+        if (!file) continue;
+        const ParticleNeeds needs = particleNeeds(*file);
+        if (needs.controlPoints) f.insert("particle-controlpoints");
+        if (needs.children) f.insert("particle-children");
+        if (needs.trails) f.insert("particle-trails");
+    }
     for (const auto& [path, texture] : scene.textures) {
         if (texture.payload == PayloadKind::Video) f.insert("video-texture");
         if (texture.spriteSheet) f.insert("sprite-animation");
@@ -49,14 +58,15 @@ std::set<std::string> sceneFeatures(LoadedScene& scene) {
 }
 
 const std::set<std::string>& supportedFeatures() {
-    // What phase P4a draws (src/scene/render/README.md).
+    // What phases P4 and P5a draw (src/scene/render/README.md,
+    // src/scene/particles/README.md).
     // hdr as users without Ultra post-processing see it; video-texture
     // needs libmpv, which the helper checks (SceneCheck).
     static const std::set<std::string> supported = {
         "scene",       "image",           "effects",          "solid-layer",
         "fullscreen-layer", "composition-layer", "group",     "user-properties",
         "bloom",       "hdr",             "timeline",         "parallax",
-        "camera-shake", "sprite-animation", "video-texture"};
+        "camera-shake", "sprite-animation", "video-texture", "particles"};
     return supported;
 }
 

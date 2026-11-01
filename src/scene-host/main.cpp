@@ -34,11 +34,13 @@
 // falls back to linux-wallpaperengine. Without it ("native"), whatever is
 // supported is shown and the rest skipped. The scene engine
 // (NativeRenderer, scene/gl/SceneRenderer) draws image, solid, composition
-// and fullscreen layers with their effects (plan phase P4a); a scene it
-// cannot read or with nothing it can draw shows a solid placeholder
-// colour. --scaling and --clamp say how the scene meets the output
-// (scene/render/README.md section 1). Compiled shader programs are cached
-// in $XDG_CACHE_HOME/desktop-canvas/shaders.
+// and fullscreen layers with their effects, their motion and particle
+// layers (plan phases P4 and P5a); a scene it cannot read or with nothing
+// it can draw shows a solid placeholder colour. --scaling and --clamp say
+// how the scene meets the output (scene/render/README.md section 1);
+// --disable-particles leaves particle layers out (like --render-debug
+// no-particles). Compiled shader programs are cached in
+// $XDG_CACHE_HOME/desktop-canvas/shaders.
 //
 // Exit codes follow process/HelperProtocol.h: 0 clean, 2 usage, 3
 // unsupported, 1 runtime failure (counted as a crash by the daemon).
@@ -186,6 +188,8 @@ int main(int argc, char** argv) {
     bool span = false;
     app.add_flag("--span", span, "Stretch one canvas over every --output");
     app.add_option("--window", window, "WxH: show in an ordinary window instead");
+    bool disableParticles = false;
+    app.add_flag("--disable-particles", disableParticles, "Leave particle layers out");
     app.add_flag("--check", check, "Print the support report and exit");
     app.add_option("--screenshot", screenshot, "Render headless into this PNG");
     app.add_option("--size", size, "Screenshot size WxH");
@@ -283,6 +287,7 @@ int main(int argc, char** argv) {
     nativeOptions.clamp = scene::clampFromName(clamp);
     nativeOptions.shaderCache = shaderCacheDir();
     std::copy_n(kPlaceholder, 3, nativeOptions.placeholder);
+    nativeOptions.debug.noParticles = disableParticles;
     for (const auto& list : renderDebug) {
         std::string error;
         if (!nativeOptions.debug.parse(list, error)) {

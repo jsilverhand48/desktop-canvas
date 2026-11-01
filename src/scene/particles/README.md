@@ -57,6 +57,9 @@ angular velocity, size, colour (rgb 0..1), alpha, age, lifetime, and the
 values its initializers gave size, colour and alpha (operators scale
 those) [doc: "Operators then change those values over time, using the
 Initializer values as a starting point", Particle Systems Overview].
+Without an initializer for it a particle is white, opaque, 20 units
+wide and lives 1 s [inference: Wallpaper Engine's example.json and
+every corpus system set lifetime and size].
 Positions are in the system's space (the object's, after parents), or in
 scene space for worldspace systems.
 
@@ -78,7 +81,10 @@ colorn ... for backward compatibility"); scene files also hold `color`
 (rgb 0..255, the older form, 43) and `brightness` (4), which multiplies
 the colour [inference]. Overrides seen: colorn 334, rate 308, size 228,
 alpha 228, speed 216, count 152, lifetime 84 [corpus]. A system flag
-8..128 ignores the matching override (section 1).
+8..128 ignores the matching override (section 1). The factors scale
+every new particle's lifetime, size, alpha and colour, whether an
+initializer set them or not [inference: a `colorn` override must tint a
+system without `colorrandom`], and `speed` its initial velocity.
 
 ## 3. Emitters
 
@@ -92,7 +98,9 @@ alpha 228, speed 216, count 152, lifetime 84 [corpus]. A system flag
   emitters with periodic fields set it]): emit for a random time between
   `minperiodicduration` and `maxperiodicduration`, pause for one between
   `minperiodicdelay` and `maxperiodicdelay`, at most
-  `maxtoemitperperiod` particles per period (0: no limit) [doc];
+  `maxtoemitperperiod` particles per period (0: no limit) [doc]; a step
+  counts in the phase it starts in, leftover time carrying into the next
+  phase [inference];
   emitter flag 2 is "Limit to one per frame" [doc; corpus and presets:
   28 of its 29 emitters feed rope renderers, which the docs pair with
   it];
@@ -193,8 +201,16 @@ steps frames that way]). The frame value is age / lifetime *
 per particle in random frame mode; `SPRITESHEET` and, unless frames do
 not blend, `SPRITESHEETBLEND` are set [asset: genericparticle.frag].
 
-Blending follows the material: `additive` adds src to dst
-(`../render/README.md` section 4), `translucent` as there,
+The albedo's format code becomes the `TEX0FORMAT` define, so one and
+two channel textures (R8, RG88) read as white with alpha and as grey
+with alpha [asset: `genericparticle.frag` and `genericropeparticle.frag`
+call `ConvertTexture0Format`, which tests `TEX0FORMAT`, while no sampler
+annotation sets it; inference: the engine defines it for particle
+materials]: refraction systems in 1327266146 otherwise draw as opaque
+red and green squares.
+
+Blending follows the material: `additive` adds src weighted by its
+alpha to dst (`../render/README.md` section 4), `translucent` as there,
 `alphatocoverage` drawn translucent [inference]. A particle layer draws
 in `objects` order like any layer; its `g_Overbright` and other material
 constants work as section 3 of `../render/README.md` describes.
@@ -204,9 +220,17 @@ no-particles`) leaves particles out.
 ## 7. Capability
 
 The report (`../model/README.md` section 9) names `particles` for any
-particle layer and adds `particle-controlpoints`, `particle-children` and
-`particle-trails` when systems use what phase P5b brings, so the "auto"
-engine keeps linux-wallpaperengine for those until it does.
+particle layer and adds, for any loaded particle file (children
+included), `particle-controlpoints` (a component of the P5b lists in
+sections 4 and 5, `inheritcontrolpointvelocity`, or an emitter around a
+control point other than 0), `particle-children` (a `children` list) and
+`particle-trails` (a `spritetrail`, `rope` or `ropetrail` renderer, or an
+orientation other than `screen`), so the "auto" engine keeps
+linux-wallpaperengine for those until phase P5b. Components no phase
+knows are load warnings ("particle component NAME not supported") and
+are skipped. With P5a, 61 of the 208 scenes of 2026-10-31 are fully
+supported (39 before); 145 use particles, of them 53 control points, 77
+children and 81 trails [corpus: `desktop-canvas-scene --check-all`].
 
 ## 8. Control points (P5b)
 
@@ -233,4 +257,20 @@ Children].
 
 ## Files
 
-(added with the implementation)
+- `ParticleFile` (`parseParticleFile`): section 1 and the component
+  lists, control points and children; components keep their JSON with
+  typed getters (`number`, `vec3`, `integer`, `text`) that read strings,
+  bools and single numbers like the files do. Never fails on content.
+- `ParticleSystem`: sections 2 to 5 for one file: `step(dt)`,
+  `prewarm()`, the layer factors (`setFactors`), the spawn transform of
+  worldspace systems; `particleNeeds()` says what a file needs beyond
+  P5a (section 7); `valueNoise()` is the noise of sections 4 and 5.
+- Drawing lives in `../gl/SceneRenderer.cpp` (particle layers) and the
+  program request in `../shader/Programs.h` (`particleRequest`: the
+  combos of section 6).
+
+Library `canvas_scene_core` (no GPU). Tests:
+`claude_tests/test_scene_particles` (parsing, needs, emission,
+initializers, operators, determinism, program requests) and the particle
+part of `claude_tests/test_scene_render` (drawing and blending on every
+GL device).

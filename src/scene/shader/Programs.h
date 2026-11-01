@@ -6,8 +6,9 @@
 // settings match the effect file's passes by position; passes without a
 // material (commands such as copy) have no program. An image layer's
 // colorBlendMode becomes the BLENDMODE combo of its own passes
-// (src/scene/render/README.md section 2). Particle and text layer
-// materials join in their phases (P5, P6b).
+// (src/scene/render/README.md section 2). A particle layer adds one
+// request for its particle file's material (particleRequest); text layer
+// materials join in phase P6b.
 #pragma once
 
 #include <cstdint>
@@ -37,6 +38,14 @@ std::vector<PassProgram> collectPrograms(const LoadedScene& scene);
 ProgramRequest programRequest(const MaterialPass& pass, const LoadedScene& scene,
                               const std::map<std::string, int>* instanceCombos,
                               const std::vector<std::optional<std::string>>* instanceTextures);
+
+// The request for a particle file's material, per section 6 of
+// src/scene/particles/README.md: TEX0FORMAT from the albedo's format; when
+// the albedo is a sprite sheet SPRITESHEET, THICKFORMAT and, unless frames
+// are random or flag 4 turns blending off, SPRITESHEETBLEND;
+// ALPHATOCOVERAGE for that blending. An empty shader when the material did
+// not load.
+ProgramRequest particleRequest(const ParticleFile& file, const LoadedScene& scene);
 
 // Shader sources through a wallpaper's lookup layers.
 ShaderLoader shaderLoader(const AssetLocator& assets);

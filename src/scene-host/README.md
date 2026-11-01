@@ -6,12 +6,14 @@ it for scene wallpapers on the "native" and "auto" engines (see
 over the control channel protocol in `process/HelperProtocol.h`. It also
 runs by hand for previews, screenshots and checks.
 
-Status: plan phase P4b. The engine draws image, solid, composition and
+Status: plan phase P5a. The engine draws image, solid, composition and
 fullscreen layers with their effects and bloom, and moves them: timeline
 animations, sprite sheets, video textures (when built with libmpv),
 camera shake, parallax and the pointer uniforms
-(`src/scene/render/README.md`); particles, text, sound, scripts and
-puppets arrive with later phases. The support check reports scenes made only of what this build
+(`src/scene/render/README.md`); it draws particle systems made of
+sprites (`src/scene/particles/README.md`; control points, children and
+trails arrive with phase P5b); text, sound, scripts and puppets arrive
+with later phases. The support check reports scenes made only of what this build
 draws as supported, so "auto" uses the native renderer for those and
 linux-wallpaperengine for the rest; "native" draws what it can and skips
 the rest. A scene that cannot be read, or has nothing drawable, shows a
@@ -69,8 +71,9 @@ blocks the daemon's single threaded event loop.
 - `NativeRenderer` the scene engine (`scene/gl/SceneRenderer`) behind
   that interface: `create()` reads the wallpaper and loads the scene
   before GL exists (and before the sandbox), the first `render()` builds
-  the GL side; `--scaling`, `--clamp` and `--render-debug` reach the
-  engine through it, and compiled programs are cached in
+  the GL side; `--scaling`, `--clamp`, `--render-debug` and
+  `--disable-particles` reach the engine through it, and compiled
+  programs are cached in
   `$XDG_CACHE_HOME/desktop-canvas/shaders`. GL objects are freed only by
   `shutdown()` with the context current (the screenshot path does so);
   otherwise the driver frees them at exit.

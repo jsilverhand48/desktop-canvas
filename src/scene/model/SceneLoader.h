@@ -1,11 +1,14 @@
 // Loading one scene through an AssetLocator, per src/scene/model/README.md.
 //
 // loadScene() reads project.json and the scene file (both required),
-// then every model, material and effect file the objects and effects
-// name, each path once (objects share the parsed result), and checks that
-// referenced particle, sound and texture files exist (texture headers are
-// parsed to spot video textures). Missing or broken referenced files are
-// errors in the report but never stop loading. Bound fields are resolved
+// then every model, material, effect and particle file (with the child
+// systems particle files name) the objects and effects name, each path
+// once (objects share the parsed result), and checks that referenced
+// sound and texture files exist (texture headers are parsed to spot video
+// textures and sprite sheets). Missing or broken referenced files are
+// errors in the report but never stop loading; particle components no
+// phase knows are warnings (src/scene/particles/README.md section 7).
+// Bound fields are resolved
 // against the property values: declared defaults plus `overrides` (for
 // example --set-property). applyProperties() merges live changes and
 // resolves again.
@@ -22,6 +25,7 @@
 #include "scene/model/Resources.h"
 #include "scene/model/SceneFile.h"
 #include "scene/model/UserProperties.h"
+#include "scene/particles/ParticleFile.h"
 
 namespace canvas::scene {
 
@@ -38,6 +42,7 @@ struct LoadedScene {
     std::map<std::string, std::shared_ptr<ModelFile>> models;        // by path
     std::map<std::string, std::shared_ptr<MaterialFile>> materials;  // by path
     std::map<std::string, std::shared_ptr<EffectFile>> effects;      // by path
+    std::map<std::string, std::shared_ptr<ParticleFile>> particles;  // by path, children too
     std::map<std::string, TextureSummary> textures;  // referenced .tex files found
     PropertyValues values;  // current property values
     LoadReport report;

@@ -28,6 +28,28 @@ void apply(ProgramRequest& request, const MaterialPass& pass, const LoadedScene&
 
 }  // namespace
 
+ProgramRequest particleRequest(const ParticleFile& file, const LoadedScene& scene) {
+    ProgramRequest request;
+    auto material = scene.materials.find(file.material);
+    if (material == scene.materials.end() || !material->second || material->second->passes.empty())
+        return request;
+    const MaterialPass& pass = material->second->passes.front();
+    apply(request, pass, scene, nullptr, nullptr);
+    // One and two channel albedos need their format (ConvertTexture0Format).
+    if (request.textureFormat[0] >= 0) request.combos["TEX0FORMAT"] = request.textureFormat[0];
+    const std::string albedo =
+        pass.textures.empty() || !pass.textures[0] ? std::string("util/white") : *pass.textures[0];
+    auto texture = scene.textures.find(texturePath(albedo));
+    if (texture != scene.textures.end() && texture->second.spriteSheet) {
+        request.combos["SPRITESHEET"] = 1;
+        request.combos["THICKFORMAT"] = 1;
+        if (!file.randomFrame && !file.has(ParticleFile::kNoFrameBlending))
+            request.combos["SPRITESHEETBLEND"] = 1;
+    }
+    if (pass.blending == "alphatocoverage") request.combos["ALPHATOCOVERAGE"] = 1;
+    return request;
+}
+
 ProgramRequest programRequest(const MaterialPass& pass, const LoadedScene& scene,
                               const std::map<std::string, int>* instanceCombos,
                               const std::vector<std::optional<std::string>>* instanceTextures) {
@@ -65,6 +87,16 @@ std::vector<PassProgram> collectPrograms(const LoadedScene& scene) {
                         if (!program.request.shader.empty()) out.push_back(std::move(program));
                     }
                 }
+            }
+        }
+        if (object.particle) {
+            auto file = scene.particles.find(object.particle->particle);
+            if (file != scene.particles.end() && file->second) {
+                PassProgram program;
+                program.object = object.id;
+                program.material = file->second->material;
+                program.request = particleRequest(*file->second, scene);
+                if (!program.request.shader.empty()) out.push_back(std::move(program));
             }
         }
         for (size_t e = 0; e < object.effects.size(); e++) {

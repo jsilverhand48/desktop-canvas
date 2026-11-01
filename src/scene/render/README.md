@@ -116,8 +116,10 @@ brightness and alpha; flat reads `g_Color` (color) and `g_Alpha`.
 (genericimage2 blends against `_rt_FullFrameBuffer` through
 `common_blending.h` [asset]); 19 layers use a mode other than 0 [corpus].
 
-Shape layers (`shape` "quad", 4 objects) and particle, text, sound and
-light layers belong to later phases.
+Particle layers simulate and draw as `../particles/README.md` section 6
+says (phase P5a), in `objects` order like other layers. Shape layers
+(`shape` "quad", 4 objects) and text, sound and light layers belong to
+later phases.
 
 ## 3. Effects
 
@@ -200,7 +202,14 @@ normal 2, effect passes all normal]:
 - `translucent`: colour = src * src alpha + dst * (1 - src alpha), alpha
   = src alpha + dst alpha * (1 - src alpha) [inference];
 - `normal`: no blending, the pass replaces what it covers;
-- `additive`: src + dst [inference]; the rest (particle materials) in P5.
+- `additive`: src * src alpha + dst for colour, the target's alpha kept
+  [inference: `genericparticle.frag` does not premultiply its colour by
+  alpha, and particles faded by alpha operators (594 systems use
+  `alphafade` [corpus]) must fade under additive blending, the blending
+  of 515 of 619 particle materials];
+- `alphatocoverage` (one particle material): translucent, with the
+  shader's `ALPHATOCOVERAGE` discard below half alpha
+  (`../particles/README.md` section 6).
 
 ## 5. The frame
 

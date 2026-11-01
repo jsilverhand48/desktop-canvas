@@ -5,6 +5,7 @@
 #include <set>
 
 #include "scene/model/Json.h"
+#include "scene/particles/ParticleSystem.h"
 
 namespace canvas::scene {
 
@@ -58,6 +59,24 @@ public:
         if (e)
             for (const auto& pass : e->passes) material(pass.material);
         return e;
+    }
+
+    // A particle file, its material and its children (each path once).
+    std::shared_ptr<ParticleFile> particle(const std::string& path) {
+        if (path.empty()) return nullptr;
+        if (auto it = out_.particles.find(path); it != out_.particles.end()) return it->second;
+        std::shared_ptr<ParticleFile> p;
+        if (auto j = json(path)) p = std::make_shared<ParticleFile>(parseParticleFile(*j, out_.report, path));
+        out_.particles[path] = p;
+        if (p) {
+            // Section 4 and 5 of src/scene/particles/README.md: components
+            // no phase knows are reported and skipped.
+            for (const auto& name : particleNeeds(*p).unknown)
+                out_.report.warn(path + ": particle component " + name + " not supported");
+            material(p->material);
+            for (const auto& child : p->children) particle(child.file);
+        }
+        return p;
     }
 
     void texture(const std::string& name) {
@@ -124,7 +143,7 @@ bool loadScene(const AssetLocator& assets, const PropertyValues& overrides, Load
                 for (const auto& t : object.image->instance->textures)
                     if (t) load.texture(*t);
         }
-        if (object.particle) load.exists(object.particle->particle);
+        if (object.particle) load.particle(object.particle->particle);
         if (object.sound)
             for (const auto& s : object.sound->sounds) load.exists(s);
     }

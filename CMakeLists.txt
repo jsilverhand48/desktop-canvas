@@ -262,6 +262,8 @@ if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND)
         src/scene/shader/Conversions.cpp
         src/scene/render/Layout.cpp
         src/scene/render/Animation.cpp
+        src/scene/particles/ParticleFile.cpp
+        src/scene/particles/ParticleSystem.cpp
     )
     target_link_libraries(canvas_scene_core
         PUBLIC canvas_core canvas_scene_props

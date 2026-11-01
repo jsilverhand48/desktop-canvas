@@ -47,6 +47,7 @@ struct RenderDebug {
     bool passLog = false;    // log every pass of the first frame drawn
     bool baseOnly = false;   // run no effects (and no bloom)
     bool noBloom = false;    // skip the bloom chain
+    bool noParticles = false;  // --disable-particles: no particle layers
     // Experimental: hdr scenes in float buffers with the HDR bloom chain
     // (Wallpaper Engine's "Ultra" post-processing) instead of the normal
     // bloom every other user sees; section 5.
@@ -61,8 +62,8 @@ struct RenderDebug {
     std::filesystem::path dumpPrograms;
 
     // Parses one comma separated list (pass-log, base-only, no-bloom,
-    // ultra, no-solid-final, object=ID, skip-object=ID, skip-effect=ID[:N],
-    // dump-programs=DIR);
+    // no-particles, ultra, no-solid-final, object=ID, skip-object=ID,
+    // skip-effect=ID[:N], dump-programs=DIR);
     // false (with error) on an unknown item.
     bool parse(const std::string& list, std::string& error);
 };
