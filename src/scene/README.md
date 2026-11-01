@@ -39,7 +39,8 @@ Appendix A; they are cited as **[req A<n>]**.
 | `gl/` | GL 3.3 code: program cache, textures, the scene renderer (implemented: image, solid, composition and fullscreen layers with effects, particle layers with children, trails and ropes) | P3, P4, P5 |
 | `render/` | how a scene becomes pixels and how it moves: coordinates, layers, effects, blending, the frame, time, animated textures, timeline animations, camera and parallax; the GPU free layout and animation math (implemented through P4b) | P4 |
 | `particles/` | particle systems: the particle file, emitters, initializers, operators, control points, children, sprite and trail rendering (implemented: P5a and P5b) | P5 |
-| `script/`, `text/` | SceneScript (QuickJS-ng), text layers | P6 |
+| `script/` | SceneScript (QuickJS-ng) | P6a |
+| `text/` | text layers: fonts, measuring, lines, placement, drawing (specified) | P6b |
 | `audio/` | sound layers, spectrum | P7 |
 | `puppet/` | puppet warp meshes, skeletons, animation | P8 |
 
