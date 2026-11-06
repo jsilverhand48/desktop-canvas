@@ -99,8 +99,8 @@ values, filled before every frame's calls from the spectrum
 scripts register],
 `setTimeout(fn, ms)` and `setInterval(fn, ms)` returning a function that
 cancels them [doc: "Returns a new callback that can be used to stop
-the timeout"], `openUserShortcut()` false, `registerAsset()` null [corpus:
-unused]. Reads return copies; writes to engine members are ignored [req
+the timeout"], `openUserShortcut()` false, `registerAsset(path)` a handle for
+`createLayer` (section 3.1) [corpus: unused]. Reads return copies; writes to engine members are ignored [req
 A8].
 
 `thisScene` [doc: IScene]: `getLayer(name or index)` (index in scene
@@ -112,14 +112,46 @@ object's scene file entry), the scene settings `bloom`, `bloomstrength`,
 `camerashakeamplitude`, `camerashakeroughness`, `camerashakespeed`,
 `cameraparallax`, `cameraparallaxamount`, `cameraparallaxdelay`,
 `cameraparallaxmouseinfluence` (read and write), `getAnimation(name)`.
-`createLayer`, `destroyLayer` and `sortLayer` return undefined, false
-and false: not done. Five corpus scenes create layers from a script (a
-text layer from properties, image layers from `models/*.json` paths,
-copies of `getInitialLayerConfig`), and other scripts of those scenes
-look the new layers up by name, so the capability report lists a script
-containing `createLayer` as the feature `script-layers`, which this
-build does not support (the "auto" engine keeps those scenes on
-linux-wallpaperengine).
+`createLayer`, `destroyLayer` and `sortLayer` follow section 3.1.
+
+### 3.1 Created layers
+
+Five scenes create layers from scripts [corpus: one passes a text layer
+configuration object; two pass a `models/*.json` path string inside
+loops and then `sortLayer`; two pass `getInitialLayerConfig(layer)` of
+an existing layer seven times and then set `origin`, `alpha` and
+`visible` of the copies].
+
+- `createLayer(configuration)` [doc: IScene]: an object is a scene file
+  object entry ("a layer is identified as a text layer because it has a
+  `text` member" [doc]); a string is a file path: `models/` makes an
+  image layer of that model, `particles/` a particle layer; an asset
+  handle from `engine.registerAsset(path)` is the same as its path
+  string. A path the wallpaper lacks resolves to the only file of the
+  same name under the same top folder [inference: both string scenes
+  name `models/<file>.json` while the package holds it three folders
+  deeper, already used by a scene object]; otherwise, or for anything
+  else, `createLayer` returns undefined. The new object gets the next
+  free id, its configuration's fields (bindings to user properties
+  resolved, timeline animations started), its files loaded like the
+  scene's, and is drawn above every other layer; it is a new entry at
+  the end of `getLayer` index order. Its scripts start on the next frame.
+  At most 256 layers are created per scene [this project]; later calls
+  return undefined.
+- `getInitialLayerConfig(layer)` returns the object's scene file entry
+  as loaded (every member, scripts included) [doc: "the initial
+  configuration of an existing layer"], so copies behave like the
+  original.
+- `sortLayer(layer, index)` moves the layer to position `index` of the
+  drawing order (0 is the bottom, clamped) and returns true [doc:
+  "changes the display order"]; `getLayer` indices do not change.
+- `destroyLayer(layer)` stops drawing the layer and its scripts (at the
+  end of the frame: removal is deferred [doc]), and returns true; the
+  object keeps its index but `getLayer(name)` no longer finds it.
+- `engine.registerAsset(path)` returns a handle `{path}` usable by
+  `createLayer` [doc: IEngine].
+
+The capability feature `script-layers` is supported from phase P9a.
 
 `input` [doc: IInput]: `cursorWorldPosition` (the cursor in scene
 units, `../render/README.md` section 11's mapping), `cursorScreenPosition`
