@@ -147,64 +147,68 @@ std::vector<double> Timeline::evaluate(double t) const {
     return out;
 }
 
-Animator::Animator(LoadedScene& scene) {
-    int64_t owner = -1;
-    auto visit = [&](auto& field) {
-        if (!field.animated()) return;
-        auto timeline = parseTimeline(field.dynamics->animation);
-        if (!timeline) return;
-        const size_t before = appliers_.size();
-        using T = std::decay_t<decltype(field.value)>;
-        auto* target = &field;
-        const T base = field.value;
-        if constexpr (std::is_same_v<T, float>) {
-            appliers_.push_back([target, base, tl = *timeline](double t) {
-                double v = tl.evaluate(t)[0];
-                target->value = float(tl.relative ? base + v : v);
-            });
-        } else if constexpr (std::is_same_v<T, Vec2> || std::is_same_v<T, Vec3> ||
-                             std::is_same_v<T, Vec4>) {
-            appliers_.push_back([target, base, tl = *timeline](double t) {
-                auto v = tl.evaluate(t);
-                T out = base;
-                for (size_t i = 0; i < out.size() && i < v.size(); i++)
-                    out[i] = float(tl.relative ? base[i] + v[i] : v[i]);
-                target->value = out;
-            });
-        } else if constexpr (std::is_same_v<T, Floats>) {
-            appliers_.push_back([target, base, tl = *timeline](double t) {
-                auto v = tl.evaluate(t);
-                Floats out = base;
-                const int n = std::max<int>(base.count, int(std::min<size_t>(v.size(), 4)));
-                for (int i = 0; i < n && size_t(i) < v.size(); i++)
-                    out.v[size_t(i)] = float(tl.relative ? base.v[size_t(i)] + v[size_t(i)]
-                                                         : v[size_t(i)]);
-                out.count = std::max(out.count, std::min<int>(int(v.size()), 4));
-                target->value = out;
-            });
-        } else if constexpr (std::is_same_v<T, bool>) {
-            appliers_.push_back([target, tl = *timeline](double t) {
-                target->value = tl.evaluate(t)[0] >= 0.5;
-            });
-        }
-        // Text and integer fields are not animated (none in the corpus).
-        if (appliers_.size() == before) return;
-        auto playback = std::make_unique<AnimationPlayback>();
-        playback->timeline = *timeline;
-        playback->object = owner;
-        playback->playing = !timeline->startPaused;
-        playbacks_.push_back(std::move(playback));
-    };
-    // Objects first, so each animation knows its object.
-    for (size_t i = 0; i < scene.scene.objects.size(); i++) {
-        owner = int64_t(i);
-        scene.scene.objects[i].forEachField(visit);
+template <class FieldT>
+void Animator::addField(FieldT& field, int64_t owner) {
+    if (!field.animated()) return;
+    auto timeline = parseTimeline(field.dynamics->animation);
+    if (!timeline) return;
+    const size_t before = appliers_.size();
+    using T = std::decay_t<decltype(field.value)>;
+    auto* target = &field;
+    const T base = field.value;
+    if constexpr (std::is_same_v<T, float>) {
+        appliers_.push_back([target, base, tl = *timeline](double t) {
+            double v = tl.evaluate(t)[0];
+            target->value = float(tl.relative ? base + v : v);
+        });
+    } else if constexpr (std::is_same_v<T, Vec2> || std::is_same_v<T, Vec3> ||
+                         std::is_same_v<T, Vec4>) {
+        appliers_.push_back([target, base, tl = *timeline](double t) {
+            auto v = tl.evaluate(t);
+            T out = base;
+            for (size_t i = 0; i < out.size() && i < v.size(); i++)
+                out[i] = float(tl.relative ? base[i] + v[i] : v[i]);
+            target->value = out;
+        });
+    } else if constexpr (std::is_same_v<T, Floats>) {
+        appliers_.push_back([target, base, tl = *timeline](double t) {
+            auto v = tl.evaluate(t);
+            Floats out = base;
+            const int n = std::max<int>(base.count, int(std::min<size_t>(v.size(), 4)));
+            for (int i = 0; i < n && size_t(i) < v.size(); i++)
+                out.v[size_t(i)] = float(tl.relative ? base.v[size_t(i)] + v[size_t(i)]
+                                                     : v[size_t(i)]);
+            out.count = std::max(out.count, std::min<int>(int(v.size()), 4));
+            target->value = out;
+        });
+    } else if constexpr (std::is_same_v<T, bool>) {
+        appliers_.push_back([target, tl = *timeline](double t) {
+            target->value = tl.evaluate(t)[0] >= 0.5;
+        });
     }
-    owner = -1;
+    // Text and integer fields are not animated (none in the corpus).
+    if (appliers_.size() == before) return;
+    auto playback = std::make_unique<AnimationPlayback>();
+    playback->timeline = *timeline;
+    playback->object = owner;
+    playback->playing = !timeline->startPaused;
+    playbacks_.push_back(std::move(playback));
+}
+
+Animator::Animator(LoadedScene& scene) {
+    // Objects first, so each animation knows its object.
+    for (size_t i = 0; i < scene.scene.objects.size(); i++)
+        scene.scene.objects[i].forEachField([&](auto& field) { addField(field, int64_t(i)); });
+    auto visit = [&](auto& field) { addField(field, -1); };
     scene.scene.camera.forEachField(visit);
     scene.scene.general.forEachField(visit);
     for (auto& [path, material] : scene.materials)
         if (material) material->forEachField(visit);
+}
+
+void Animator::addObject(LoadedScene& scene, size_t index) {
+    if (index >= scene.scene.objects.size()) return;
+    scene.scene.objects[index].forEachField([&](auto& field) { addField(field, int64_t(index)); });
 }
 
 void Animator::update(double t) {

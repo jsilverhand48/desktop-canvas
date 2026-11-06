@@ -205,7 +205,7 @@ const engine = {
     audio.push(b);
     return b;
   },
-  registerAsset() { return null; },
+  registerAsset(path) { return typeof path === 'string' ? Object.freeze({ path }) : null; },
   setTimeout(fn, ms) { const id = n.timer(fn, Number(ms) || 0, false); return () => n.cancel(id); },
   setInterval(fn, ms) { const id = n.timer(fn, Number(ms) || 0, true); return () => n.cancel(id); },
   openUserShortcut() { return false; },
@@ -226,9 +226,16 @@ const scene = {
   enumerateLayers() { const out = []; for (let i = 0; i < n.layerCount(); i++) out.push(layer(i)); return out; },
   getLayerIndex(x) { return indexOf(x); },
   getInitialLayerConfig(x) { const i = indexOf(x); return layer(i) ? JSON.parse(n.initialConfig(i)) : undefined; },
-  sortLayer() { return false; },
-  createLayer() { return undefined; },
-  destroyLayer() { return false; },
+  // Created layers (section 3.1).
+  sortLayer(x, index) { const i = indexOf(x); return layer(i) ? !!n.sortLayer(i, Number(index) || 0) : false; },
+  createLayer(c) {
+    let i = -1;
+    if (typeof c === 'string') i = n.createLayer(0, c);
+    else if (c && typeof c === 'object' && typeof c.path === 'string' && Object.isFrozen(c)) i = n.createLayer(0, c.path);
+    else if (c && typeof c === 'object') i = n.createLayer(1, JSON.stringify(c));
+    return i >= 0 ? layer(i) : undefined;
+  },
+  destroyLayer(x) { const i = indexOf(x); return layer(i) ? !!n.destroyLayer(i) : false; },
   getAnimation(name) {
     const a = n.animation(-1, name === undefined ? '' : String(name));
     return a < 0 ? undefined : new Animation(a);
@@ -289,7 +296,7 @@ enum Op {
     kInstanceSet, kEffectIndex, kEffectCount, kEffectGet, kEffectSet, kEffectConstant, kAnimation,
     kAnimationCall, kAnimationGet, kAnimationSet, kParticle, kParticlePlaying, kSceneGet, kSceneSet,
     kInitialConfig, kUserProperties, kTimer, kCancel, kLog, kStorageGet, kStorageSet, kStorageDelete,
-    kStorageClear, kPuppet,
+    kStorageClear, kPuppet, kCreateLayer, kSortLayer, kDestroyLayer,
 };
 
 struct OpName {
@@ -315,7 +322,8 @@ const OpName kOps[] = {
     {"cancel", kCancel, 1},             {"log", kLog, 2},
     {"storageGet", kStorageGet, 2},     {"storageSet", kStorageSet, 3},
     {"storageDelete", kStorageDelete, 2}, {"storageClear", kStorageClear, 1},
-    {"puppet", kPuppet, 5},
+    {"puppet", kPuppet, 5},             {"createLayer", kCreateLayer, 2},
+    {"sortLayer", kSortLayer, 2},       {"destroyLayer", kDestroyLayer, 1},
 };
 
 int interruptHandler(JSRuntime* rt, void*);
@@ -326,6 +334,7 @@ struct ScriptEngine::Impl {
     struct Script {
         std::string where;
         int64_t object = -1;  // -1: scene settings or materials
+        bool destroyed = false;  // its layer was destroyed (section 3.1): stopped, not failed
         std::string source;
         json properties;  // scene file scriptproperties, null without
         std::function<JSValue()> get;
@@ -351,6 +360,9 @@ struct ScriptEngine::Impl {
         int64_t object = -1;
         JSValue fn = JS_UNDEFINED;
     };
+    // Section 3.1: objects created this frame (their scripts start next
+    // frame) and objects destroyed this frame (stopped at its end).
+    std::vector<size_t> pendingObjects, destroyedObjects;
     struct EndedWatch {
         int64_t object = -1;      // the script's object
         size_t layerObject = 0;   // the puppet layer
@@ -751,6 +763,34 @@ struct ScriptEngine::Impl {
             if (material) material->forEachField(sceneField);
     }
 
+    // Scripts of layers created last frame (section 3.1).
+    void startCreated() {
+        std::vector<size_t> created = std::move(pendingObjects);
+        pendingObjects.clear();
+        for (size_t index : created) {
+            if (index >= scene.scene.objects.size()) continue;
+            const size_t first = scripts.size();
+            const std::string where = "object " + std::to_string(scene.scene.objects[index].id) + " script ";
+            int k = 0;
+            scene.scene.objects[index].forEachField([&](auto& f) {
+                if (f.scripted()) addScript(f, int64_t(index), where + std::to_string(k++));
+            });
+            for (size_t i = first; i < scripts.size(); i++) load(scripts[i], i);
+        }
+    }
+
+    // destroyLayer() takes effect at the end of the frame (section 3.1).
+    void stopDestroyed() {
+        for (size_t index : destroyedObjects) {
+            for (auto& s : scripts)
+                if (s.object == int64_t(index)) s.failed = s.destroyed = true;
+            for (auto& t : timers)
+                if (t.object == int64_t(index)) t.cancelled = true;
+            host.destroyLayer(index);
+        }
+        destroyedObjects.clear();
+    }
+
     // Evaluates a script's module (section 2: loading).
     void load(Script& s, size_t index) {
         const std::string name = "script" + std::to_string(index) + ".js";
@@ -967,6 +1007,7 @@ struct ScriptEngine::Impl {
 
     void update(const ScriptFrame& f) {
         frame = f;
+        startCreated();
         writeFrame();
         fillAudio();
         // resizeScreen(size) when the output size changes (section 2).
@@ -1003,6 +1044,7 @@ struct ScriptEngine::Impl {
         endedEvents();
         runTimers();
         runJobs();
+        stopDestroyed();
         if (storageDirty) saveStorage();
     }
 
@@ -1326,6 +1368,8 @@ struct ScriptEngine::Impl {
     }
 
     std::string initialConfig(const SceneObject& o) {
+        // The scene file entry as loaded (section 3.1).
+        if (o.source.is_object()) return o.source.dump();
         auto text3 = [](const Vec3& v) {
             std::ostringstream s;
             s << v[0] << ' ' << v[1] << ' ' << v[2];
@@ -1358,7 +1402,7 @@ struct ScriptEngine::Impl {
             case kLayerByName: {
                 auto name = string(arg(0));
                 for (size_t i = 0; name && i < objects.size(); i++)
-                    if (objects[i].name == *name) return JS_NewInt64(ctx, int64_t(i));
+                    if (objects[i].name == *name && !objects[i].destroyed) return JS_NewInt64(ctx, int64_t(i));
                 return JS_NewInt64(ctx, -1);
             }
             case kLayerById: {
@@ -1586,6 +1630,34 @@ struct ScriptEngine::Impl {
                 return JS_UNDEFINED;
             }
             case kPuppet: return puppet(arg(0), arg(1), arg(2), arg(3), arg(4));
+            case kCreateLayer: {
+                // Section 3.1: 0 a path, 1 a configuration object (JSON).
+                const int kind = int(number(arg(0)).value_or(-1));
+                auto text = string(arg(1));
+                if (!text || (kind != 0 && kind != 1)) return JS_NewInt64(ctx, -1);
+                json config;
+                if (kind == 1) {
+                    config = json::parse(*text, nullptr, false);
+                    if (!config.is_object()) return JS_NewInt64(ctx, -1);
+                } else {
+                    config = *text;
+                }
+                const int64_t index = host.createLayer(config);
+                if (index >= 0) pendingObjects.push_back(size_t(index));
+                return JS_NewInt64(ctx, index);
+            }
+            case kSortLayer: {
+                SceneObject* o = object(arg(0));
+                auto index = number(arg(1));
+                return JS_NewBool(ctx, o && index && host.sortLayer(size_t(o - objects.data()), int64_t(*index)));
+            }
+            case kDestroyLayer: {
+                SceneObject* o = object(arg(0));
+                if (!o || o->destroyed) return JS_NewBool(ctx, false);
+                o->destroyed = true;
+                destroyedObjects.push_back(size_t(o - objects.data()));
+                return JS_NewBool(ctx, true);
+            }
         }
         return JS_UNDEFINED;
     }
@@ -1843,7 +1915,11 @@ size_t ScriptEngine::scriptCount() const {
     return n;
 }
 
-size_t ScriptEngine::failedCount() const { return impl_->scripts.size() - scriptCount(); }
+size_t ScriptEngine::failedCount() const {
+    size_t n = 0;
+    for (const auto& s : impl_->scripts) n += s.failed && !s.destroyed ? 1 : 0;
+    return n;
+}
 
 bool ScriptEngine::usesAudio() const { return impl_->audioBufferCount() > 0; }
 

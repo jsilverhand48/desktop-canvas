@@ -57,7 +57,7 @@ std::set<std::string> sceneFeatures(LoadedScene& scene) {
     scene.forEachField([&](auto& field) {
         if (field.scripted()) f.insert("script");
         // Scripts that make layers at run time (src/scene/script/README.md
-        // section 3): a feature of its own, not drawn yet.
+        // section 3.1): a feature of its own.
         if (field.scripted() && field.dynamics->script.find("createLayer") != std::string::npos)
             f.insert("script-layers");
         if (field.animated()) f.insert("timeline");
@@ -97,6 +97,8 @@ const std::set<std::string>& supportedFeatures() {
             "camera-shake", "sprite-animation", "video-texture", "particles",
             "particle-controlpoints", "particle-children", "particle-trails", "text", "sound",
             "puppet", "light", "shape-layer"};
+        // Created layers draw through the script engine (P9a).
+        if (ScriptEngine::available()) s.insert("script-layers");
         if (ScriptEngine::available()) s.insert("script");
         return s;
     }();

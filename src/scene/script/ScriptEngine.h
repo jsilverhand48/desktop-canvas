@@ -65,6 +65,12 @@ public:
     // space to the scene.
     virtual PuppetRig* puppetRig(size_t /*object*/) { return nullptr; }
     virtual Mat4 puppetToWorld(size_t /*object*/) { return Mat4::identity(); }
+    // Created layers (src/scene/script/README.md section 3.1): a new object
+    // from a configuration object or a path string, its index or -1; the
+    // drawing order; a destroyed layer leaving the drawing.
+    virtual int64_t createLayer(const nlohmann::json& /*config*/) { return -1; }
+    virtual bool sortLayer(size_t /*object*/, int64_t /*index*/) { return false; }
+    virtual void destroyLayer(size_t /*object*/) {}
 };
 
 class ScriptEngine {

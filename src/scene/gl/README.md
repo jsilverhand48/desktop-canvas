@@ -39,7 +39,11 @@ context; the GPU free parts live in the other `src/scene/` modules.
   pass draws its skinned mesh; attachment frames go to the layout. Shape
   layers are transparent projection sized rectangles through their
   effects; light layers fill the light uniforms of lit programs each
-  frame (`../render/README.md` section 12).
+  frame (`../render/README.md` section 12). Layers scripts create
+  (`../script/README.md` section 3.1) are appended to the scene's objects
+  (room for 256 is reserved at load so fields never move), loaded,
+  animated and built like loaded layers and drawn on top; `sortLayer`
+  reorders the drawing, destroyed objects are skipped.
   Particle layers (`../particles/README.md` sections 6 to 9) own a
   `ParticleSystem` with its child systems, stepped once per `advance()`
   while shown (whatever the number of frame sizes drawn) with the layer's

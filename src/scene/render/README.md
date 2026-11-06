@@ -538,7 +538,8 @@ and dim them [corpus]).
 - `Animation.h`, `Animation.cpp` (`canvas_scene_core`): section 10,
   `parseTimeline`, `Timeline::evaluate`, and `Animator`, which keeps one
   `AnimationPlayback` clock per animation (found by object and name for
-  scripts) and writes every animated field's value each frame.
+  scripts), takes on objects scripts create (`addObject`) and writes
+  every animated field's value each frame.
 - `../gl/Textures.h`, `../gl/Textures.cpp`: texture upload (section 2's
   texture region), sprite sheet frames (section 9).
 - `../gl/VideoTexture.h`, `.cpp`: video textures (section 9).

@@ -82,8 +82,13 @@ public:
     // An object's animations in scene file order; with a name, the first
     // of that name (null when none).
     AnimationPlayback* find(int64_t object, const std::string& name);
+    // The animations of an object added after construction (a layer a
+    // script created, src/scene/script/README.md section 3.1); they start
+    // at the current scene time.
+    void addObject(LoadedScene& scene, size_t index);
 
 private:
+    template <class FieldT> void addField(FieldT& field, int64_t owner);
     std::vector<std::unique_ptr<AnimationPlayback>> playbacks_;
     std::vector<std::function<void(double)>> appliers_;  // by playback index, given its time
     double last_ = 0;

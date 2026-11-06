@@ -126,6 +126,26 @@ public:
             TextureSummary{tex->payload, tex->formatCode, tex->has(TextureFile::kSpriteSheet)};
     }
 
+    // Everything one object names (each path once per Loader).
+    void object(const SceneObject& object) {
+        for (const auto& e : object.effects) {
+            effect(e.file);
+            for (const auto& pass : e.passes)
+                for (const auto& t : pass.textures)
+                    if (t) texture(*t);
+        }
+        if (object.image) {
+            model(object.image->model);
+            if (object.image->instance)
+                for (const auto& t : object.image->instance->textures)
+                    if (t) texture(*t);
+        }
+        if (object.particle) particle(object.particle->particle);
+        if (object.camera) cameraPath(object.camera->path);
+        if (object.sound)
+            for (const auto& s : object.sound->sounds) exists(s);
+    }
+
     void exists(const std::string& path) {
         if (path.empty() || !checked_.insert(path).second) return;
         if (!assets_.find(path)) out_.report.error(path + ": not found");
@@ -159,29 +179,19 @@ bool loadScene(const AssetLocator& assets, const PropertyValues& overrides, Load
     if (!scene) return false;
     out.scene = parseSceneFile(*scene, out.report);
 
-    for (auto& object : out.scene.objects) {
-        for (const auto& e : object.effects) {
-            load.effect(e.file);
-            for (const auto& pass : e.passes)
-                for (const auto& t : pass.textures)
-                    if (t) load.texture(*t);
-        }
-        if (object.image) {
-            load.model(object.image->model);
-            if (object.image->instance)
-                for (const auto& t : object.image->instance->textures)
-                    if (t) load.texture(*t);
-        }
-        if (object.particle) load.particle(object.particle->particle);
-        if (object.camera) load.cameraPath(object.camera->path);
-        if (object.sound)
-            for (const auto& s : object.sound->sounds) load.exists(s);
-    }
+    for (auto& object : out.scene.objects) load.object(object);
 
     out.values = defaultValues(out.project.properties);
     for (const auto& [name, value] : overrides) out.values[name] = value;
     resolveAll(out, &out.report);
     return true;
+}
+
+void loadObject(const AssetLocator& assets, LoadedScene& scene, size_t index) {
+    if (index >= scene.scene.objects.size()) return;
+    Loader load(assets, scene);
+    load.object(scene.scene.objects[index]);
+    scene.scene.objects[index].forEachField([&](auto& field) { resolve(field, scene.values, nullptr); });
 }
 
 void applyProperties(LoadedScene& scene, const PropertyValues& changes) {

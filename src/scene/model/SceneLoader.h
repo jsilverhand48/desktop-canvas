@@ -68,6 +68,10 @@ struct LoadedScene {
 // be read; out is filled as far as loading got.
 bool loadScene(const AssetLocator& assets, const PropertyValues& overrides, LoadedScene& out);
 
+// Loads what object `index` names (a layer created by a script,
+// src/scene/script/README.md section 3.1) and resolves its bound fields.
+void loadObject(const AssetLocator& assets, LoadedScene& scene, size_t index);
+
 // Merges changes into scene.values and resolves every bound field again.
 void applyProperties(LoadedScene& scene, const PropertyValues& changes);
 

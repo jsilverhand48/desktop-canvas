@@ -217,6 +217,10 @@ struct SceneObject {
     Field<bool> lockTransforms, disablePropagation, solid, castShadow, perspective;
     std::vector<EffectInstance> effects;
     std::string shape;  // shape layers: "quad"
+    // The scene file entry as loaded (getInitialLayerConfig and copies,
+    // src/scene/script/README.md section 3.1).
+    nlohmann::json source;
+    bool destroyed = false;  // destroyLayer(): neither drawn nor found by name
 
     // The part matching kind is set.
     std::optional<ImageLayer> image;
@@ -253,5 +257,8 @@ struct SceneFile {
 };
 
 SceneFile parseSceneFile(const nlohmann::json& scene, LoadReport& report);
+// One object entry (layers created by scripts, src/scene/script/README.md
+// section 3.1).
+SceneObject parseSceneObject(const nlohmann::json& object, LoadReport& report);
 
 }  // namespace canvas::scene

@@ -317,6 +317,7 @@ struct Program {
     std::map<std::string, int> combos;
     ProgramCache::Handle handle = 0;
     bool requested = false;
+    bool finished = false;  // locations read (finishPrograms runs again for created layers)
     bool usable = false;  // linked and set up
     GLuint id = 0;
     EngineLocations engine;
@@ -812,7 +813,8 @@ struct SceneRenderer::Impl : ScriptHost {
     // Links what program() requested and looks the uniforms up.
     void finishPrograms() {
         for (auto& [key, p] : programIndex) {
-            if (!p->requested) continue;
+            if (!p->requested || p->finished) continue;
+            p->finished = true;
             const ProgramCache::Result& r = programs.result(p->handle);
             if (!r.program) {
                 std::string first = r.error.substr(0, r.error.find('\n'));
@@ -1767,6 +1769,9 @@ struct SceneRenderer::Impl : ScriptHost {
 
     bool load(LoadedScene loaded, std::string& error) {
         scene = std::move(loaded);
+        // Room for created layers: fields stay in place (script section 3.1).
+        scene.scene.objects.reserve(scene.scene.objects.size() + kMaxCreatedLayers);
+        for (const auto& o : scene.scene.objects) nextObjectId = std::max(nextObjectId, o.id + 1);
         layout = std::make_unique<SceneLayout>(scene.scene);
         animator = std::make_unique<Animator>(scene);
         const General& g = scene.scene.general;
@@ -1781,15 +1786,8 @@ struct SceneRenderer::Impl : ScriptHost {
             if (!pass.usable()) bloom.usable = false;
         for (const Pass* pass : {&hdr.downsampleBloom, &hdr.downsample, &hdr.upsample, &hdr.combine})
             if (!pass->usable()) hdr.usable = false;
-        for (size_t i = 0; i < layers.size(); i++) layerById[layers[i].id] = i;
-        layout->setAttachmentFrames([this](size_t parent, const std::string& name, Mat4& frame) {
-            Layer* layer = layerOf(parent);
-            if (!layer || !layer->rig) return false;
-            const int index = layer->rig->file().attachmentIndex(name);
-            if (index < 0) return false;
-            frame = puppetOffset(*layer) * layer->rig->attachmentFrame(index);
-            return true;
-        });
+        indexLayers();
+        attachFrames();
         for (const auto& t : textures.problems()) problem(t);
         projection[0] = g.projectionWidth.value;
         projection[1] = g.projectionHeight.value;
@@ -1972,6 +1970,117 @@ struct SceneRenderer::Impl : ScriptHost {
         auto it = layerById.find(scene.scene.objects[object].id);
         return it != layerById.end() ? &layers[it->second] : nullptr;
     }
+
+    static constexpr size_t kMaxCreatedLayers = 256;
+    size_t createdLayers = 0;
+    int64_t nextObjectId = 1;
+
+    void indexLayers() {
+        layerById.clear();
+        for (size_t i = 0; i < layers.size(); i++) layerById[layers[i].id] = i;
+    }
+
+    // Puppet attachment frames for the layout (puppet section 4).
+    void attachFrames() {
+        layout->setAttachmentFrames([this](size_t parent, const std::string& name, Mat4& frame) {
+            Layer* layer = layerOf(parent);
+            if (!layer || !layer->rig) return false;
+            const int index = layer->rig->file().attachmentIndex(name);
+            if (index < 0) return false;
+            frame = puppetOffset(*layer) * layer->rig->attachmentFrame(index);
+            return true;
+        });
+    }
+
+    // ScriptHost, created layers (script section 3.1).
+    std::string resolveLayerPath(const std::string& path) {
+        if (assets.find(path)) return path;
+        const size_t slash = path.find('/');
+        if (slash == std::string::npos) return {};
+        const std::string top = path.substr(0, slash + 1);
+        const std::string base = path.substr(path.rfind('/') + 1);
+        std::vector<std::string> found;
+        if (const PackageArchive* pkg = assets.package())
+            for (const auto& e : pkg->entries())
+                if (e.name.rfind(top, 0) == 0 && e.name.size() > base.size() &&
+                    e.name.compare(e.name.size() - base.size() - 1, std::string::npos, "/" + base) == 0)
+                    found.push_back(e.name);
+        std::error_code ec;
+        const auto dir = assets.itemDir() / top;
+        for (auto it = std::filesystem::recursive_directory_iterator(dir, ec);
+             !ec && it != std::filesystem::recursive_directory_iterator() && found.size() < 4; it.increment(ec))
+            if (it->is_regular_file(ec) && it->path().filename() == base) {
+                std::string rel = std::filesystem::relative(it->path(), assets.itemDir(), ec).generic_string();
+                if (!ec && std::find(found.begin(), found.end(), rel) == found.end()) found.push_back(rel);
+            }
+        return found.size() == 1 ? found.front() : std::string();
+    }
+
+    int64_t createLayer(const nlohmann::json& config) override {
+        if (createdLayers >= kMaxCreatedLayers) return -1;
+        nlohmann::json c;
+        if (config.is_string()) {
+            const std::string path = resolveLayerPath(config.get<std::string>());
+            if (path.rfind("models/", 0) == 0) c = {{"image", path}};
+            else if (path.rfind("particles/", 0) == 0) c = {{"particle", path}};
+            else return -1;
+        } else if (config.is_object()) {
+            c = config;
+        } else {
+            return -1;
+        }
+        c["id"] = nextObjectId++;
+        LoadReport report;
+        auto& objects = scene.scene.objects;
+        if (objects.size() == objects.capacity()) return -1;  // never moves fields
+        objects.push_back(parseSceneObject(c, report));
+        const size_t index = objects.size() - 1;
+        createdLayers++;
+        const size_t knownErrors = scene.report.errors.size();
+        loadObject(assets, scene, index);
+        for (size_t i = knownErrors; i < scene.report.errors.size(); i++)
+            problem("created layer: " + scene.report.errors[i]);
+        if (animator) animator->addObject(scene, index);
+        layout = std::make_unique<SceneLayout>(scene.scene);
+        attachFrames();
+        const size_t before = layers.size();
+        buildLayer(index);
+        finishPrograms();
+        if (layers.size() > before) {
+            std::vector<Layer> added;
+            for (size_t i = before; i < layers.size(); i++) added.push_back(std::move(layers[i]));
+            layers.resize(before);
+            for (auto& l : added) {
+                bool ok = true;
+                for (const auto& pass : l.passes) ok = ok && pass.usable();
+                for (auto& run : l.effects)
+                    for (const auto& pass : run.passes)
+                        if (!pass.usable()) run.usable = false;
+                if (l.hasBase && !l.base.usable()) {
+                    l.hasBase = false;
+                    for (auto& run : l.effects) run.usable = false;
+                }
+                if (ok) layers.push_back(std::move(l));
+                else problem("created layer " + std::to_string(objects[index].id) + ": not drawn (its material does not compile)");
+            }
+        }
+        indexLayers();
+        return int64_t(index);
+    }
+
+    bool sortLayer(size_t object, int64_t index) override {
+        Layer* layer = layerOf(object);
+        if (!layer) return false;
+        const size_t from = size_t(layer - layers.data());
+        const size_t to = size_t(std::clamp<int64_t>(index, 0, int64_t(layers.size()) - 1));
+        Layer moved = std::move(layers[from]);
+        layers.erase(layers.begin() + long(from));
+        layers.insert(layers.begin() + long(to), std::move(moved));
+        indexLayers();
+        return true;
+    }
+
+    void destroyLayer(size_t) override {}  // SceneObject::destroyed keeps it from drawing
 
     // ScriptHost: sizes as drawn (text measured now if need be), particle
     // playback per the IParticleSystem reference (script section 4).
@@ -2948,6 +3057,7 @@ struct SceneRenderer::Impl : ScriptHost {
         const RenderDebug& debug = options.debug;
         logPasses = debug.passLog && f.generation == ~0ull && frames.size() == 1;
         for (auto& layer : layers) {
+            if (scene.scene.objects[layer.object].destroyed) continue;  // script section 3.1
             bool shown = layout->visible(layer.object) && !debug.skip.count(layer.id) &&
                          (debug.only.empty() || debug.only.count(layer.id));
             if (shown || layer.referenced) drawLayer(layer, shown);

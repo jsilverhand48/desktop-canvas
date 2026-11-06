@@ -289,6 +289,7 @@ void parseKind(SceneObject& obj, const json& o, LoadReport& report, const std::s
 
 SceneObject parseObject(const json& o, LoadReport& report) {
     SceneObject obj;
+    obj.source = o;
     obj.id = integer(o, "id").value_or(0);
     obj.name = text(o, "name");
     obj.kind = kindOf(o);
@@ -325,6 +326,8 @@ SceneObject parseObject(const json& o, LoadReport& report) {
 }
 
 }  // namespace
+
+SceneObject parseSceneObject(const json& object, LoadReport& report) { return parseObject(object, report); }
 
 SceneFile parseSceneFile(const json& scene, LoadReport& report) {
     SceneFile file;
