@@ -18,14 +18,16 @@ is written before the module's code, from these sources only:
 - **[corpus]** measurements over the user's workshop library, produced by
   throwaway scripts that test a written hypothesis against every file, cited
   with their result ("203/203 packages");
-- **[bb]** lwe used as a black box through
-  `claude_tests/blackbox/lwe-run.sh` (its screenshots, logs and `--help`).
+- **[bb]** lwe used as a black box through a wrapper script that only ran
+  its binary (its screenshots, logs and `--help`).
 
 Statements without a tag are design decisions of this project, not claims
 about the format. "Known from memory" is not a source. lwe's source, docs
 and build tree, and any other Wallpaper Engine renderer or extractor, are
-never opened (enforced for agent sessions by the hook in
-`.claude/hooks/cleanroom-guard.py`). The user's own lwe patches were
+never opened (enforced for agent sessions by a hook while the engine was
+written; the hook and the black-box wrapper were removed after the cutover
+in plan phase P9, and these rules stay as the record of how the engine was
+written). The user's own lwe patches were
 converted once into behavior requirements, recorded in the plan's
 Appendix A; they are cited as **[req A<n>]**.
 
