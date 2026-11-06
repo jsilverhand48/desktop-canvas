@@ -5,8 +5,7 @@ The daemon's audio: what wallpapers may play, and what scenes may hear.
 - `AudioPolicy`: the single source of truth for wallpaper audio. Global
   default is muted (product requirement); per wallpaper overrides can be
   set through IPC. Backends apply it as: mpv "mute" property (video),
-  --silent flag (lwe child process, restart required), "mute" messages
-  (native scene helper), setAudioMuted (web).
+  "mute" messages (scene helper), setAudioMuted (web).
 - `SpectrumAnalyzer` (no I/O): stereo frames to `AudioSpectrum` levels,
   per `src/scene/audio/README.md` section 2: 60 analyses a second over
   the newest 2048 frames (Hann window, one complex FFT for both

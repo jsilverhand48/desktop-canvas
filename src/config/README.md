@@ -20,11 +20,10 @@ The wallpaper a rotation tick picks is deliberately not persisted: it lives
 in InstanceManager's runtime override map, so `assignments` keeps meaning the
 user's own choice and the config file is not rewritten every interval.
 
-`audio.processing` (default true; lwe's `--no-audio-processing` turned
-around) lets native scenes react to what the system plays: while on, the
+`audio.processing` (default true) lets native scenes react to what the system plays: while on, the
 daemon captures the default output's monitor whenever a running scene
 needs it (`src/audio/README.md`). Applied live. `audio.auto_mute`
-(default true, like lwe without `--noautomute`) mutes native scenes and
+(default true) mutes native scenes and
 videos while another application plays audio. `audio.media` (default
 true) lets scene scripts receive what media players play
 (`src/scene/audio/README.md` section 7).
@@ -33,13 +32,12 @@ true) lets scene scripts receive what media players play
 random value for each dropdown property; `scene.include_nsfw_options`
 (default false) lets those picks include options labelled NSFW / nude.
 
-`scene.engine` picks the scene renderer: `lwe` (linux-wallpaperengine),
-`native` (desktop-canvas-scene, showing whatever it supports) or `auto`
-(the default since plan phase P5b: desktop-canvas-scene in strict mode,
-falling back to lwe for content it reports unsupported). A wallpaper's own `engine`
-overrides it; `engineFor(id)` resolves the two and `validEngine()` is the
-accepted set. Unknown names load as the default, and a wallpaper entry
-whose only setting is its engine is still written.
+Scenes always render with desktop-canvas-scene. `scene.disable_mouse`
+keeps the cursor from them. Older configs may still hold `scene.engine`,
+`scene.engine_path` and per wallpaper `engine` (linux-wallpaperengine
+choices, removed in plan phase P9): `load()` turns them into
+`migrationNotes`, main.cpp logs those once and saves the config without
+them.
 
 `fullscreen_pause` (enabled, default true; `only_active`; `ignore_app_ids`
 substrings) feeds `desktop/FullscreenPolicy`. `kde_bridge` (default true)

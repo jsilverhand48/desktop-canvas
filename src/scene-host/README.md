@@ -14,16 +14,16 @@ camera shake, parallax and the pointer uniforms
 control points (the cursor included), child systems, sprite trails,
 ropes and rope trails (`src/scene/particles/README.md`) and text layers
 (`src/scene/text/README.md`), and runs scene scripts when built with
-QuickJS-ng (`src/scene/script/README.md`; scripts that create layers
-are not supported yet), reacts to audio (the daemon's capture,
-`src/scene/audio/README.md`) and plays sound layers (with libmpv);
-puppets and lights arrive with later phases. "auto", the daemon's
-default engine, uses it for 195 of the 210 scenes of the test library. The support check
-reports scenes made only of what this build
-draws as supported, so "auto" uses the native renderer for those and
-linux-wallpaperengine for the rest; "native" draws what it can and skips
-the rest. A scene that cannot be read, or has nothing drawable, shows a
-solid dark slate placeholder.
+QuickJS-ng (`src/scene/script/README.md`, layers scripts create
+included), reacts to audio (the daemon's capture,
+`src/scene/audio/README.md`), plays sound layers (with libmpv) and draws
+puppets with their animation, blend shapes and inverse kinematics,
+attachments, lights and shape layers (`src/scene/puppet/README.md`,
+`src/scene/render/README.md` section 12). The support check reports all
+210 scenes of the test library as supported. Since plan phase P9 it is
+the only scene renderer: the daemon runs it without `--strict`, so it
+draws what it can and logs the rest. A scene that cannot be read, or has
+nothing drawable, shows a solid dark slate placeholder.
 
 Why a separate process: workshop content is untrusted (binary formats,
 shaders, JavaScript); a crash or hang takes down only the helper, whose

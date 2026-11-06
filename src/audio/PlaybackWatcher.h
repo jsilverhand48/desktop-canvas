@@ -3,7 +3,7 @@
 //
 // othersPlaying() is the rule: some playback stream that is not corked
 // and whose process is neither the daemon nor one of its descendants
-// (helpers and their sound players, web helpers, lwe). PlaybackWatcher
+// (helpers and their sound players, web helpers). PlaybackWatcher
 // applies it to the server's sink inputs over the PulseAudio protocol
 // (PipeWire serves it too), re-checking on every sink input event from
 // libpulse's own thread, and reports changes on the event loop: true at

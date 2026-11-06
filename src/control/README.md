@@ -14,15 +14,11 @@ IPC socket (`handleIpc`, desktop-canvasctl) and the browser settings UI
   Config before committing, so a bad field changes nothing. `updateWallpaper`,
   `setEnabled` (bulk), `show` (temporary override, not persisted) and
   `action` (next, pause, resume, mute, unmute, reload, restart).
-- Scene engine: `settings()` reports `scene.engine` and
-  `scene.native_available` (desktop-canvas-scene found); changing the engine
-  restarts every instance. `wallpaper(id)` adds the wallpaper's own
-  `engine`, `engine_effective`, the native helper's recorded verdict
-  (`native`: reason and features, or null) and `renderer` (what it would
-  run on now). `updateWallpaper` accepts `engine` and `retry_native`
-  (forget the verdict); either relaunches the wallpaper.
+- Scenes: `settings()` reports `scene.native_available`
+  (desktop-canvas-scene found); `scene.disable_mouse` changes restart every
+  instance.
 - Volume changes apply live (InstanceManager::setVolume); only backends that
-  take volume at launch (lwe, web) are restarted, and only when unmuted.
+  take volume at launch (web) are restarted, and only when unmuted.
 - Desktop integration: `settings()` reports `fullscreen_pause`,
   `kde_bridge` and `spans`; `status()` gives every output its `x`, `y` and
   `covered` (a fullscreen app pauses it). Fullscreen rule changes apply live

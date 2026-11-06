@@ -21,8 +21,7 @@ doing, and Plasma specifics. Part of the `canvas_daemon` library.
   the cursor in global logical coordinates (KWin knows it even while the
   Plasma desktop surface takes the pointer) and the fullscreen windows. Only
   calls from KWin's own bus connection are accepted. The cursor reaches the
-  native scene helper through `InstanceManager::pointerAtGlobal`;
-  linux-wallpaperengine reads its own input, so lwe scenes do not get it.
+  scene helper through `InstanceManager::pointerAtGlobal`.
   `desktop-canvas --probe-kde-bridge N` runs only the bridge for N seconds
   and prints what KWin reports.
 - `MprisWatcher` (also `CANVAS_HAVE_SDBUS`): media players over MPRIS for

@@ -18,7 +18,7 @@ using nlohmann::json;
 
 namespace {
 
-// Property values are kept as text (lwe's --set-property takes text);
+// Property values are kept as text (the scene helper takes text);
 // accept numbers and booleans written by hand too.
 std::string scalarText(const json& v) {
     if (v.is_string()) return v.get<std::string>();
@@ -78,9 +78,11 @@ Config Config::load(const fs::path& path) {
         cfg.audioMedia = j["audio"].value("media", cfg.audioMedia);
     }
     if (j.contains("scene") && j["scene"].is_object()) {
-        std::string engine = j["scene"].value("engine", cfg.sceneEngine);
-        cfg.sceneEngine = validEngine(engine) ? engine : Config{}.sceneEngine;
-        cfg.sceneEnginePath = j["scene"].value("engine_path", "");
+        // Removed with linux-wallpaperengine (plan phase P9).
+        if (j["scene"].value("engine", "") == "lwe")
+            cfg.migrationNotes.push_back("scene.engine \"lwe\" is gone: scenes use the native renderer");
+        if (!j["scene"].value("engine_path", "").empty())
+            cfg.migrationNotes.push_back("scene.engine_path is no longer used (linux-wallpaperengine was removed)");
         cfg.sceneAssetsDir = j["scene"].value("assets_dir", "");
         cfg.sceneDisableMouse =
             j["scene"].value("disable_mouse", cfg.sceneDisableMouse);
@@ -143,8 +145,8 @@ Config Config::load(const fs::path& path) {
                     auto& list = s.allowed[name];
                     for (const auto& v : values) list.push_back(scalarText(v));
                 }
-            std::string engine = w.value("engine", "");
-            if (validEngine(engine)) s.engine = engine;
+            if (w.value("engine", "") == "lwe")
+                cfg.migrationNotes.push_back("wallpaper " + id + ": engine \"lwe\" is gone, it uses the native renderer");
             cfg.wallpapers[id] = std::move(s);
         }
     }
@@ -196,13 +198,6 @@ bool Config::validSpans(const std::vector<std::vector<std::string>>& spans,
     return true;
 }
 
-std::string Config::engineFor(const std::string& id) const {
-    auto it = wallpapers.find(id);
-    if (it != wallpapers.end() && !it->second.engine.empty())
-        return it->second.engine;
-    return sceneEngine;
-}
-
 std::vector<std::string> Config::enabledIds() const {
     std::vector<std::string> ids;
     for (const auto& [id, w] : wallpapers)  // map order: sorted
@@ -220,9 +215,7 @@ bool Config::save(const fs::path& path) const {
     j["layer"] = layer;
     j["audio"] = {{"muted", audioMuted}, {"volume", audioVolume}, {"processing", audioProcessing},
                   {"auto_mute", audioAutoMute}, {"media", audioMedia}};
-    j["scene"] = {{"engine", sceneEngine},
-                  {"engine_path", sceneEnginePath},
-                  {"assets_dir", sceneAssetsDir},
+    j["scene"] = {{"assets_dir", sceneAssetsDir},
                   {"disable_mouse", sceneDisableMouse},
                   {"randomize_options", sceneRandomizeOptions},
                   {"include_nsfw_options", sceneIncludeNsfwOptions}};
@@ -239,13 +232,10 @@ bool Config::save(const fs::path& path) const {
     for (const auto& [id, w] : wallpapers) {
         // Untouched entries (not enabled, nothing pinned or restricted) are
         // not worth persisting; dropping them keeps the file readable.
-        if (!w.enabled && w.properties.empty() && w.allowed.empty() &&
-            w.engine.empty())
-            continue;
+        if (!w.enabled && w.properties.empty() && w.allowed.empty()) continue;
         j["wallpapers"][id] = {{"enabled", w.enabled},
                                {"properties", w.properties},
                                {"allowed", w.allowed}};
-        if (!w.engine.empty()) j["wallpapers"][id]["engine"] = w.engine;
     }
     j["ui"] = {{"enabled", uiEnabled},
                {"port", uiPort},

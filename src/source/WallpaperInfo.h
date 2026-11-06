@@ -9,7 +9,7 @@
 namespace canvas {
 
 enum class WallpaperType {
-    Scene,        // compiled scene.pkg, rendered by linux-wallpaperengine
+    Scene,        // compiled scene.pkg, rendered by desktop-canvas-scene
     Video,        // video file, rendered in process via libmpv
     Web,          // HTML/JS, rendered by the optional web backend
     Unsupported,  // presets, malformed items, unknown types

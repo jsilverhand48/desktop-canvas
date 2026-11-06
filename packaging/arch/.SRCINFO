@@ -31,7 +31,6 @@ pkgbase = desktop-canvas
 	sha256sums = SKIP
 
 pkgname = desktop-canvas
-	optdepends = linux-wallpaperengine: scene (scene.pkg) wallpaper support, from the AUR as linux-wallpaperengine-git
 	optdepends = desktop-canvas-web: web (HTML/JS) wallpaper support
 	optdepends = plasma-desktop: KDE integration, keeps desktop icons above the wallpaper
 

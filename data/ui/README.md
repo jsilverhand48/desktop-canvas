@@ -17,12 +17,9 @@ HTML, CSS and JavaScript: no framework, no build step.
     sliders, toggles, colours and text can be overridden. Properties whose
     display condition is false for the pinned values are hidden (their pins
     are kept) and appear after saving the values they depend on. Save can
-    relaunch the wallpaper if it is showing. Scenes also get an engine choice
-    (global, linux-wallpaperengine, auto, native), the renderer they use
-    now, and when the native renderer has given up on them, why, with a
-    "Retry native" button.
+    relaunch the wallpaper if it is showing.
   - Settings: every global setting grouped (display, audio, rotation,
-    scenes including the scene engine, fullscreen apps (pause, only while
+    scenes (random options, mouse, assets folder), fullscreen apps (pause, only while
     focused, ignored app ids, KDE bridge), screen spans (one comma
     separated output list per line), assignments, library folders, web,
     UI, broken list).

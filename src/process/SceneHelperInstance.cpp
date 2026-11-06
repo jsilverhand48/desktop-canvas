@@ -225,6 +225,7 @@ bool SceneHelperInstance::setVolume(int percent) {
 
 void SceneHelperInstance::setPointer(const std::string& output, double x,
                                      double y) {
+    if (launch_.disableMouse) return;  // scene.disable_mouse
     pointer_[output] = {x, y};
     if (pointer_timer_ || !channel_) return;
     pointer_timer_ = loop_.addTimer(kPointerIntervalMs, [this] {

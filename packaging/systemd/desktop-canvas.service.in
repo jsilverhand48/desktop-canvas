@@ -19,8 +19,8 @@ TimeoutStartSec=15
 # exceeds this, the kernel OOM kills inside this cgroup only and
 # Restart=on-failure brings it back, instead of the system wide OOM killer
 # taking out an unrelated application. Measured peaks at 2560x1440: the
-# native scene helper about 650 MiB on the largest scenes, the
-# linux-wallpaperengine fallback 1.5 GiB, plus the daemon and a web helper.
+# scene helper about 650 MiB on the largest scenes per output group, plus
+# the daemon and a web helper.
 MemoryMax=4G
 
 [Install]

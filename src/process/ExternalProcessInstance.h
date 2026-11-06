@@ -1,7 +1,6 @@
 // WallpaperInstance backed by a supervised child process.
 //
-// Used for scene wallpapers (linux-wallpaperengine) and web wallpapers
-// (desktop-canvas-web helper). The child creates its own surface: a layer
+// Used for web wallpapers (desktop-canvas-web helper). The child creates its own surface: a layer
 // shell surface on Wayland, or a window the daemon demotes to the desktop
 // layer on X11 (X11Connection::demoteWindowsOf). The argv is produced by a
 // builder function of the current mute state, because mute is a command

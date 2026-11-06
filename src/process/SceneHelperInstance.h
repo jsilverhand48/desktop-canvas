@@ -2,8 +2,7 @@
 // project's own helper, driven over process/HelperProtocol.h.
 //
 // The child runs under ChildSupervisor with ExitPolicy::HelperProtocol and
-// a control channel. Everything that lwe needed restarts or signals for is
-// a live message here: pause and resume, mute, volume, pointer, coverage
+// a control channel. Every change is a live message here, nothing restarts: pause and resume, mute, volume, pointer, coverage
 // by fullscreen windows. Each new helper process (first start or a respawn
 // after a crash) gets the current pause, mute, volume and coverage state
 // re-sent after its hello, plus the latest pointer position.
@@ -54,7 +53,8 @@ public:
         std::string scaling = "fill";
         std::string assetsDir;  // empty = helper autodetects
         std::vector<std::pair<std::string, std::string>> properties;
-        bool strict = false;  // engine "auto": exit 3 on unsupported content
+        bool strict = false;  // exit 3 on unsupported content (the daemon no longer asks)
+        bool disableMouse = false;  // config scene.disable_mouse: no pointer forwarded
         bool span = false;    // one canvas over all outputs (config spans)
         // The audio spectrum memory to hand the helper (--audio-fd); -1
         // none. Not owned; must outlive the instance.

@@ -4,7 +4,7 @@
 // process backends. Two implementations exist: WaylandPlatform (layer shell)
 // and X11Platform (DESKTOP type windows). main.cpp picks one based on
 // WAYLAND_DISPLAY/DISPLAY. Scene wallpapers do not use RenderSurfaces; their
-// child process (linux-wallpaperengine or desktop-canvas-scene) creates its
+// child process (desktop-canvas-scene) creates its
 // own surface, so it only needs the output name (Wayland) or geometry (X11)
 // exposed here.
 //
@@ -63,14 +63,14 @@ public:
         return nullptr;
     }
 
-    // True on Wayland; ExternalProcessInstance uses this to choose between
-    // --screen-root and --window for linux-wallpaperengine.
+    // True on Wayland; helpers target outputs by name there and by
+    // geometry (windows) on X11.
     virtual bool isWayland() const = 0;
 
     // X11 only: newly mapped windows whose _NET_WM_PID satisfies the
     // predicate are stamped DESKTOP type and lowered (pushes scene children
-    // running in --window mode behind everything). No-op on Wayland where
-    // lwe creates proper layer surfaces itself.
+    // running in window mode, such as the web helper, behind everything).
+    // No-op on Wayland where helpers create layer surfaces themselves.
     virtual void demoteWindowsOf(std::function<bool(pid_t)> /*predicate*/) {}
 
     // Pointer position over the wallpaper, in output local logical

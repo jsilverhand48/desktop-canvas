@@ -6,9 +6,8 @@
 # - The daemon needs to read your Steam library; adjust the filesystem
 #   permission below to your library location (removable media requires
 #   /run/media access or use Flatseal).
-# - linux-wallpaperengine is built as a module so scene wallpapers work out
-#   of the box; drop that module to slim the build if you only use
-#   video/web wallpapers.
+# - Scene wallpapers render with desktop-canvas-scene from this repository;
+#   their scripts need QuickJS-ng, not in the runtime yet.
 app-id: io.github.desktopcanvas.DesktopCanvas
 runtime: org.kde.Platform
 runtime-version: '6.7'
@@ -30,15 +29,6 @@ finish-args:
   - --socket=session-bus
 
 modules:
-  - name: linux-wallpaperengine
-    buildsystem: cmake-ninja
-    config-opts:
-      - -DCMAKE_BUILD_TYPE=Release
-    sources:
-      - type: archive
-        url: https://github.com/Almamu/linux-wallpaperengine/archive/refs/tags/v0.6.3.tar.gz
-        sha256: SETME_RUN_flatpak_builder_WITH_CORRECT_HASH
-
   - name: desktop-canvas
     buildsystem: cmake-ninja
     config-opts:

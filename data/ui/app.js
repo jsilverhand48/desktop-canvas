@@ -310,36 +310,6 @@ function drawerContent(w) {
     return nodes;
   }
 
-  // Scene engine for this wallpaper ("" follows the global setting).
-  const engineChoice = select(w.engine, [
-    ['', `Global setting (${w.engine_effective})`],
-    ['lwe', 'linux-wallpaperengine'],
-    ['auto', 'Auto'],
-    ['native', 'Native renderer only'],
-  ]);
-  engineChoice.addEventListener('change', async () => {
-    if (await attempt(() => api('PUT', `/api/wallpapers/${w.id}`, { engine: engineChoice.value }),
-                      'Engine changed')) openWallpaper(w.id);
-  });
-  const verdict = w.native
-    ? `Native renderer: ${w.native.reason === 'crash' ? 'kept crashing' : 'not supported yet'}`
-      + (w.native.features?.length ? ` (needs ${w.native.features.join(', ')})` : '')
-    : '';
-  nodes.push(el('div', { class: 'row' },
-    el('span', { text: 'Engine' }), engineChoice,
-    el('span', { class: 'muted', text: `now: ${w.renderer === 'native' ? 'native renderer' : 'linux-wallpaperengine'}` })));
-  if (verdict) {
-    nodes.push(el('div', { class: 'row' },
-      el('span', { class: 'muted', text: verdict }),
-      el('span', { class: 'spacer' }),
-      el('button', {
-        text: 'Retry native',
-        onclick: async () => {
-          if (await attempt(() => api('PUT', `/api/wallpapers/${w.id}`, { retry_native: true }),
-                            'Retrying the native renderer')) openWallpaper(w.id);
-        },
-      })));
-  }
   if (!w.properties.length) {
     nodes.push(el('div', { class: 'muted', text: 'This scene declares no user properties.' }));
     return nodes;
@@ -523,12 +493,6 @@ function renderSettings() {
     name, box: el('input', { type: 'checkbox', checked: s.playlist.outputs.includes(name) }),
   }));
 
-  const sceneEngine = select(s.scene.engine, [
-    ['lwe', 'linux-wallpaperengine'],
-    ['auto', 'Auto (native when it can, else linux-wallpaperengine)'],
-    ['native', 'Native renderer only'],
-  ]);
-  const engine = el('input', { type: 'text', value: s.scene.engine_path, placeholder: 'linux-wallpaperengine (from PATH)' });
   const assets = el('input', { type: 'text', value: s.scene.assets_dir, placeholder: 'autodetect' });
   const mouse = el('input', { type: 'checkbox', checked: s.scene.disable_mouse });
   const randomize = el('input', { type: 'checkbox', checked: s.scene.randomize_options });
@@ -593,11 +557,9 @@ function renderSettings() {
     el('fieldset', {}, el('legend', { text: 'Scenes' }),
       ...field('Random dropdown values', randomize, 'Each launch picks random poses, modes and styles (per wallpaper limits in the Library).'),
       ...field('Allow NSFW options', nsfw, 'Lets random picks use options labelled NSFW or nude unless a wallpaper restricts them.'),
-      ...field('Disable mouse', mouse),
-      ...field('Scene engine', sceneEngine, s.scene.native_available
-        ? 'The native renderer (desktop-canvas-scene) is still being built; Auto falls back to linux-wallpaperengine for anything it cannot show yet.'
-        : 'desktop-canvas-scene is not installed, so every scene uses linux-wallpaperengine.'),
-      ...field('Engine path', engine),
+      ...field('Disable mouse', mouse, s.scene.native_available
+        ? 'Scenes stop following the cursor (parallax, cursor effects).'
+        : 'desktop-canvas-scene is not installed, so scenes cannot be shown.'),
       ...field('Assets directory', assets)),
     el('fieldset', {}, el('legend', { text: 'Assignments' }),
       el('div', { class: 'help full', text: 'Wallpaper id shown on each output when rotation is off or not covering it. Leave blank for none.' }),
@@ -641,8 +603,6 @@ function renderSettings() {
         outputs: rotateOutputs.filter(r => r.box.checked).map(r => r.name),
       },
       scene: {
-        engine: sceneEngine.value,
-        engine_path: engine.value.trim(),
         assets_dir: assets.value.trim(),
         disable_mouse: mouse.checked,
         randomize_options: randomize.checked,

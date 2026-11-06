@@ -178,10 +178,6 @@ int runDaemon(Config& config) {
         return 1;
     }
 
-    // linux-wallpaperengine is probed lazily by InstanceManager, the first
-    // time an lwe scene starts (and again after a settings restart), so a
-    // setup that only uses the native helper never runs it.
-
     AudioPolicy audio(config.audioMuted, config.audioVolume);
     // One audio capture for every native scene helper that needs it
     // (src/scene/audio/README.md section 3); declared before the manager so
@@ -325,7 +321,7 @@ int main(int argc, char** argv) {
     std::vector<std::string> roots;
     std::vector<std::string> sets;
     int fps = -1, rotate = -1;
-    std::string scaling, layer, engine, assets, playlist;
+    std::string scaling, layer, assets, playlist;
     std::vector<std::string> rotateOutputs;
 
     int probeBridge = 0;
@@ -343,7 +339,6 @@ int main(int argc, char** argv) {
     app.add_option("--scaling", scaling, "fill | fit | stretch");
     app.add_option("--layer", layer, "background | bottom (Wayland)");
     app.add_flag("--unmute", unmute, "Play wallpaper audio (default muted)");
-    app.add_option("--engine", engine, "linux-wallpaperengine binary path");
     app.add_option("--assets", assets, "Wallpaper Engine assets directory");
     app.add_option("--playlist", playlist,
                    "Import a file of wallpaper ids (one per line) into the "
@@ -362,12 +357,15 @@ int main(int argc, char** argv) {
     // A legacy ids file was folded into "wallpapers": write it back once so
     // the import is not repeated and "playlist.file" disappears.
     if (!config.importedPlaylistFrom.empty() && !list) config.save(path);
+    // linux-wallpaperengine settings of older configs (plan phase P9): say
+    // so once and write the config back without them.
+    for (const auto& note : config.migrationNotes) canvas::log::warn() << "config: " << note;
+    if (!config.migrationNotes.empty() && !list) config.save(path);
     for (const auto& r : roots) config.contentRoots.emplace_back(r);
     if (fps > 0) config.fps = fps;
     if (!scaling.empty()) config.scaling = scaling;
     if (!layer.empty()) config.layer = layer;
     if (unmute) config.audioMuted = false;
-    if (!engine.empty()) config.sceneEnginePath = engine;
     if (!assets.empty()) config.sceneAssetsDir = assets;
     if (!playlist.empty()) {
         canvas::Playlist imported;

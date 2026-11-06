@@ -38,8 +38,7 @@ Daemon source tree. Module map:
   `--render-debug` diagnostics, DESKTOP_CANVAS_SCENE=ON
 - `process/` child process supervision (process groups, death signal,
   control channel on fd 3, exit policies), the daemon/helper protocol,
-  helper lookup, linux-wallpaperengine command construction, and the
-  instance types for lwe/web children and the native helper
+  helper lookup, and the instance types for the scene and web helpers
 - `input/` pointer forwarding (X11 poller lands with M4/M5)
 - `desktop/` desktop integration: the fullscreen pause policy and the KDE
   bridge (sd-bus service plus a KWin script loaded at runtime, for the

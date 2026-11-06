@@ -33,8 +33,9 @@ Validate with:
     <ul>
       <li>Video wallpapers, decoded in process with libmpv and hardware
           accelerated where available</li>
-      <li>Scene wallpapers, rendered by a supervised linux-wallpaperengine
-          child process</li>
+      <li>Scene wallpapers, rendered by desktop-canvas-scene, its own
+          supervised renderer (images, effects, particles, text, scripts,
+          audio response, sound, puppets and lights)</li>
       <li>Web wallpapers, rendered by a supervised Qt WebEngine child
           process when built with the web backend enabled</li>
     </ul>
@@ -45,9 +46,8 @@ Validate with:
     </p>
     <p>
       Wallpaper Engine content is not included. You need a Steam library
-      holding workshop items for app 431960. Scene wallpapers additionally
-      require linux-wallpaperengine, which most distributions do not
-      package.
+      holding workshop items for app 431960 and the Wallpaper Engine assets
+      folder.
     </p>
   </description>
 

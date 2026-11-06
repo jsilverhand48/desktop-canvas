@@ -31,5 +31,5 @@ Suggests: qt6-webengine-dev, qt6-declarative-dev, liblayershellqtinterface-dev
 Description: Animated Wallpaper Engine wallpapers behind the Linux desktop
  Renders Wallpaper Engine workshop content (video, scene, web wallpapers)
  behind icons, widgets and taskbars on Wayland (wlr-layer-shell) and X11.
- Scene wallpapers require linux-wallpaperengine, which Debian does not
- package; build with -DDESKTOP_CANVAS_BUNDLE_LWE=ON to bundle it.
+ Scene wallpapers render with the bundled desktop-canvas-scene helper;
+ their scripts need QuickJS-ng, which Debian does not package yet.

@@ -1,9 +1,8 @@
 // Per (output, wallpaper) lifecycle unit.
 //
 // Implementations:
-//   ExternalProcessInstance (src/process/): scene wallpapers rendered by a
-//     supervised linux-wallpaperengine child, and web wallpapers rendered by
-//     the desktop-canvas-web helper.
+//   ExternalProcessInstance (src/process/): web wallpapers rendered by the
+//     desktop-canvas-web helper.
 //   SceneHelperInstance (src/process/): scene wallpapers rendered by
 //     desktop-canvas-scene, the project's own helper, driven live over its
 //     control channel (process/HelperProtocol.h).
@@ -30,7 +29,7 @@ public:
     virtual void resume() {}
 
     // May restart the instance when the backend cannot change mute live
-    // (linux-wallpaperengine uses the --silent flag of its child process).
+    // (the web helper takes it on its command line).
     virtual void setMuted(bool muted) = 0;
     // True when setMuted applies without restarting anything; muting while
     // other applications play (src/scene/audio/README.md section 6) only

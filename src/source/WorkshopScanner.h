@@ -9,7 +9,7 @@
 //
 // The scanner also derives the Wallpaper Engine assets directory (shipped
 // with the Windows app under steamapps/common/wallpaper_engine/assets) which
-// linux-wallpaperengine needs to render scenes.
+// the scene helper needs to render scenes.
 #pragma once
 
 #include <filesystem>

@@ -16,8 +16,7 @@
 //             "processing": true,            // audio capture for scenes
 //             "auto_mute": true,             // mute while other apps play
 //             "media": true},                // media info for scene scripts
-//   "scene": {"engine": "auto",               // lwe | native | auto
-//             "engine_path": "", "assets_dir": "", "disable_mouse": false,
+//   "scene": {"assets_dir": "", "disable_mouse": false,
 //             "randomize_options": false,     // random dropdown values
 //             "include_nsfw_options": false}, // ...including NSFW ones
 //   "web": {"enabled": false},
@@ -35,8 +34,7 @@
 //     "3826693905": {
 //       "enabled": true,                          // in the rotation pool
 //       "properties": {"mode_combo": "dual"},     // pinned --set-property
-//       "allowed": {"style_left": ["valueA", "valueB"]}, // random pool
-//       "engine": "native"                        // overrides scene.engine
+//       "allowed": {"style_left": ["valueA", "valueB"]} // random pool
 //     }
 //   },
 //   "ui": {"enabled": true, "port": 8765,         // http://127.0.0.1:port
@@ -48,13 +46,11 @@
 // into "wallpapers" (see importedPlaylistFrom) and the key is not written
 // back.
 //
-// Scene engine ("scene.engine", per wallpaper "engine"): "lwe" runs the
-// external linux-wallpaperengine; "native" runs desktop-canvas-scene and
-// shows whatever it supports; "auto" tries desktop-canvas-scene strictly and
-// falls back to lwe for content it reports unsupported (verdicts cached, see
-// render/NativeSupportCache.h); it is the default since plan phase P5b.
-// Unknown values read as the default, and an empty per wallpaper value
-// means "use scene.engine".
+// Scenes always render with desktop-canvas-scene. Configs from before the
+// cutover (plan phase P9) may hold "scene.engine", "scene.engine_path" and
+// per wallpaper "engine" (linux-wallpaperengine choices): load() reads
+// them once into migrationNotes, which the daemon logs, and save() no
+// longer writes them.
 //
 // Fullscreen pause: wallpapers on outputs a fullscreen application covers
 // pause (desktop/FullscreenPolicy.h). Windows come from the platform (EWMH on
@@ -90,14 +86,12 @@ struct Config {
     bool audioMuted = true;   // requirement: audio defaults to muted
     int audioVolume = 15;
     // Capture what the system plays for audio responsive scenes
-    // (src/scene/audio/README.md section 3); lwe's --no-audio-processing.
+    // (src/scene/audio/README.md section 3).
     bool audioProcessing = true;
-    // Mute wallpapers while another application plays (lwe's automute).
+    // Mute wallpapers while another application plays.
     bool audioAutoMute = true;
     // Media player information (MPRIS) for scene scripts.
     bool audioMedia = true;
-    std::string sceneEngine = "auto";  // lwe | native | auto
-    std::string sceneEnginePath;  // empty = search PATH
     std::string sceneAssetsDir;   // empty = autodetect from content roots
     bool sceneDisableMouse = false;
     // Pick a random value for every dropdown (combo) property of a scene at
@@ -121,22 +115,17 @@ struct Config {
     struct WallpaperSettings {
         // In the rotation pool. Replaces the old external ids.txt.
         bool enabled = false;
-        // Pinned user property values, always passed to lwe as
-        // --set-property name=value (they win over random picks).
+        // Pinned user property values, always passed to the scene helper
+        // (they win over random picks).
         std::map<std::string, std::string> properties;
         // Per dropdown, the option values random picks may use. A dropdown
         // missing here uses every option (minus NSFW unless allowed).
         std::map<std::string, std::vector<std::string>> allowed;
-        // Scene engine for this wallpaper; empty uses sceneEngine.
-        std::string engine;
     };
 
-    // True for the scene engine names the config accepts.
-    static bool validEngine(const std::string& engine) {
-        return engine == "lwe" || engine == "native" || engine == "auto";
-    }
-    // The engine configured for a wallpaper: its override, else sceneEngine.
-    std::string engineFor(const std::string& id) const;
+    // What load() found of the removed linux-wallpaperengine settings
+    // (logged by the daemon; empty for current configs).
+    std::vector<std::string> migrationNotes;
     std::map<std::string, WallpaperSettings> wallpapers;  // key: workshop id
 
     // Ids with enabled == true, sorted: the rotation pool.

@@ -100,7 +100,5 @@ base package and adds `libepoxy`, `libpng`, `lz4`, `libjpeg-turbo`
 responsive scenes, whose KWin script installs to
 `share/desktop-canvas/kwin/`. `.SRCINFO` lists them too.
 
-Scene wallpapers need linux-wallpaperengine, which exists in the AUR only as
-`linux-wallpaperengine-git`. That package declares
-`provides=('linux-wallpaperengine')`, so the `optdepends` entry resolves, but
-the description names the real package to save people a search.
+Scene wallpapers need nothing outside this package: desktop-canvas-scene
+renders them (linux-wallpaperengine is no longer used).

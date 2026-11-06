@@ -28,10 +28,10 @@
 // Without --assets-dir the Wallpaper Engine assets folder is looked for in
 // the Steam library holding the wallpaper (AssetLocator::guessAssetsDir).
 //
-// --strict (what "auto" passes) makes content that needs anything this
+// --strict (a test and tooling switch) makes content that needs anything this
 // build cannot render a reason to stop: the helper reports the list over
 // the control channel and exits with helper::kExitUnsupported so the daemon
-// falls back to linux-wallpaperengine. Without it ("native"), whatever is
+// can tell (no daemon asks for it since plan phase P9). Without it, whatever is
 // supported is shown and the rest skipped. The scene engine
 // (NativeRenderer, scene/gl/SceneRenderer) draws image, solid, composition
 // and fullscreen layers with their effects, their motion, particle and

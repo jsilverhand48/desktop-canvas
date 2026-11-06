@@ -3,9 +3,6 @@
 # Build options:
 #   DESKTOP_CANVAS_WEB        Enable the optional Qt6 WebEngine backend for
 #                             "web" type wallpapers (default OFF).
-#   DESKTOP_CANVAS_BUNDLE_LWE Download and install a pinned linux-wallpaperengine
-#                             release for "scene" wallpapers (default OFF; scenes
-#                             otherwise use the binary found on PATH at runtime).
 #   DESKTOP_CANVAS_SCENE      Build desktop-canvas-scene, the native scene
 #                             renderer helper, and its engine libraries
 #                             (default ON; skipped with a warning without
@@ -63,7 +60,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(DESKTOP_CANVAS_WEB "Enable Qt6 WebEngine backend for web wallpapers" OFF)
-option(DESKTOP_CANVAS_BUNDLE_LWE "Bundle a pinned linux-wallpaperengine release" OFF)
 option(DESKTOP_CANVAS_SCENE "Build the native scene helper desktop-canvas-scene" ON)
 option(DESKTOP_CANVAS_TESTS "Build tests in claude_tests/" ON)
 option(DESKTOP_CANVAS_FUZZ "Build libFuzzer targets (clang; sanitizes everything)" OFF)
@@ -181,11 +177,9 @@ add_library(canvas_daemon STATIC
     src/audio/SpectrumAnalyzer.cpp
     src/audio/SpectrumService.cpp
     src/process/ChildSupervisor.cpp
-    src/process/LweCommandBuilder.cpp
     src/process/ExternalProcessInstance.cpp
     src/process/HelperLocator.cpp
     src/process/SceneHelperInstance.cpp
-    src/render/NativeSupportCache.cpp
     src/desktop/FullscreenPolicy.cpp
     src/ipc/IpcServer.cpp
     src/control/Controller.cpp
@@ -406,10 +400,6 @@ if(DESKTOP_CANVAS_WEB)
                         "layer correctly on Wayland (X11 unaffected)")
     endif()
     install(TARGETS desktop-canvas-web RUNTIME DESTINATION bin)
-endif()
-
-if(DESKTOP_CANVAS_BUNDLE_LWE)
-    include(BundleLwe)
 endif()
 
 install(TARGETS desktop-canvas desktop-canvasctl RUNTIME DESTINATION bin)

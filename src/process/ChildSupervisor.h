@@ -1,4 +1,4 @@
-// Supervises child processes (linux-wallpaperengine and web helper
+// Supervises child processes (desktop-canvas-scene and web helper
 // instances).
 //
 // Each spawned child is watched through a pidfd registered with the event
@@ -21,7 +21,7 @@
 // plus, when ChildSpec::controlChannel is set, its end of a fresh control
 // socketpair as fd 3 (process/HelperProtocol.h).
 //
-// Exit handling depends on ChildSpec::exitPolicy. RespawnAlways (lwe and the
+// Exit handling depends on ChildSpec::exitPolicy. RespawnAlways (the
 // web helper, whose exit codes mean nothing to us) treats every exit as a
 // failure to respawn. HelperProtocol (our own helpers) ends the child for
 // good on exit codes 0 (clean), 2 (usage) and 3 (unsupported; not counted
@@ -97,7 +97,7 @@ public:
     bool isRunning(const std::string& tag) const;
 
     // Sends a signal to a running child's main process (SIGSTOP/SIGCONT
-    // implement pause/resume for lwe scenes; SIGKILL ends a hung helper,
+    // pause and resume children without a control channel; SIGKILL ends a hung helper,
     // which then counts as a crash). No-op for unknown tags.
     void signalChild(const std::string& tag, int sig);
 

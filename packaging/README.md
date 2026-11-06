@@ -57,28 +57,22 @@ published.
   `debian/watch` are also missing. On Debian and Ubuntu `wayland-scanner`
   ships in `libwayland-bin`, not `libwayland-dev`.
 - `flatpak/io.github.desktopcanvas.DesktopCanvas.yml` reference Flatpak
-  manifest (KDE runtime for Qt6 WebEngine; bundles linux-wallpaperengine as
-  a module). Not submittable as is: the file name and app id predate the id
+  manifest (KDE runtime for Qt6 WebEngine). Not submittable as is: the file name and app id predate the id
   above, `sources: type: dir` must become a tagged archive or a pinned git
   source, the metainfo needs screenshots added, and `--socket=session-bus`
   should be narrowed to specific `--talk-name=` entries.
 
 ## Notes for packagers
 
-Scene wallpapers depend on linux-wallpaperengine at runtime; distro packages
-should Recommend/Suggest it. The native replacement, desktop-canvas-scene,
-is built from this repository (libepoxy, libpng, lz4, libjpeg-turbo 2.1
-or later, FreeType and fontconfig at build and run time, listed in the Arch `depends` and Debian
-`Build-Depends`; the Flatpak runtime already ships them; as is libsystemd
-for the KDE bridge and libpulse for the daemon's audio capture; QuickJS-ng runs scene scripts when the build finds
-it: Arch `depends` lists `quickjs-ng`, while Debian and the Flatpak have
-no package yet, so scenes with scripts fall back there) and installed into the main package; once it renders scenes (plan phases P1 to P9) the
-linux-wallpaperengine dependency goes away. `-DDESKTOP_CANVAS_BUNDLE_LWE=ON` (see
-`cmake/BundleLwe.cmake`) exists for cases where no package is available, but
-it downloads sources at build time, so it cannot be used by Debian, Fedora
-or OBS, which build without network access. In practice that means scene
-wallpapers work out of the box only where linux-wallpaperengine is packaged
-separately, which today is essentially just the AUR.
+Scene wallpapers render with desktop-canvas-scene, built from this
+repository and installed into the main package (libepoxy, libpng, lz4,
+libjpeg-turbo 2.1 or later, FreeType and fontconfig at build and run
+time, listed in the Arch `depends` and Debian `Build-Depends`; the
+Flatpak runtime already ships them; libsystemd for the KDE bridge and
+libpulse for the daemon's audio capture). QuickJS-ng runs scene scripts
+when the build finds it: Arch `depends` lists `quickjs-ng`, while Debian
+and the Flatpak have no package yet, so scenes there show without their
+scripts. Since plan phase P9 nothing depends on linux-wallpaperengine.
 
 `third_party/` holds vendored single header copies of nlohmann json and
 CLI11. Debian and Fedora both prohibit convenience copies and package both

@@ -13,8 +13,8 @@ Wallpaper instance orchestration and in-process backends.
   capture (`setSpectrumService`, `setAudioProcessing`, see
   `src/audio/README.md`), mutes instances that can mute live (native
   helpers, videos; `WallpaperInstance::mutesLive`) while other
-  applications play (`setOthersPlaying`, `setAutoMute`; lwe mutes
-  itself, web helpers would need a restart), and keeps the latest media
+  applications play (`setOthersPlaying`, `setAutoMute`; web helpers would
+  need a restart), and keeps the latest media
   player state for native helpers (`setMedia`, `setMediaEnabled`, with
   `setOnMediaEnabled` telling main.cpp to start or stop the watcher), and blacklists scene wallpapers whose child
   process keeps crashing (config "broken" list). Resolution order for an
@@ -22,31 +22,20 @@ Wallpaper instance orchestration and in-process backends.
   assignment (exact name, then `*`). Overrides belong to Rotator and are
   never persisted; an IPC `set` mirrors itself into the override map so a
   manual choice is visible until the next rotation tick reclaims the output.
-  On Wayland, outputs resolving to the same scene wallpaper share a single
-  linux-wallpaperengine process (one `--screen-root` per output), so three
-  screens showing one scene load its assets and GL context once instead of
-  three times. Slots of a merged group hold the same shared instance; any
-  change to the group (an output switching wallpaper, appearing, or
-  vanishing) restarts the whole group with the new split, and a crash
-  blanks every output in it. pause/resume/mute act once per instance.
-  Video, web, and X11 scene instances stay one per output.
-  Wayland lwe scenes are started with `--layer <config.layer>` when lwe's
-  `--help` lists the flag, so they share the video surfaces' layer instead
-  of lwe's `bottom` default, which covers the Plasma desktop icons. That
-  probe runs lazily, the first time an lwe scene starts, and again after
-  `restartAll()` (the engine path may have changed).
-  Scene engine (`sceneEngineFor`): config `scene.engine` or the wallpaper's
-  own `engine` decides between lwe and desktop-canvas-scene
-  (`SceneHelperInstance`, tag `native:<first output>`; found through
-  `process/HelperLocator`, and every scene falls back to lwe when it is
-  missing). "native" runs the helper and shows what it supports. "auto"
-  runs it with `--strict`; when it reports unsupported content
-  (`handleUnsupported`) or keeps crashing (`handleBroken` on a `native:`
-  tag), the wallpaper gets a `NativeSupportCache` verdict and is relaunched
-  on lwe; lwe crashing as well blacklists as usual. Native groups merge on
-  X11 too, since the helper creates its own desktop windows.
+  Scenes run in desktop-canvas-scene (`SceneHelperInstance`, tag
+  `native:<first output>`, found through `process/HelperLocator`; without
+  it scenes stay blank with an error in the log). Outputs resolving to the
+  same scene wallpaper share one helper (one `--output` per output, on
+  Wayland and X11), so three screens showing one scene load its assets and
+  GL context once instead of three times. Slots of a merged group hold the
+  same shared instance; any change to the group (an output switching
+  wallpaper, appearing, or vanishing) restarts the whole group with the
+  new split, and a crash blanks every output in it. pause/resume/mute act
+  once per instance. Video and web instances stay one per output. Helpers
+  run non-strict: features they lack are logged and the rest is shown; a
+  helper that keeps crashing blacklists its wallpaper (`handleBroken`).
   Pause is remembered (`paused()`): instances started while paused (a
-  rotation tick, a fallback, a hotplug) start paused. `setVolume` applies
+  rotation tick, a hotplug) start paused. `setVolume` applies
   volume live where possible and restarts only unmuted launch-time backends.
   Fullscreen pause: `setToplevels` takes the desktop's window list
   (Platform::watchToplevels, or the KDE bridge), `desktop/FullscreenPolicy`
@@ -60,14 +49,14 @@ Wallpaper instance orchestration and in-process backends.
   output local coordinates.
   Spans (config `spans`): before the usual grouping, a span whose outputs
   are all present and show the same mergeable scene becomes one group in
-  config order, started as a span (lwe `--screen-span`, native `--span`);
+  config order, started as a span (`--span`);
   outputs left over group as before.
   Every scene launch passes the wallpaper's pinned property values, and with
   `scene.randomize_options` on one random value per other dropdown (limited
   to its allowed list), via `source/SceneOptions`, as `--set-property`. The
   values are logged and captured in the instance's argv builder, so an
   audio restart keeps the same variant. `restartAll()` relaunches every
-  instance (after fps / scaling / engine changes), `restartWallpaper(id)`
+  instance (after fps / scaling / mouse changes), `restartWallpaper(id)`
   relaunches one (new random variant, new pinned values), and
   `clearBroken(id)` removes an id from the blacklist. `rescan()` records the
   scanned `roots()`, bumps `libraryRevision()` (the settings UI reloads its
@@ -88,13 +77,6 @@ Wallpaper instance orchestration and in-process backends.
   display or video library and lives in the `canvas_daemon` library;
   `claude_tests/test_video_factory` drives its apply() against
   `claude_tests/fakes/FakePlatform.h`.
-- `NativeSupportCache` the "auto" engine's memory of wallpapers
-  desktop-canvas-scene could not render (reason "unsupported" with the
-  listed features, or "crash"). A verdict is valid only while the
-  wallpaper's scene.pkg (else project file) and the helper binary keep the
-  same mtime and size, so new content or a rebuilt helper is retried.
-  Stored atomically in `$XDG_CACHE_HOME/desktop-canvas/native-support.json`;
-  the settings UI shows verdicts and can forget one ("Retry native").
 - `Rotator` timed rotation over the enabled wallpapers in config: every
   `playlist.interval` seconds it draws a random id (skipping ids missing from the library,
   unsupported, or blacklisted) and installs it as a runtime override on

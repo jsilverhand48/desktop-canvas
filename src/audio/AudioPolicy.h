@@ -3,9 +3,8 @@
 // Requirement: wallpapers with audio are muted by default. The policy holds
 // the global default plus per wallpaper overrides (set through IPC). Backends
 // query effectiveMuted() and are notified through InstanceManager when the
-// policy changes. Note that scene wallpapers apply mute via the
-// linux-wallpaperengine --silent flag, so changing their mute state requires
-// an instance restart; InstanceManager handles that.
+// policy changes. Instances that cannot mute live (web helpers) restart;
+// InstanceManager handles that.
 #pragma once
 
 #include <map>

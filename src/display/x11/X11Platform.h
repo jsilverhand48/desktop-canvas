@@ -1,6 +1,6 @@
 // Platform implementation for X11 sessions. Owns the X11Connection and the
-// shared EglContext. Scene children (linux-wallpaperengine --window mode)
-// get their windows demoted to the desktop layer via
+// shared EglContext. Helper children in window mode (the web helper) get
+// their windows demoted to the desktop layer via
 // X11Connection::demoteWindowsOf, driven by InstanceManager registering the
 // supervised pids.
 //

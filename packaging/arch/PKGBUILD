@@ -52,7 +52,6 @@ build() {
 
 package_desktop-canvas() {
   optdepends=(
-    'linux-wallpaperengine: scene (scene.pkg) wallpaper support, from the AUR as linux-wallpaperengine-git'
     'desktop-canvas-web: web (HTML/JS) wallpaper support'
     'plasma-desktop: KDE integration, keeps desktop icons above the wallpaper'
   )

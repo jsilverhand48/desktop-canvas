@@ -51,7 +51,7 @@ public:
 
     // When a new top level window whose _NET_WM_PID satisfies the predicate
     // is mapped, stamp it _NET_WM_WINDOW_TYPE_DESKTOP and lower it. Used to
-    // push linux-wallpaperengine's --window mode windows behind everything.
+    // push helper windows (the web helper on X11) behind everything.
     void demoteWindowsOf(std::function<bool(pid_t)> predicate) {
         demote_predicate_ = std::move(predicate);
     }

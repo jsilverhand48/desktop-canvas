@@ -7,7 +7,7 @@ Supported wallpaper types:
 
 | Type | How it renders | Notes |
 |---|---|---|
-| scene (scene.pkg) | supervised desktop-canvas-scene (the native renderer, in development) or linux-wallpaperengine child process | `scene.engine`: `auto` (default: native where it can, linux-wallpaperengine for the rest), `native` or `lwe`; the native renderer draws image, effect, particle and text scenes, runs their scripts, reacts to audio and plays sound layers (195 of the 210 scenes of the test library; scripts need QuickJS-ng), not yet puppets, lights or scripts that create layers, so other scenes still need linux-wallpaperengine installed (or bundled) |
+| scene (scene.pkg) | supervised desktop-canvas-scene, the native renderer | images, effects, particles, text, scripts (QuickJS-ng), audio response, sound layers, puppets, lights and shape layers; all 210 scenes of the test library |
 | video (mp4 etc.) | in process via libmpv into a layer shell surface | hardware decoded when available |
 | web (HTML/JS) | supervised Qt6 WebEngine (Quick) child process | build with -DDESKTOP_CANVAS_WEB=ON; audio reactive visualizers render their static state (no spectrum feed yet) |
 | presets | not supported | items whose project.json has a "dependency" key |
@@ -25,8 +25,7 @@ Audio from wallpapers is muted by default; unmute with
   system font names, QuickJS-ng for scene scripts) for
   desktop-canvas-scene; libsystemd (sd-bus) for
   the KDE bridge; libpulse (PulseAudio or PipeWire's pulse server) for
-  audio responsive scenes; linux-wallpaperengine for scene wallpapers on the `lwe`
-  engine and for what desktop-canvas-scene does not draw yet.
+  audio responsive scenes.
 - Wallpaper Engine workshop content, e.g. a Steam library containing
   `steamapps/workshop/content/431960`. Content roots are autodetected from
   `~/.local/share/Steam`, `~/.steam/steam`, and
@@ -42,8 +41,7 @@ cmake --install build          # optional, installs to /usr/local
 ```
 
 Options: `-DDESKTOP_CANVAS_WEB=ON` (web wallpapers via Qt6 WebEngine),
-`-DDESKTOP_CANVAS_BUNDLE_LWE=ON` (download and bundle a pinned
-linux-wallpaperengine), `-DDESKTOP_CANVAS_TESTS=OFF`. Tests build by default
+`-DDESKTOP_CANVAS_TESTS=OFF`. Tests build by default
 when `claude_tests/` is present and are skipped when it is not. libmpv is
 optional at build time: without its development files configure warns and
 the daemon is built without video support, while scene and web wallpapers
@@ -96,7 +94,7 @@ can:
 - per scene: pin any user property (dropdowns, sliders, toggles, colours,
   text) and choose which dropdown options random picks may use
 - edit every other setting: FPS, scaling, layer, audio, rotation interval
-  and outputs, per output assignments, engine and assets paths, library
+  and outputs, per output assignments, the assets path, library
   folders, the broken list
 - show a wallpaper now, skip to the next one, pause, mute, restart
 
@@ -183,10 +181,8 @@ other surface is above it (works on wlroots compositors; on Plasma the
 containment usually intercepts). On Plasma Wayland the KDE bridge (config
 `kde_bridge`, on by default; needs libsystemd at build time) loads a small
 KWin script while the daemon runs that reports the cursor position, which
-the daemon forwards to scenes rendered by desktop-canvas-scene.
-linux-wallpaperengine reads its own input, so lwe scenes still do not react
-under the Plasma icons. `--disable-mouse` behavior is available through the
-config (`scene.disable_mouse`). Check the bridge with
+the daemon forwards to scenes. Config `scene.disable_mouse` keeps the
+cursor from scenes. Check the bridge with
 `desktop-canvas --probe-kde-bridge 10` (while no daemon is running): it
 prints the cursor and fullscreen windows KWin reports.
 
@@ -198,8 +194,7 @@ on Plasma Wayland.
 
 Screen spans: config `spans` lists groups of outputs (for example
 `[["DP-5", "DP-6"]]`) that show one scene as a single canvas stretched over
-them whenever all of them show that scene (`--screen-span` for
-linux-wallpaperengine).
+them whenever all of them show that scene.
 
 Steam libraries are found in native, Flatpak and snap Steam installs and in
 every library their `libraryfolders.vdf` lists, plus

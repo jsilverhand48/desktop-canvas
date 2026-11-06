@@ -11,5 +11,5 @@ Pointer forwarding to wallpapers that support mouse interaction.
 
 Both paths deliver through Platform::setOnPointer to InstanceManager, which
 routes to the instance on that output (WallpaperInstance::setPointer).
-Scene wallpapers are not routed here: linux-wallpaperengine reads input on
-its own surface (disable with config scene.disable_mouse).
+Scene helpers get the pointer this way too, unless config
+scene.disable_mouse is on.

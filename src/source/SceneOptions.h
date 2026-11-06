@@ -15,8 +15,7 @@
 //
 // readUserProperties() returns them (for the settings UI and for picking).
 // resolveSceneProperties() turns a wallpaper's saved choices into the
-// `--set-property name=value` list passed to lwe (LweOptions) or to the
-// native scene helper.
+// `--set-property name=value` list passed to the scene helper.
 //
 // Parsing lives in scene/model/UserProperties (library canvas_scene_props),
 // shared with the native scene engine so both read properties the same
@@ -26,7 +25,7 @@
 // - Reading is tolerant: a missing or malformed project.json, or malformed
 //   entries, yield fewer (or no) properties, never an error. Labels (no
 //   type) and combos without options are left out here. Values are kept as
-//   text in lwe's format: booleans "true"/"false", numbers as written,
+//   text in the helper's format: booleans "true"/"false", numbers as written,
 //   colours "r g b" (0..1).
 // - Pinned values are always emitted and win over random picks.
 // - With randomize on, each other dropdown gets one random value from its
