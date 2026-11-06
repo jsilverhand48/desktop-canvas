@@ -178,18 +178,23 @@ struct SoundLayer {
     }
 };
 
+// Light layers (src/scene/render/README.md section 12).
 struct LightLayer {
     Field<std::string> light;
-    Field<Vec3> color{Vec3{1, 1, 1}};
+    Field<Vec3> color{Vec3{1, 1, 1}}, controlPoint{Vec3{0, 0, 0}};
     Field<float> intensity{1.0f}, radius, exponent, density, volumetricsExponent, cascade0,
-        cascade1, cascade2;
+        cascade1, cascade2, innerCone, outerCone;
     template <class F> void forEachField(F&& f) {
-        f(light); f(color);
+        f(light); f(color); f(controlPoint);
         for (auto* v : {&intensity, &radius, &exponent, &density, &volumetricsExponent,
-                        &cascade0, &cascade1, &cascade2})
+                        &cascade0, &cascade1, &cascade2, &innerCone, &outerCone})
             f(*v);
     }
 };
+
+enum class LightKind { Point, Spot, Tube, Directional, Unknown };
+// lpoint and point, lspot, ltube, ldirectional.
+LightKind lightKind(const std::string& name);
 
 struct CameraPathLayer {
     std::string camera;

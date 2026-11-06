@@ -289,8 +289,98 @@ const std::string& shaderPrelude() {
         "#define CAST3(x) vec3(x)\n"
         "#define CAST4(x) vec4(x)\n"
         "#define CAST3X3(x) mat3(x)\n"
+        "#define CASTU(x) uint(x)\n"
+        "#define CASTF(x) float(x)\n"
         "#define log10(x) (log2(x) * 0.30102999566398120)\n";
     return prelude;
+}
+
+// LightingV1 (src/scene/render/README.md section 12): this project's
+// PerformLighting_V1 over the per kind light arrays whose sizes are the
+// LIGHTS_* combos, with its own Cook-Torrance term (GGX distribution,
+// Schlick-GGX geometry, Schlick Fresnel) and the radius squared over
+// distance squared falloff of the asset shaders. Arrays the shader
+// declares itself are not declared again.
+static std::string lightingCode(const std::map<std::string, int>& combos,
+                                const std::vector<UniformDeclaration>& uniforms) {
+    auto count = [&](const char* name) {
+        auto it = combos.find(name);
+        return it == combos.end() ? 0 : std::clamp(it->second, 0, 16);
+    };
+    std::set<std::string> declared;
+    for (const auto& u : uniforms) declared.insert(u.name);
+    std::string s = "// desktop-canvas: PerformLighting_V1\n";
+    auto array = [&](const char* name, int n) {
+        if (n > 0 && !declared.count(name)) s += std::string("uniform vec4 ") + name + "[" + std::to_string(n) + "];\n";
+    };
+    const int points = count("LIGHTS_POINT"), spots = count("LIGHTS_SPOT"), tubes = count("LIGHTS_TUBE"),
+              directionals = count("LIGHTS_DIRECTIONAL");
+    array("g_LPoint_Color", points);
+    array("g_LPoint_Origin", points);
+    array("g_LSpot_Color", spots);
+    array("g_LSpot_Origin", spots);
+    array("g_LSpot_Direction", spots);
+    array("g_LTube_Color", tubes);
+    array("g_LTube_OriginA", tubes);
+    array("g_LTube_OriginB", tubes);
+    array("g_LDirectional_Color", directionals);
+    array("g_LDirectional_Direction", directionals);
+    s += R"(vec3 desktopCanvas_lightTerm(vec3 n, vec3 toLight, vec3 v, vec3 albedo, vec3 radiance,
+                                vec3 tint, vec3 f0, float roughness, float metallic) {
+    float d2 = max(dot(toLight, toLight), 0.0001);
+    vec3 l = toLight * inversesqrt(d2);
+    vec3 h = normalize(v + l);
+    float nl = max(dot(n, l), 0.0);
+    float nv = max(dot(n, v), 0.0001);
+    float nh = max(dot(n, h), 0.0);
+    float a = max(roughness * roughness, 0.001);
+    float a2 = a * a;
+    float q = nh * nh * (a2 - 1.0) + 1.0;
+    float distribution = a2 / (3.14159265 * q * q);
+    float k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
+    float geometry = (nv / (nv * (1.0 - k) + k)) * (nl / (nl * (1.0 - k) + k));
+    vec3 fresnel = f0 + (vec3(1.0) - f0) * pow(1.0 - max(dot(h, v), 0.0), 5.0);
+    vec3 specular = tint * (distribution * geometry) * fresnel / max(4.0 * nv * nl, 0.001);
+    vec3 diffuse = (vec3(1.0) - fresnel) * (1.0 - metallic) * albedo / 3.14159265;
+    return (diffuse + specular) * radiance * (nl / d2);
+}
+vec3 desktopCanvas_segmentDelta(vec3 p, vec3 a, vec3 b) {
+    vec3 ab = b - a;
+    float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 0.0001), 0.0, 1.0);
+    return a + ab * t - p;
+}
+vec3 PerformLighting_V1(vec3 worldPos, vec3 albedo, vec3 normal, vec3 viewVector, vec3 specularTint,
+                        vec3 f0, float roughness, float metallic) {
+    vec3 light = vec3(0.0);
+)";
+    if (points)
+        s += "    for (int i = 0; i < " + std::to_string(points) + R"(; i++)
+        light += desktopCanvas_lightTerm(normal, g_LPoint_Origin[i].xyz - worldPos, viewVector, albedo,
+            g_LPoint_Color[i].rgb * (g_LPoint_Color[i].w * g_LPoint_Color[i].w), specularTint, f0, roughness, metallic);
+)";
+    if (spots)
+        s += "    for (int i = 0; i < " + std::to_string(spots) + R"(; i++) {
+        vec3 toLight = g_LSpot_Origin[i].xyz - worldPos;
+        float cone = smoothstep(g_LSpot_Direction[i].w, g_LSpot_Origin[i].w,
+                                -dot(normalize(toLight), g_LSpot_Direction[i].xyz));
+        light += desktopCanvas_lightTerm(normal, toLight, viewVector, albedo,
+            g_LSpot_Color[i].rgb * (cone * g_LSpot_Color[i].w * g_LSpot_Color[i].w), specularTint, f0, roughness, metallic);
+    }
+)";
+    if (tubes)
+        s += "    for (int i = 0; i < " + std::to_string(tubes) + R"(; i++)
+        light += desktopCanvas_lightTerm(normal,
+            desktopCanvas_segmentDelta(worldPos, g_LTube_OriginA[i].xyz, g_LTube_OriginB[i].xyz), viewVector,
+            albedo, g_LTube_Color[i].rgb * (g_LTube_Color[i].w * g_LTube_Color[i].w), specularTint, f0, roughness, metallic);
+)";
+    if (directionals)
+        s += "    for (int i = 0; i < " + std::to_string(directionals) + R"(; i++)
+        light += desktopCanvas_lightTerm(normal, g_LDirectional_Direction[i].xyz, viewVector, albedo,
+            g_LDirectional_Color[i].rgb * (g_LDirectional_Color[i].w * g_LDirectional_Color[i].w), specularTint, f0,
+            roughness, metallic);
+)";
+    s += "    return light;\n}\n";
+    return s;
 }
 
 TranslatedProgram translateProgram(const ShaderLoader& loader, const ProgramRequest& request) {
@@ -320,17 +410,22 @@ TranslatedProgram translateProgram(const ShaderLoader& loader, const ProgramRequ
     if (!vert.ok()) out.error = "vertex: " + vert.error;
     else if (!frag.ok()) out.error = "fragment: " + frag.error;
     if (!out.ok()) return out;
+    bool vertLighting = false, fragLighting = false;
     for (auto* r : {&vert, &frag}) {
         out.notes.insert(out.notes.end(), r->notes.begin(), r->notes.end());
         out.includes.insert(out.includes.end(), r->includes.begin(), r->includes.end());
         for (const auto& name : r->requirements) {
             // #require makes engine code available; only a program that
             // calls into it needs it. LightingV1's entry point is the one
-            // function shaders call [corpus]; unknown names always count.
-            bool used = name != "LightingV1" ||
-                        identifiersIn(r->text).count("PerformLighting_V1") > 0;
-            if (used && std::find(out.requirements.begin(), out.requirements.end(), name) ==
-                            out.requirements.end())
+            // function shaders call [corpus]; this project supplies it
+            // (section 5). Unknown names always count.
+            if (name == "LightingV1") {
+                if (identifiersIn(r->text).count("PerformLighting_V1"))
+                    (r == &vert ? vertLighting : fragLighting) = true;
+                continue;
+            }
+            if (std::find(out.requirements.begin(), out.requirements.end(), name) ==
+                out.requirements.end())
                 out.requirements.push_back(name);
         }
     }
@@ -437,6 +532,14 @@ TranslatedProgram translateProgram(const ShaderLoader& loader, const ProgramRequ
     };
     std::string vertUniforms = hoist(vcode, vert);
     std::string fragUniforms = hoist(fcode, frag);
+    if (vertLighting) {
+        vertUniforms += lightingCode(out.combos, out.interface.uniforms);
+        out.notes.push_back("supplied PerformLighting_V1 (vertex)");
+    }
+    if (fragLighting) {
+        fragUniforms += lightingCode(out.combos, out.interface.uniforms);
+        out.notes.push_back("supplied PerformLighting_V1");
+    }
 
     // 5. Assembly.
     auto assemble = [&](const PreprocessResult& r, const std::string& code,

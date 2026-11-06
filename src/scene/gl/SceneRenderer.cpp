@@ -284,12 +284,31 @@ struct EngineLocations {
     std::array<GLint, kSlots> resolution, rotation, translation, mipInfo;
     // g_AudioSpectrum16Left, 16Right, 32Left, 32Right, 64Left, 64Right.
     std::array<GLint, 6> audio{-1, -1, -1, -1, -1, -1};
+    // Lights (section 12), in kLightUniforms order.
+    std::array<GLint, 15> lights{};
     EngineLocations() {
+        lights.fill(-1);
         resolution.fill(-1);
         rotation.fill(-1);
         translation.fill(-1);
         mipInfo.fill(-1);
     }
+};
+
+// Light uniforms (section 12), in EngineLocations::lights order.
+const char* const kLightUniforms[15] = {
+    "g_LightAmbientColor", "g_LightSkylightColor", "g_LightsPosition", "g_LightsColorPremultiplied",
+    "g_LightsColorRadius", "g_LPoint_Color",       "g_LPoint_Origin",  "g_LSpot_Color",
+    "g_LSpot_Origin",      "g_LSpot_Direction",    "g_LTube_Color",    "g_LTube_OriginA",
+    "g_LTube_OriginB",     "g_LDirectional_Color", "g_LDirectional_Direction"};
+
+// This frame's values for kLightUniforms (4 entries per array).
+struct LightUniforms {
+    Vec3 ambient{0, 0, 0}, skylight{0, 0, 0};
+    std::array<Vec3, 4> position{};       // genericimage2: the first 4 lights
+    std::array<Vec4, 3> premultiplied{};  // their colours, the fourth packed in .w
+    std::array<std::array<Vec4, 4>, 11> arrays{};  // g_LightsColorRadius .. g_LDirectional_Direction
+    bool any = false;
 };
 
 struct Program {
@@ -496,6 +515,21 @@ struct Layer {
     std::map<const ParticleFile*, ParticleDraw> particleDraws;
     uint64_t particleGeneration = ~0ull;  // the generation last simulated
     bool particleStopped = false;  // a script's stop(): nothing left or emitted until play()
+    // Puppet image layers (src/scene/puppet/README.md section 5): the rig,
+    // the uids of the scene.json animation layers with the field values
+    // last copied to them, and the mesh buffers.
+    bool shape = false;  // a shape layer (no texture, projection size)
+    std::unique_ptr<PuppetRig> rig;
+    struct AnimationSync {
+        uint64_t uid = 0;
+        bool visible = false;
+        float rate = 1, blend = 1;
+    };
+    std::vector<AnimationSync> animationSync;
+    GLuint meshVao = 0, meshVbo = 0, meshIbo = 0;
+    GLsizei meshIndices = 0;
+    std::vector<Vec3> skinned;
+    std::vector<float> meshVertices;
 };
 
 // Vertices of one quad as a triangle strip: x, y, z, u, v each.
@@ -576,6 +610,11 @@ struct SceneRenderer::Impl : ScriptHost {
             destroyTarget(f.copy);
             destroyTarget(f.mipCopy);
         }
+        for (auto& layer : layers) {
+            if (layer.meshVao) glDeleteVertexArrays(1, &layer.meshVao);
+            if (layer.meshVbo) glDeleteBuffers(1, &layer.meshVbo);
+            if (layer.meshIbo) glDeleteBuffers(1, &layer.meshIbo);
+        }
         if (vbo) glDeleteBuffers(1, &vbo);
         if (vao) glDeleteVertexArrays(1, &vao);
         if (blitProgram) glDeleteProgram(blitProgram);
@@ -649,6 +688,8 @@ struct SceneRenderer::Impl : ScriptHost {
     // up to its end (destroy() calls).
     std::unique_ptr<ScriptEngine> scripts;
     uint64_t scriptGeneration = ~0ull;  // the generation scripts last ran
+    uint64_t puppetGeneration = ~0ull;  // the generation puppets last moved
+    LightUniforms lights;               // this frame's lights (section 12)
     int outputSize[2] = {1920, 1080};   // the output being rendered, pixels
     bool pointerDown = false;           // the left button (cursor events)
     canvas::AudioSpectrum audio;        // the latest spectrum (setAudio)
@@ -823,6 +864,7 @@ struct SceneRenderer::Impl : ScriptHost {
                     audioPrograms |= e.audio[i] >= 0;
                 }
             }
+            for (size_t i = 0; i < e.lights.size(); i++) e.lights[i] = loc(kLightUniforms[i]);
             for (int i = 0; i < kSlots; i++) {
                 std::string n = "g_Texture" + std::to_string(i);
                 e.resolution[size_t(i)] = loc((n + "Resolution").c_str());
@@ -1346,6 +1388,10 @@ struct SceneRenderer::Impl : ScriptHost {
             buildTextLayer(index);
             return;
         }
+        if (o.kind == ObjectKind::Shape) {
+            buildShapeLayer(index);
+            return;
+        }
         if (!o.image) return;
         const std::string where = "object " + std::to_string(o.id);
         auto model = scene.models.find(o.image->model);
@@ -1400,7 +1446,209 @@ struct SceneRenderer::Impl : ScriptHost {
                 layer.hasBase = true;
             }
         }
+        if (layer.kind == LayerKind::Image && !m.puppet.empty()) buildPuppet(layer, o, m.puppet);
         layers.push_back(std::move(layer));
+    }
+
+    // A shape layer (section 2): a transparent rectangle the size of the
+    // projection through its effects, drawn back translucently like a
+    // solid layer with effects.
+    void buildShapeLayer(size_t index) {
+        const SceneObject& o = scene.scene.objects[index];
+        if (o.shape != "quad") {
+            problem("object " + std::to_string(o.id) + ": shape " + o.shape + " not drawn");
+            return;
+        }
+        Layer layer;
+        layer.object = index;
+        layer.id = o.id;
+        layer.kind = LayerKind::Solid;
+        layer.shape = true;
+        layer.referenced = referencedComposites.count(o.id) != 0;
+        for (size_t e = 0; e < o.effects.size(); e++)
+            layer.effects.push_back(effectRun(o, o.effects[e], e));
+        layers.push_back(std::move(layer));
+    }
+
+    // A puppet's rig and mesh buffers (src/scene/puppet/README.md
+    // sections 3 and 5). A missing MDL leaves the plain image.
+    void buildPuppet(Layer& layer, const SceneObject& o, const std::string& path) {
+        auto it = scene.puppets.find(path);
+        if (it == scene.puppets.end() || !it->second) return;
+        const MdlFile& file = *it->second;
+        if (file.mesh.positions.empty() || file.mesh.indices.empty()) return;
+        layer.rig = std::make_unique<PuppetRig>(it->second);
+        for (const AnimationLayer& a : o.image->animationLayers) {
+            PuppetLayer l;
+            l.animation = int32_t(a.animation);
+            l.name = a.name;
+            l.rate = a.rate.value;
+            l.blend = a.blend.value;
+            l.blendTime = a.blendTime.value;
+            l.visible = a.visible.value;
+            l.additive = a.additive.value;
+            l.blendIn = a.blendIn.value;
+            l.blendOut = a.blendOut.value;
+            const uint64_t uid = layer.rig->addLayer(l);
+            layer.animationSync.push_back({uid, l.visible, l.rate, l.blend});
+        }
+        glGenVertexArrays(1, &layer.meshVao);
+        glBindVertexArray(layer.meshVao);
+        glGenBuffers(1, &layer.meshVbo);
+        glBindBuffer(GL_ARRAY_BUFFER, layer.meshVbo);
+        glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(file.mesh.positions.size() * 5 * sizeof(float)), nullptr,
+                     GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), nullptr);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float),
+                              reinterpret_cast<const void*>(3 * sizeof(float)));
+        std::vector<uint32_t> indices(file.mesh.indices.begin(), file.mesh.indices.end());
+        glGenBuffers(1, &layer.meshIbo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, layer.meshIbo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, GLsizeiptr(indices.size() * sizeof(uint32_t)), indices.data(),
+                     GL_STATIC_DRAW);
+        glBindVertexArray(0);
+        layer.meshIndices = GLsizei(indices.size());
+    }
+
+    // Once per advance, before scripts: changed animation layer fields
+    // (bindings, scripts, timeline animations) reach the rig, then clocks
+    // and fades move (puppet section 3).
+    void advancePuppets() {
+        for (auto& layer : layers) {
+            if (!layer.rig) continue;
+            const auto& source = scene.scene.objects[layer.object].image->animationLayers;
+            for (size_t i = 0; i < layer.animationSync.size() && i < source.size(); i++) {
+                Layer::AnimationSync& sync = layer.animationSync[i];
+                PuppetLayer* l = layer.rig->layerByUid(sync.uid);
+                if (!l) continue;
+                const AnimationLayer& a = source[i];
+                if (a.visible.value != sync.visible) l->visible = sync.visible = a.visible.value;
+                if (a.rate.value != sync.rate) l->rate = sync.rate = a.rate.value;
+                if (a.blend.value != sync.blend) l->blend = sync.blend = a.blend.value;
+            }
+            layer.rig->advance(frameTime);
+        }
+    }
+
+    // After scripts: the pose with this frame's overrides and physics.
+    void evaluatePuppets() {
+        for (auto& layer : layers)
+            if (layer.rig) layer.rig->evaluate(frameTime);
+    }
+
+    // Section 12: every light layer's uniform values for this frame, the
+    // first 4 of each kind in objects order; hidden lights are black.
+    void updateLights() {
+        const General& g = scene.scene.general;
+        lights = LightUniforms{};
+        lights.ambient = g.ambientColor.value;
+        lights.skylight = g.skylightColor.value;
+        enum { ColorRadius, PointColor, PointOrigin, SpotColor, SpotOrigin, SpotDirection, TubeColor, TubeA,
+               TubeB, DirColor, DirDirection };
+        int counts[4] = {0, 0, 0, 0};
+        int legacy = 0;
+        const auto& objects = scene.scene.objects;
+        for (size_t i = 0; i < objects.size(); i++) {
+            if (!objects[i].light) continue;
+            const LightLayer& l = *objects[i].light;
+            const LightKind kind = lightKind(l.light.value);
+            if (kind == LightKind::Unknown) continue;
+            lights.any = true;
+            const bool on = layout->visible(i);
+            const float intensity = on ? l.intensity.value : 0.0f;
+            const Vec3 c{l.color.value[0] * intensity, l.color.value[1] * intensity,
+                         l.color.value[2] * intensity};
+            const float radius = std::max(0.0f, l.radius.value);
+            const WorldTransform& w = layout->world(i);
+            const Mat4 m = w.matrix();
+            // (0, 0, -1), into the scene, turned about X, then Y, then Z
+            // (the world Z angle, parents included).
+            Vec3 forward;
+            {
+                const Vec3& a = objects[i].angles.value;
+                const float cx = std::cos(a[0]), sx = std::sin(a[0]);
+                const float cy = std::cos(a[1]), sy = std::sin(a[1]);
+                const float cz = std::cos(w.angle), sz = std::sin(w.angle);
+                const float y1 = sx, z1 = -cx;              // about X
+                const float x2 = z1 * sy, z2 = z1 * cy;     // about Y
+                forward = {x2 * cz - y1 * sz, x2 * sz + y1 * cz, z2};  // about Z
+            }
+            if (legacy < 4) {
+                lights.position[size_t(legacy)] = w.origin;
+                const float r2 = radius * radius;
+                const Vec3 p{c[0] * r2, c[1] * r2, c[2] * r2};
+                if (legacy < 3) {
+                    lights.premultiplied[size_t(legacy)][0] = p[0];
+                    lights.premultiplied[size_t(legacy)][1] = p[1];
+                    lights.premultiplied[size_t(legacy)][2] = p[2];
+                } else {
+                    for (size_t k = 0; k < 3; k++) lights.premultiplied[k][3] = p[k];
+                }
+                lights.arrays[ColorRadius][size_t(legacy)] = {c[0], c[1], c[2], radius};
+                legacy++;
+            }
+            int& n = counts[int(kind)];
+            if (n >= 4) continue;
+            const size_t k = size_t(n++);
+            const float deg = 3.14159265f / 180.0f;
+            switch (kind) {
+                case LightKind::Point:
+                    lights.arrays[PointColor][k] = {c[0], c[1], c[2], radius};
+                    lights.arrays[PointOrigin][k] = {w.origin[0], w.origin[1], w.origin[2], 0};
+                    break;
+                case LightKind::Spot:
+                    lights.arrays[SpotColor][k] = {c[0], c[1], c[2], radius};
+                    lights.arrays[SpotOrigin][k] = {w.origin[0], w.origin[1], w.origin[2],
+                                                    std::cos(l.innerCone.value * deg)};
+                    lights.arrays[SpotDirection][k] = {forward[0], forward[1], forward[2],
+                                                       std::cos(l.outerCone.value * deg)};
+                    break;
+                case LightKind::Tube: {
+                    const Vec3& cp = l.controlPoint.value;
+                    const Vec4 b = m * Vec4{cp[0], cp[1], cp[2], 1};
+                    lights.arrays[TubeColor][k] = {c[0], c[1], c[2], radius};
+                    lights.arrays[TubeA][k] = {w.origin[0], w.origin[1], w.origin[2], 0};
+                    lights.arrays[TubeB][k] = {b[0], b[1], b[2], 0};
+                    break;
+                }
+                case LightKind::Directional:
+                    lights.arrays[DirColor][k] = {c[0], c[1], c[2], 1};
+                    lights.arrays[DirDirection][k] = {-forward[0], -forward[1], -forward[2], 0};
+                    break;
+                case LightKind::Unknown: break;
+            }
+        }
+    }
+
+    // Puppet space (image centred, Y up) to the layer's own coordinates.
+    Mat4 puppetOffset(const Layer& layer) const {
+        const LayerRect r = layerBounds(layer);
+        return Mat4::translate((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2, 0);
+    }
+
+    // The skinned mesh in layer coordinates; u and v scaled by uMax, vMax.
+    void uploadPuppetMesh(Layer& layer, float uMax, float vMax) {
+        const PuppetMesh& mesh = layer.rig->file().mesh;
+        layer.rig->skin(layer.skinned);
+        const LayerRect r = layerBounds(layer);
+        const float cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+        layer.meshVertices.resize(mesh.positions.size() * 5);
+        float* out = layer.meshVertices.data();
+        for (size_t v = 0; v < mesh.positions.size(); v++) {
+            const Vec3& p = layer.skinned[v];
+            *out++ = p[0] + cx;
+            *out++ = p[1] + cy;
+            *out++ = 0;
+            // Meshes reach a little past the image (UV up to 1.01): those
+            // vertices take the image edge, never the opposite side.
+            *out++ = std::clamp(mesh.uvs[v][0], 0.0f, 1.0f) * uMax;
+            *out++ = std::clamp(mesh.uvs[v][1], 0.0f, 1.0f) * vMax;
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, layer.meshVbo);
+        glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(layer.meshVertices.size() * sizeof(float)), layer.meshVertices.data(),
+                     GL_DYNAMIC_DRAW);
     }
 
     // The bloom chain of section 5, for scenes whose bloom is on or bound.
@@ -1534,6 +1782,14 @@ struct SceneRenderer::Impl : ScriptHost {
         for (const Pass* pass : {&hdr.downsampleBloom, &hdr.downsample, &hdr.upsample, &hdr.combine})
             if (!pass->usable()) hdr.usable = false;
         for (size_t i = 0; i < layers.size(); i++) layerById[layers[i].id] = i;
+        layout->setAttachmentFrames([this](size_t parent, const std::string& name, Mat4& frame) {
+            Layer* layer = layerOf(parent);
+            if (!layer || !layer->rig) return false;
+            const int index = layer->rig->file().attachmentIndex(name);
+            if (index < 0) return false;
+            frame = puppetOffset(*layer) * layer->rig->attachmentFrame(index);
+            return true;
+        });
         for (const auto& t : textures.problems()) problem(t);
         projection[0] = g.projectionWidth.value;
         projection[1] = g.projectionHeight.value;
@@ -1746,6 +2002,17 @@ struct SceneRenderer::Impl : ScriptHost {
             default:
                 break;
         }
+    }
+
+    PuppetRig* puppetRig(size_t object) override {
+        Layer* layer = layerOf(object);
+        return layer ? layer->rig.get() : nullptr;
+    }
+
+    Mat4 puppetToWorld(size_t object) override {
+        Layer* layer = layerOf(object);
+        if (!layer || !layer->rig) return Mat4::identity();
+        return layout->world(layer->object).matrix() * puppetOffset(*layer);
     }
 
     bool particlePlaying(size_t object) override {
@@ -1982,6 +2249,12 @@ struct SceneRenderer::Impl : ScriptHost {
         if (e.pointerLast >= 0) glUniform2f(e.pointerLast, lastPointer[0], lastPointer[1]);
         if (e.parallax >= 0) glUniform2f(e.parallax, in.parallax[0], in.parallax[1]);
         if (e.eye >= 0) glUniform3f(e.eye, projection[0] / 2, projection[1] / 2, 1000.0f);
+        if (e.lights[0] >= 0) glUniform3fv(e.lights[0], 1, lights.ambient.data());
+        if (e.lights[1] >= 0) glUniform3fv(e.lights[1], 1, lights.skylight.data());
+        if (e.lights[2] >= 0) glUniform3fv(e.lights[2], 4, lights.position[0].data());
+        if (e.lights[3] >= 0) glUniform4fv(e.lights[3], 3, lights.premultiplied[0].data());
+        for (size_t i = 4; i < e.lights.size(); i++)
+            if (e.lights[i] >= 0) glUniform4fv(e.lights[i], 4, lights.arrays[i - 4][0].data());
         if (e.renderVar0 >= 0)
             glUniform4f(e.renderVar0, in.renderVar0[0], in.renderVar0[1], in.renderVar0[2],
                         in.renderVar0[3]);
@@ -2040,6 +2313,7 @@ struct SceneRenderer::Impl : ScriptHost {
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, pass.alphaWrite ? GL_TRUE : GL_FALSE);
         if (in.particleVao) {
             glBindVertexArray(in.particleVao);
+            glVertexAttrib4f(4, 1, 1, 1, 1);  // a_Color when the array has none
             glDrawElements(GL_TRIANGLES, in.particleIndices, GL_UNSIGNED_INT,
                            reinterpret_cast<const void*>(size_t(in.particleFirstIndex) * sizeof(uint32_t)));
         } else {
@@ -2067,6 +2341,7 @@ struct SceneRenderer::Impl : ScriptHost {
 
     Vec2 layerSize(const Layer& layer) const {
         if (layer.text) return layer.text->layout.box;
+        if (layer.shape) return {projection[0], projection[1]};
         const ImageLayer& image = *scene.scene.objects[layer.object].image;
         Vec2 s = image.size.value;
         if (s[0] > 0 && s[1] > 0) return s;
@@ -2143,6 +2418,7 @@ struct SceneRenderer::Impl : ScriptHost {
                 (o.text->horizontalAlign.value == "center" ? std::string() : o.text->horizontalAlign.value);
             return layerRect(layerSize(layer), alignment);
         }
+        if (layer.shape) return layerRect(layerSize(layer), "center");
         return layerRect(layerSize(layer), o.image->alignment.value);
     }
 
@@ -2418,6 +2694,14 @@ struct SceneRenderer::Impl : ScriptHost {
     }
 
     // Draws a layer when shown; computes its composite when referenced.
+    // The final pass of a puppet draws its skinned mesh (puppet section 5).
+    void usePuppetMesh(Layer& layer, DrawInputs& in, float uMax, float vMax) {
+        uploadPuppetMesh(layer, uMax, vMax);
+        in.particleVao = layer.meshVao;
+        in.particleIndices = layer.meshIndices;
+        in.particleFirstIndex = 0;
+    }
+
     void drawLayer(Layer& layer, bool shown) {
         if (layer.kind == LayerKind::Particles) {
             drawParticles(layer, shown);
@@ -2467,6 +2751,7 @@ struct SceneRenderer::Impl : ScriptHost {
             if (!shown || layer.kind == LayerKind::Compose || fullscreen) return;  // nothing would change
             in.mvp = screenMvp;
             in.quad = layerQuad(rect, uMax, vMax);
+            if (layer.rig) usePuppetMesh(layer, in, uMax, vMax);
             for (const Pass& pass : layer.passes) drawPass(pass, in);
             return;
         }
@@ -2540,6 +2825,7 @@ struct SceneRenderer::Impl : ScriptHost {
                 in.mvp = screenMvp;
                 in.quad = layerQuad(rect, 1, 1);
                 in.overrides[0] = input;
+                if (layer.rig) usePuppetMesh(layer, in, 1, 1);
                 for (const Pass& pass : layer.passes) drawPass(pass, in);
             } else {
                 blit(*input, nullptr, screenMvp, onScreen, Blend::Translucent);
@@ -2621,12 +2907,18 @@ struct SceneRenderer::Impl : ScriptHost {
             daytime = float(local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec) / 86400.0f;
         }
         if (animator) animator->update(time);  // fields first: layout reads them
-        if (scripts && scriptGeneration != generation) {
-            scriptGeneration = generation;
-            runScripts(w, h);
+        if (puppetGeneration != generation) {
+            puppetGeneration = generation;
+            advancePuppets();
+            if (scripts && scriptGeneration != generation) {
+                scriptGeneration = generation;
+                runScripts(w, h);
+            }
+            evaluatePuppets();
         }
         textures.updateVideos();
         layout->update();
+        updateLights();
         const General& g = scene.scene.general;
         // Text rasterizes for the largest frame drawn (text section 6).
         framePixelsPerUnit = std::max({framePixelsPerUnit, float(w) / std::max(1.0f, projection[0]),

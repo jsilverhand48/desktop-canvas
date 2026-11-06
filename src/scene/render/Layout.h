@@ -1,7 +1,8 @@
 // The GPU free part of rendering, per src/scene/render/README.md sections 1
 // and 2: matrices, world transforms through parent chains [req A3],
-// hierarchical visibility evaluated each frame [req A4], layer rectangles
-// with alignment, and the view projection with its output mapping.
+// hierarchical visibility evaluated each frame [req A4], puppet attachment
+// frames [req A6], layer rectangles with alignment, and the view
+// projection with its output mapping.
 //
 // SceneLayout indexes a SceneFile's objects once and recomputes every
 // object's world transform and visibility from the fields' current values
@@ -12,6 +13,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -52,6 +54,14 @@ public:
     // Recomputes transforms and visibility from the current field values.
     void update();
 
+    // Attachment frames (src/scene/puppet/README.md section 4): for an
+    // object whose `attachment` names a frame of its parent, the frame in
+    // the parent's own coordinates; false for no such frame (plain
+    // parenting).
+    using AttachmentFrames =
+        std::function<bool(size_t parent, const std::string& attachment, Mat4& frame)>;
+    void setAttachmentFrames(AttachmentFrames frames) { attachments_ = std::move(frames); }
+
     const WorldTransform& world(size_t object) const { return world_[object]; }
     bool visible(size_t object) const { return visible_[object] != 0; }
     // Index of the object's parent, or -1.
@@ -60,6 +70,7 @@ public:
 
 private:
     const SceneFile& scene_;
+    AttachmentFrames attachments_;
     std::vector<int> parent_;
     std::vector<WorldTransform> world_;
     std::vector<uint8_t> visible_;

@@ -47,7 +47,36 @@ public:
         if (auto j = json(path)) m = std::make_shared<ModelFile>(parseModelFile(*j, out_.report, path));
         out_.models[path] = m;
         if (m) material(m->material);
+        if (m && !m->puppet.empty()) puppet(m->puppet);
         return m;
+    }
+
+    void puppet(const std::string& path) {
+        if (out_.puppets.count(path)) return;
+        std::shared_ptr<const MdlFile> f;
+        if (auto asset = assets_.find(path)) {
+            std::string error;
+            auto parsed = std::make_shared<MdlFile>(MdlFile::parse(asset->bytes, error));
+            if (error.empty()) f = parsed;
+            else {
+                out_.report.error(path + ": " + error);
+                out_.unreadablePuppets.insert(path);
+            }
+        } else {
+            out_.report.error(path + ": not found");
+        }
+        out_.puppets[path] = f;
+    }
+
+    void cameraPath(const std::string& path) {
+        if (path.empty() || out_.cameraPaths.count(path)) return;
+        int count = -1;
+        if (auto j = json(path); j && j->is_object()) {
+            auto it = j->find("paths");
+            if (it == j->end()) count = 0;
+            else if (it->is_array()) count = int(it->size());
+        }
+        out_.cameraPaths[path] = count;
     }
 
     std::shared_ptr<EffectFile> effect(const std::string& path) {
@@ -144,6 +173,7 @@ bool loadScene(const AssetLocator& assets, const PropertyValues& overrides, Load
                     if (t) load.texture(*t);
         }
         if (object.particle) load.particle(object.particle->particle);
+        if (object.camera) load.cameraPath(object.camera->path);
         if (object.sound)
             for (const auto& s : object.sound->sounds) load.exists(s);
     }

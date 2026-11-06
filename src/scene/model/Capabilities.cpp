@@ -15,7 +15,14 @@ std::set<std::string> sceneFeatures(LoadedScene& scene) {
             case ObjectKind::Text: f.insert("text"); break;
             case ObjectKind::Sound: f.insert("sound"); break;
             case ObjectKind::Light: f.insert("light"); break;
-            case ObjectKind::Camera: f.insert("camera-path"); break;
+            case ObjectKind::Camera: {
+                // A camera with no paths never moves anything
+                // (src/scene/render/README.md section 11).
+                auto it = object.camera ? scene.cameraPaths.find(object.camera->path)
+                                        : scene.cameraPaths.end();
+                if (it == scene.cameraPaths.end() || it->second != 0) f.insert("camera-path");
+                break;
+            }
             case ObjectKind::Shape: f.insert("shape-layer"); break;
             case ObjectKind::Model: f.insert("3d-model"); break;
             case ObjectKind::Group: f.insert("group"); break;
@@ -27,7 +34,20 @@ std::set<std::string> sceneFeatures(LoadedScene& scene) {
         const ModelFile& m = *model->second;
         if (m.solidLayer) f.insert("solid-layer");
         if (m.fullscreen) f.insert("fullscreen-layer");
-        if (!m.puppet.empty()) f.insert("puppet");
+        if (!m.puppet.empty()) {
+            // src/scene/puppet/README.md section 8.
+            f.insert("puppet");
+            // A missing file draws the plain image (its rest pose); one
+            // that cannot be read is unsupported.
+            auto mdl = scene.puppets.find(m.puppet);
+            if (mdl == scene.puppets.end()) {
+            } else if (!mdl->second) {
+                if (scene.unreadablePuppets.count(m.puppet)) f.insert("puppet-unreadable");
+            } else {
+                if (mdl->second->blendShapes) f.insert("puppet-blendshapes");
+                if (mdl->second->ik) f.insert("puppet-ik");
+            }
+        }
         bool compose = m.passthrough;
         if (auto mat = scene.materials.find(m.material);
             mat != scene.materials.end() && mat->second && !mat->second->passes.empty())
@@ -63,7 +83,7 @@ std::set<std::string> sceneFeatures(LoadedScene& scene) {
 }
 
 const std::set<std::string>& supportedFeatures() {
-    // What phases P4, P5 and P6 draw (src/scene/render/README.md,
+    // What phases P4 to P8 draw (src/scene/render/README.md,
     // src/scene/particles/README.md, src/scene/text/README.md,
     // src/scene/script/README.md). hdr as users without Ultra
     // post-processing see it; video-texture needs libmpv, which the helper
@@ -75,7 +95,8 @@ const std::set<std::string>& supportedFeatures() {
             "fullscreen-layer", "composition-layer", "group",     "user-properties",
             "bloom",       "hdr",             "timeline",         "parallax",
             "camera-shake", "sprite-animation", "video-texture", "particles",
-            "particle-controlpoints", "particle-children", "particle-trails", "text", "sound"};
+            "particle-controlpoints", "particle-children", "particle-trails", "text", "sound",
+            "puppet", "light", "shape-layer"};
         if (ScriptEngine::available()) s.insert("script");
         return s;
     }();

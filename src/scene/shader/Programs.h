@@ -6,7 +6,9 @@
 // settings match the effect file's passes by position; passes without a
 // material (commands such as copy) have no program. An image layer's
 // colorBlendMode becomes the BLENDMODE combo of its own passes
-// (src/scene/render/README.md section 2). A particle layer adds one
+// (src/scene/render/README.md section 2). Materials with LIGHTING on get
+// the LIGHTS_* counts of the scene's lights (section 12 there, at most 4
+// per kind) and LIGHTS_SHADOW_MAPPING and LIGHTS_COOKIE 0. A particle layer adds one
 // request per particle file it draws, its own and its children's
 // (particleRequest; pass numbers count the files); text layer materials
 // join in phase P6b.

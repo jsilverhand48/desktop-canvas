@@ -80,12 +80,49 @@ class Layer {
   getEffectCount() { return n.effectCount(this.__i); }
   getAnimation(name) {
     const a = n.animation(this.__i, name === undefined ? '' : String(name));
-    return a < 0 ? undefined : new Animation(a);
+    if (a >= 0) return new Animation(a);
+    // Puppets: an animation layer by name, else the first (puppet section 7).
+    const u = n.puppet(this.__i, 'layerFind', name === undefined || name === '' ? 0 : String(name));
+    return animLayer(this.__i, u > 0 ? u : (name === undefined || name === '' ? 0 : n.puppet(this.__i, 'layerFind', 0)));
   }
   getTextureAnimation() { return still; }
   getVideoTexture() { return undefined; }
-  getAnimationLayerCount() { return 0; }
-  getAnimationLayer() { return undefined; }
+  getAnimationLayerCount() { return n.puppet(this.__i, 'layerCount') || 0; }
+  getAnimationLayer(x) { return animLayer(this.__i, n.puppet(this.__i, 'layerFind', x)); }
+  createAnimationLayer(a) { return animLayer(this.__i, n.puppet(this.__i, 'layerCreate', config(a), false)); }
+  playSingleAnimation(a, c) {
+    const o = Object.assign({}, typeof a === 'object' && a !== null ? a : { animation: a }, c || {});
+    if (o.visible === undefined) o.visible = true;
+    return animLayer(this.__i, n.puppet(this.__i, 'layerCreate', JSON.stringify(o), true));
+  }
+  destroyAnimationLayer(x) {
+    const u = x instanceof AnimationLayer ? x.__u : n.puppet(this.__i, 'layerFind', x);
+    return !!n.puppet(this.__i, 'layerDestroy', u);
+  }
+  getBoneCount() { return n.puppet(this.__i, 'boneCount') || 0; }
+  getBoneIndex(name) { const b = n.puppet(this.__i, 'boneIndex', String(name)); return b === undefined ? -1 : b; }
+  getBoneParentIndex(b) { const p = n.puppet(this.__i, 'boneParent', b); return p === undefined ? -1 : p; }
+  getBoneTransform(b) { return mat(n.puppet(this.__i, 'boneGet', b, 'world')); }
+  setBoneTransform(b, t) { if (t && t.m) n.puppet(this.__i, 'boneSet', b, 'world', t.m); }
+  getLocalBoneTransform(b) { return mat(n.puppet(this.__i, 'boneGet', b, 'local')); }
+  setLocalBoneTransform(b, t) { if (t && t.m) n.puppet(this.__i, 'boneSet', b, 'local', t.m); }
+  getLocalBoneAngles(b) { return v3(n.puppet(this.__i, 'boneGet', b, 'angles')); }
+  setLocalBoneAngles(b, v) { if (v) n.puppet(this.__i, 'boneSet', b, 'angles', [v.x || 0, v.y || 0, v.z || 0]); }
+  getLocalBoneOrigin(b) { return v3(n.puppet(this.__i, 'boneGet', b, 'origin')); }
+  setLocalBoneOrigin(b, v) { if (v) n.puppet(this.__i, 'boneSet', b, 'origin', [v.x || 0, v.y || 0, v.z || 0]); }
+  applyBonePhysicsImpulse(b, d, a) {
+    if (typeof b === 'object' && b !== null) { a = d; d = b; b = -1; }
+    const arr = (v) => v ? [v.x || 0, v.y || 0, v.z || 0] : [0, 0, 0];
+    n.puppet(this.__i, 'impulse', b === undefined ? -1 : b, arr(d), arr(a));
+  }
+  resetBonePhysicsSimulation(b) { n.puppet(this.__i, 'reset', b === undefined ? -1 : b); }
+  getBlendShapeIndex() { return -1; }
+  getBlendShapeWeight() { return 0; }
+  setBlendShapeWeight() {}
+  getAttachmentIndex(name) { const a = n.puppet(this.__i, 'attachIndex', String(name)); return a === undefined ? -1 : a; }
+  getAttachmentMatrix(a) { return mat(n.puppet(this.__i, 'attachGet', a, 'matrix')); }
+  getAttachmentOrigin(a) { return v3(n.puppet(this.__i, 'attachGet', a, 'origin')); }
+  getAttachmentAngles(a) { return v3(n.puppet(this.__i, 'attachGet', a, 'angles')); }
   play() { n.particle(this.__i, 0); }
   pause() { n.particle(this.__i, 1); }
   stop() { n.particle(this.__i, 2); }
@@ -130,6 +167,27 @@ class Animation {
 }
 for (const p of ['fps', 'frameCount', 'duration', 'name'])
   ro(Animation.prototype, p, function () { return n.animationGet(this.__a, p); });
+// Puppet animation layers (src/scene/puppet/README.md section 7).
+class AnimationLayer {
+  constructor(i, u) { hidden(this, '__i', i); hidden(this, '__u', u); }
+  play() { n.puppet(this.__i, 'layerCall', this.__u, 0); }
+  pause() { n.puppet(this.__i, 'layerCall', this.__u, 1); }
+  stop() { n.puppet(this.__i, 'layerCall', this.__u, 2); }
+  isPlaying() { return !!n.puppet(this.__i, 'layerGet', this.__u, 'playing'); }
+  getFrame() { return n.puppet(this.__i, 'layerGet', this.__u, 'frame') || 0; }
+  setFrame(f) { n.puppet(this.__i, 'layerSet', this.__u, 'frame', f); }
+  addEndedCallback(fn) { if (typeof fn === 'function') n.puppet(this.__i, 'onEnded', this.__u, fn); }
+}
+for (const p of ['rate', 'blend', 'visible'])
+  Object.defineProperty(AnimationLayer.prototype, p, {
+    get() { return n.puppet(this.__i, 'layerGet', this.__u, p); },
+    set(v) { n.puppet(this.__i, 'layerSet', this.__u, p, v); }, configurable: true });
+for (const p of ['fps', 'frameCount', 'duration', 'name'])
+  ro(AnimationLayer.prototype, p, function () { return n.puppet(this.__i, 'layerGet', this.__u, p); });
+const animLayer = (i, u) => (typeof u === 'number' && u > 0) ? new AnimationLayer(i, u) : undefined;
+const config = (a) => JSON.stringify(typeof a === 'object' && a !== null ? a : { animation: a });
+const mat = (m) => Array.isArray(m) ? new Mat4(m) : undefined;
+const v3 = (v) => Array.isArray(v) ? new Vec3(v[0], v[1], v[2]) : undefined;
 const still = { frameCount: 1, duration: 0, rate: 1, play() {}, pause() {}, stop() {},
                 isPlaying() { return false; }, getFrame() { return 0; }, setFrame() {}, join() {} };
 const audio = [];
@@ -231,7 +289,7 @@ enum Op {
     kInstanceSet, kEffectIndex, kEffectCount, kEffectGet, kEffectSet, kEffectConstant, kAnimation,
     kAnimationCall, kAnimationGet, kAnimationSet, kParticle, kParticlePlaying, kSceneGet, kSceneSet,
     kInitialConfig, kUserProperties, kTimer, kCancel, kLog, kStorageGet, kStorageSet, kStorageDelete,
-    kStorageClear,
+    kStorageClear, kPuppet,
 };
 
 struct OpName {
@@ -257,6 +315,7 @@ const OpName kOps[] = {
     {"cancel", kCancel, 1},             {"log", kLog, 2},
     {"storageGet", kStorageGet, 2},     {"storageSet", kStorageSet, 3},
     {"storageDelete", kStorageDelete, 2}, {"storageClear", kStorageClear, 1},
+    {"puppet", kPuppet, 5},
 };
 
 int interruptHandler(JSRuntime* rt, void*);
@@ -292,6 +351,13 @@ struct ScriptEngine::Impl {
         int64_t object = -1;
         JSValue fn = JS_UNDEFINED;
     };
+    struct EndedWatch {
+        int64_t object = -1;      // the script's object
+        size_t layerObject = 0;   // the puppet layer
+        uint64_t uid = 0, seen = 0;
+        JSValue fn = JS_UNDEFINED;
+    };
+    std::vector<EndedWatch> endedWatches;
 
     LoadedScene& scene;
     const AssetLocator& assets;
@@ -340,6 +406,7 @@ struct ScriptEngine::Impl {
         }
         for (auto& s : scripts) releaseScript(s);
         for (auto& t : timers) JS_FreeValue(ctx, t.fn);
+        for (auto& w : endedWatches) JS_FreeValue(ctx, w.fn);
         for (JSValue& v : vecCtor) JS_FreeValue(ctx, v);
         for (JSValue v : {internal, frameObject, native, global}) JS_FreeValue(ctx, v);
         saveStorage();
@@ -933,6 +1000,7 @@ struct ScriptEngine::Impl {
             if (!s.failed && JS_IsFunction(ctx, s.update)) callWithValue(s, s.update, true);
         }
         mediaEvents();
+        endedEvents();
         runTimers();
         runJobs();
         if (storageDirty) saveStorage();
@@ -1517,8 +1585,232 @@ struct ScriptEngine::Impl {
                 }
                 return JS_UNDEFINED;
             }
+            case kPuppet: return puppet(arg(0), arg(1), arg(2), arg(3), arg(4));
         }
         return JS_UNDEFINED;
+    }
+
+    // ----------------------------------------------------------- puppets
+
+    JSValue numbers(const float* v, size_t n) {
+        JSValue a = JS_NewArray(ctx);
+        for (size_t i = 0; i < n; i++) JS_SetPropertyUint32(ctx, a, uint32_t(i), JS_NewFloat64(ctx, double(v[i])));
+        return a;
+    }
+    // Up to n finite numbers of an array; the count read.
+    size_t readNumbers(JSValueConst v, float* out, size_t n) {
+        if (!JS_IsArray(v)) return 0;
+        size_t k = 0;
+        for (; k < n; k++) {
+            JSValue e = JS_GetPropertyUint32(ctx, v, uint32_t(k));
+            auto d = number(e);
+            JS_FreeValue(ctx, e);
+            if (!d) break;
+            out[k] = float(*d);
+        }
+        return k;
+    }
+    int boneOf(const PuppetRig& rig, JSValueConst v) {
+        if (JS_IsString(v)) return rig.file().boneIndex(string(v).value_or(""));
+        auto d = number(v);
+        if (!d || *d < 0 || *d >= double(rig.boneCount())) return -1;
+        return int(*d);
+    }
+    int attachmentOf(const PuppetRig& rig, JSValueConst v) {
+        if (JS_IsString(v)) return rig.file().attachmentIndex(string(v).value_or(""));
+        auto d = number(v);
+        if (!d || *d < 0 || *d >= double(rig.file().attachments.size())) return -1;
+        return int(*d);
+    }
+
+    // The `puppet` bridge (src/scene/puppet/README.md section 7): one
+    // command per IImageLayer, IAnimationLayer and attachment call.
+    JSValue puppet(JSValueConst who, JSValueConst what, JSValueConst a, JSValueConst b, JSValueConst c) {
+        SceneObject* o = object(who);
+        auto cmd = string(what);
+        if (!o || !cmd) return JS_UNDEFINED;
+        const size_t index = size_t(o - scene.scene.objects.data());
+        PuppetRig* rig = host.puppetRig(index);
+        if (!rig) return JS_UNDEFINED;
+        const std::string& k = *cmd;
+        if (k == "layerCount") return JS_NewInt64(ctx, int64_t(rig->layers().size()));
+        if (k == "layerFind") {
+            if (JS_IsString(a)) {
+                const std::string name = string(a).value_or("");
+                for (const auto& l : rig->layers())
+                    if (l.name == name) return JS_NewInt64(ctx, int64_t(l.uid));
+                return JS_NewInt64(ctx, 0);
+            }
+            auto d = number(a);
+            if (!d || *d < 0 || *d >= double(rig->layers().size())) return JS_NewInt64(ctx, 0);
+            return JS_NewInt64(ctx, int64_t(rig->layers()[size_t(*d)].uid));
+        }
+        if (k == "layerCreate") {
+            json conf = json::parse(string(a).value_or("{}"), nullptr, false);
+            if (!conf.is_object()) return JS_NewInt64(ctx, 0);
+            std::string key;
+            if (auto it = conf.find("animation"); it != conf.end()) {
+                if (it->is_string()) key = it->get<std::string>();
+                else if (it->is_number_integer()) key = std::to_string(it->get<int64_t>());
+            }
+            const PuppetAnimation* anim = rig->findAnimation(key);
+            if (!anim) return JS_NewInt64(ctx, 0);
+            PuppetLayer l;
+            l.animation = anim->id;
+            l.name = conf.value("name", anim->name);
+            auto num = [&](const char* name, float fallback) {
+                auto it = conf.find(name);
+                return it != conf.end() && it->is_number() ? it->get<float>() : fallback;
+            };
+            auto flag = [&](const char* name, bool fallback) {
+                auto it = conf.find(name);
+                return it != conf.end() && it->is_boolean() ? it->get<bool>() : fallback;
+            };
+            l.rate = num("rate", 1);
+            l.blend = num("blend", 1);
+            l.visible = flag("visible", true);
+            l.additive = flag("additive", false);
+            l.oneShot = JS_ToBool(ctx, b) > 0;
+            return JS_NewInt64(ctx, int64_t(rig->addLayer(std::move(l))));
+        }
+        if (k == "layerDestroy") {
+            auto u = number(a);
+            return JS_NewBool(ctx, u && rig->removeLayer(uint64_t(*u)));
+        }
+        if (k == "layerGet" || k == "layerSet" || k == "layerCall" || k == "onEnded") {
+            auto u = number(a);
+            PuppetLayer* l = u ? rig->layerByUid(uint64_t(*u)) : nullptr;
+            if (!l) return JS_UNDEFINED;
+            const PuppetAnimation* anim = rig->file().animation(l->animation);
+            if (k == "layerCall") {
+                const int command = int(number(b).value_or(-1));
+                if (command == 0) {
+                    l->playing = true;
+                    l->finished = false;
+                } else if (command == 1) {
+                    l->playing = false;
+                } else if (command == 2) {
+                    l->playing = false;
+                    l->time = 0;
+                }
+                return JS_UNDEFINED;
+            }
+            if (k == "onEnded") {
+                if (JS_IsFunction(ctx, b))
+                    endedWatches.push_back({current, index, l->uid, l->ended, JS_DupValue(ctx, b)});
+                return JS_UNDEFINED;
+            }
+            const std::string prop = string(b).value_or("");
+            if (k == "layerSet") {
+                if (prop == "visible") l->visible = JS_ToBool(ctx, c) > 0;
+                else if (auto v = number(c)) {
+                    if (prop == "rate") l->rate = float(*v);
+                    if (prop == "blend") l->blend = float(std::clamp(*v, 0.0, 1.0));
+                    if (prop == "frame") rig->setFrame(*l, *v);
+                }
+                return JS_UNDEFINED;
+            }
+            if (prop == "rate") return JS_NewFloat64(ctx, l->rate);
+            if (prop == "blend") return JS_NewFloat64(ctx, l->blend);
+            if (prop == "visible") return JS_NewBool(ctx, l->visible);
+            if (prop == "playing") return JS_NewBool(ctx, l->playing && !l->finished);
+            if (prop == "frame") return JS_NewFloat64(ctx, rig->frameOf(*l));
+            if (prop == "name") return toJs(l->name);
+            if (!anim) return JS_UNDEFINED;
+            if (prop == "fps") return JS_NewFloat64(ctx, anim->fps);
+            if (prop == "frameCount") return JS_NewFloat64(ctx, anim->length);
+            if (prop == "duration") return JS_NewFloat64(ctx, anim->length / std::max(1e-6f, anim->fps));
+            return JS_UNDEFINED;
+        }
+        if (k == "boneCount") return JS_NewInt64(ctx, int64_t(rig->boneCount()));
+        if (k == "boneIndex") return JS_NewInt64(ctx, rig->file().boneIndex(string(a).value_or("")));
+        if (k == "attachIndex") return JS_NewInt64(ctx, rig->file().attachmentIndex(string(a).value_or("")));
+        if (k == "boneParent") {
+            const int bone = boneOf(*rig, a);
+            return JS_NewInt64(ctx, bone < 0 ? -1 : rig->file().bones[size_t(bone)].parent);
+        }
+        if (k == "reset") {
+            auto d = number(a);
+            rig->resetPhysics(d && *d < 0 ? -1 : boneOf(*rig, a));
+            return JS_UNDEFINED;
+        }
+        if (k == "impulse") {
+            float d[3] = {0, 0, 0}, w[3] = {0, 0, 0};
+            readNumbers(b, d, 3);
+            readNumbers(c, w, 3);
+            auto all = number(a);
+            for (int bone = 0; bone < int(rig->boneCount()); bone++)
+                if ((all && *all < 0) || bone == boneOf(*rig, a)) rig->addImpulse(bone, {d[0], d[1]}, w[2]);
+            return JS_UNDEFINED;
+        }
+        if (k == "boneGet" || k == "boneSet") {
+            const int bone = boneOf(*rig, a);
+            if (bone < 0) return JS_UNDEFINED;
+            const std::string kind = string(b).value_or("");
+            if (k == "boneGet") {
+                if (kind == "world") return numbers(rig->world(bone).m.data(), 16);
+                if (kind == "local") return numbers(rig->localMatrix(bone).m.data(), 16);
+                if (kind == "angles") {
+                    const float v[3] = {0, 0, rig->localAngle(bone)};
+                    return numbers(v, 3);
+                }
+                if (kind == "origin") {
+                    const Vec2 p = rig->localPosition(bone);
+                    const float v[3] = {p[0], p[1], rig->localMatrix(bone).m[14]};
+                    return numbers(v, 3);
+                }
+                return JS_UNDEFINED;
+            }
+            float v[16];
+            if (kind == "world" || kind == "local") {
+                if (readNumbers(c, v, 16) != 16) return JS_UNDEFINED;
+                Mat4 m;
+                std::copy_n(v, 16, m.m.begin());
+                if (kind == "world") {
+                    rig->setWorldOverride(bone, m);
+                } else {
+                    rig->setLocalOverride(bone, {m.m[12], m.m[13]}, std::atan2(m.m[1], m.m[0]),
+                                          {std::hypot(m.m[0], m.m[1]), std::hypot(m.m[4], m.m[5])});
+                }
+            } else if (kind == "angles" && readNumbers(c, v, 3) == 3) {
+                rig->setLocalOverride(bone, rig->localPosition(bone), v[2], rig->localScale(bone));
+            } else if (kind == "origin" && readNumbers(c, v, 3) >= 2) {
+                rig->setLocalOverride(bone, {v[0], v[1]}, rig->localAngle(bone), rig->localScale(bone));
+            }
+            return JS_UNDEFINED;
+        }
+        if (k == "attachGet") {
+            const int at = attachmentOf(*rig, a);
+            if (at < 0) return JS_UNDEFINED;
+            const Mat4 m = host.puppetToWorld(index) * rig->attachmentFrame(at);
+            const std::string kind = string(b).value_or("");
+            if (kind == "matrix") return numbers(m.m.data(), 16);
+            if (kind == "origin") return numbers(&m.m[12], 3);
+            if (kind == "angles") {
+                const float v[3] = {0, 0, std::atan2(m.m[1], m.m[0])};
+                return numbers(v, 3);
+            }
+        }
+        return JS_UNDEFINED;
+    }
+
+    // Animation layers that reached their end since the last frame queue
+    // their callbacks as immediate timers (section 7 of the puppet spec).
+    void endedEvents() {
+        for (auto& w : endedWatches) {
+            PuppetRig* rig = host.puppetRig(w.layerObject);
+            PuppetLayer* l = rig ? rig->layerByUid(w.uid) : nullptr;
+            if (!l) continue;
+            for (int n = 0; w.seen < l->ended && n < 4; n++, w.seen++) {
+                Timer t;
+                t.id = nextTimer++;
+                t.due = frame.runtime;
+                t.object = w.object;
+                t.fn = JS_DupValue(ctx, w.fn);
+                timers.push_back(t);
+            }
+            w.seen = l->ended;
+        }
     }
 };
 

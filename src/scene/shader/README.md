@@ -31,6 +31,7 @@ platform names [doc: Mobile]:
 | `ddx` | `dFdx` | 3 / 2 |
 | `ddy(x)` | `dFdy(-(x))`; desktop-canvas uses `dFdy(x)` (below) | 3 / 2 |
 | `CAST2(x)`, `CAST3(x)`, `CAST4(x)`, `CAST3X3(x)` | `vec2(x)`, `vec3(x)`, `vec4(x)`, `mat3(x)` [doc: Syntax] | 108, 111, 219, 4 / 13, 30, 2, 17 |
+| `CASTU(x)`, `CASTF(x)` | `uint(x)`, `float(x)` [inference: the names; used by the assets lit and model shaders] | 0, 0 / 11, 5 |
 | `log10(x)` | `(log2(x) * 0.30102999566398120)`: an HLSL intrinsic GLSL lacks, not documented [HLSL spec] | 1 / 0 |
 
 `mul` argument order [corpus]: 820 calls pass a vector then a matrix

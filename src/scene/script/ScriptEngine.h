@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "core/AudioSpectrum.h"
+#include "scene/puppet/Skeleton.h"
 #include "scene/assets/AssetLocator.h"
 #include "scene/audio/MediaInfo.h"
 #include "scene/model/SceneLoader.h"
@@ -59,6 +60,11 @@ public:
     // Sound playback (ISoundLayer): 0 play, 1 pause, 2 stop.
     virtual void soundCommand(size_t /*object*/, int /*command*/) {}
     virtual bool soundPlaying(size_t /*object*/) { return false; }
+    // Puppet image layers (src/scene/puppet/README.md section 7): the
+    // layer's rig (null for other layers) and the matrix from its puppet
+    // space to the scene.
+    virtual PuppetRig* puppetRig(size_t /*object*/) { return nullptr; }
+    virtual Mat4 puppetToWorld(size_t /*object*/) { return Mat4::identity(); }
 };
 
 class ScriptEngine {

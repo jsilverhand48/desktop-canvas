@@ -428,8 +428,8 @@ nothing to draw in a 2D scene.
 Camera path layers (`camera` objects with a `path` file, 1 object
 [corpus]) move a perspective camera along recorded paths. The one in the
 library names a file whose `paths` list is empty [corpus], so it never
-moves anything: `camera-path` is supported when every path file has an
-empty `paths` list and the layer is ignored; otherwise it stays
+moves anything: a camera path layer whose file lists no paths is ignored
+and not reported; any other reports `camera-path`, which stays
 unsupported [this project].
 
 Camera shake (`camerashake`, 7 scenes; editor defaults amplitude 0.5,
@@ -484,8 +484,9 @@ light volumes, which are not drawn [this project].
 
 Positions are world positions (section 2, parents included, z as given:
 lights sit 35 to 519 units in front of the layers [corpus]). A spot or
-directional light points along its object's rotation applied to
-(0, 0, -1), into the scene [inference]. A tube runs from its origin to
+directional light points along (0, 0, -1), into the scene, turned by
+its object's angles about X, then Y, then Z (the world Z angle, parents
+included) [inference]. A tube runs from its origin to
 its object matrix applied to `controlpoint` [inference: the library's
 tubes are then centred on their parents]. `point` is the older name of
 `lpoint` [inference].

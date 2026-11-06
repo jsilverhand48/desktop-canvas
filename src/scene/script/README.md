@@ -213,7 +213,9 @@ unsupported (auto mode falls back) and a scene's scripts do not run.
   cursor events, init, applyUserProperties, update, timers, pending
   jobs, localStorage). Layer objects read and write the model's fields;
   the renderer answers the rest through `ScriptHost` (layer sizes,
-  particle playback), the `Animator` the animations. Console lines come
+  particle and sound playback, puppet rigs and their place in the scene),
+  the `Animator` the animations; layer-ended callbacks of puppet
+  animation layers run as immediate timers. Console lines come
   out of `takeLog()`, failures out of `takeProblems()`. Without QuickJS
   the same API compiles to a stub whose `create()` fails.
 

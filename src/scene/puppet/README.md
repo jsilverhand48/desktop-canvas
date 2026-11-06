@@ -48,8 +48,8 @@ three per triangle; every index is below the vertex count [corpus
 | 0x180000F | 80 | position at 0, normal at 12, tangent 4 x f32 at 24, bone indices at 40, weights at 56, UV at 72 [req A5] | 17 |
 | 0x181000E | 84 | as 0x180000F with one extra f32 after the position (every offset after it + 4) | 2 (with blend shapes) |
 
-An unknown format makes the puppet unusable (feature `puppet`
-unsupported for that scene). Version 23 files carry more data between
+An unknown format makes the file unreadable (feature
+`puppet-unreadable`, unsupported). Version 23 files carry more data between
 the indices and the next tag (26 bytes and up) [corpus]; it is skipped.
 
 Positions are in pixels with the image centre at 0 and Y up; the UV of
@@ -187,7 +187,10 @@ coordinate is the vertex UV, times the texture's usable fraction (u and
 v max of section 2 of `../render/README.md`) when the final pass samples
 the layer texture directly, and as is when it samples an effect result
 (which fills its whole buffer) [req A5; corpus: mesh UVs are image
-relative, section 2.1]. Blending is the material's, not forced [req A5];
+relative, section 2.1]. UVs are clamped to 0..1 first: meshes reach a
+little past the image [corpus: UVs from -0.009 to 1.01], and those
+vertices take the image edge instead of wrapping to the other side
+[this project]. Blending is the material's, not forced [req A5];
 face culling is off for every draw (already true for all layers), so
 `cullmode` never hides a mirrored puppet [req A5]. Animated textures
 apply the same fraction to their frame rectangle [req A5 gap].
@@ -219,7 +222,8 @@ fixed 1/60 s (at most 8 steps per frame, dt clamped like every clock).
 Per step, with k = stiffness / mass, c = friction / mass:
 acceleration = -k * offset (spring only) - c * velocity + drive, where
 drive comes from the animated motion of the bone's tip (the point at
-tip size along the tip direction): its acceleration, expressed in the
+tip size along the tip direction; without a tip size, the distance to
+the only child, else 32 pixels): its acceleration, expressed in the
 bone's frame and scaled by 1 / (1 + inertia / 10), pushes the offset the
 other way (inertia). Rigid bones have no spring term and keep their
 offset. Gravity, when enabled, adds a constant acceleration of
@@ -254,6 +258,11 @@ feature `puppet-ik` (unsupported) [this project].
   Puppet Warps]); `applyBonePhysicsImpulse(bone, directional, angular)`
   adds to the bone's physics velocity, `resetBonePhysicsSimulation(bone)`
   zeroes offsets and velocities.
+- `getAnimation(name)` on a puppet layer with no timeline animation of
+  that name returns the animation layer of that name, or with no name
+  the first animation layer [inference: a library script plays
+  `getAnimation()` of a puppet with no timeline animations; the
+  `IAnimationLayer` methods are those of `IAnimation`].
 - Blend shapes: `getBlendShapeIndex` returns -1, `getBlendShapeWeight`
   0, `setBlendShapeWeight` does nothing (section 2.5).
 - `ILayer.getAttachmentIndex(name)`, `getAttachmentMatrix`,
@@ -265,9 +274,11 @@ scripted re-evaluates every frame like any field.
 
 ## 8. Capability
 
-`puppet` is supported when the MDL parses with a known vertex format;
-`puppet-blendshapes` and `puppet-ik` stay unsupported (one scene each
-[corpus]), so `auto` keeps those scenes on lwe.
+`puppet` is supported. A missing MDL file is a file error and the layer
+draws as the plain image, which is the rest pose (1 object [corpus]).
+`puppet-unreadable` (the MDL cannot be read), `puppet-blendshapes` and `puppet-ik` (one scene each
+[corpus]) are not, so `auto` keeps those scenes on lwe. The scene
+loader reads every model's MDL once (`LoadedScene::puppets`).
 
 ## Files
 

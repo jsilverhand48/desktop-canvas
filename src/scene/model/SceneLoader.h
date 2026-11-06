@@ -4,7 +4,8 @@
 // then every model, material, effect and particle file (with the child
 // systems particle files name) the objects and effects name, each path
 // once (objects share the parsed result), and checks that referenced
-// sound and texture files exist (texture headers are parsed to spot video
+// sound and texture files exist, reads every model's puppet MDL file
+// (null when unreadable) and counts the paths of camera path files (texture headers are parsed to spot video
 // textures and sprite sheets). Missing or broken referenced files are
 // errors in the report but never stop loading; particle components no
 // phase knows are warnings (src/scene/particles/README.md section 7).
@@ -16,10 +17,12 @@
 
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 
 #include "scene/assets/AssetLocator.h"
 #include "scene/assets/TextureFile.h"
+#include "scene/puppet/MdlFile.h"
 #include "scene/model/LoadReport.h"
 #include "scene/model/Project.h"
 #include "scene/model/Resources.h"
@@ -44,6 +47,13 @@ struct LoadedScene {
     std::map<std::string, std::shared_ptr<EffectFile>> effects;      // by path
     std::map<std::string, std::shared_ptr<ParticleFile>> particles;  // by path, children too
     std::map<std::string, TextureSummary> textures;  // referenced .tex files found
+    // Puppet MDL files of models (src/scene/puppet/README.md section 2),
+    // by path; null when the file is missing or unreadable.
+    std::map<std::string, std::shared_ptr<const MdlFile>> puppets;
+    std::set<std::string> unreadablePuppets;  // found but not readable
+    // Camera path files (src/scene/render/README.md section 11): the
+    // number of paths each lists, -1 when unreadable.
+    std::map<std::string, int> cameraPaths;
     PropertyValues values;  // current property values
     LoadReport report;
 

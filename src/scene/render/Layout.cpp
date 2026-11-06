@@ -131,6 +131,14 @@ void SceneLayout::update() {
         w.scale = o.scale.value;
         w.angle = o.angles.value[2];
         bool shown = o.visible.value;
+        // An attachment frame of the parent first [req A6].
+        Mat4 frame;
+        if (!o.attachment.empty() && depth > 0 && attachments_ &&
+            attachments_(size_t(chain[0]), o.attachment, frame)) {
+            const Vec4 at = frame * Vec4{w.origin[0], w.origin[1], 0, 1};
+            w.origin = {at[0], at[1], w.origin[2]};
+            w.angle += std::atan2(frame.m[1], frame.m[0]);
+        }
         for (int k = 0; k < depth; k++) {
             const SceneObject& parent = objects[size_t(chain[k])];
             const Vec3& ps = parent.scale.value;

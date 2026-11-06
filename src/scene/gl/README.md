@@ -33,6 +33,13 @@ context; the GPU free parts live in the other `src/scene/` modules.
   textures, layout, camera shake and parallax, draws a frame once per
   `advance()` and presents it into the bound framebuffer by the scaling
   and clamp modes; `RenderDebug` holds the `--render-debug` switches.
+  Puppet image layers (`../puppet/README.md`) own a `PuppetRig`: animation
+  layer fields are copied to it when they change, it advances before the
+  scripts and is posed after them once per `advance()`, and the final
+  pass draws its skinned mesh; attachment frames go to the layout. Shape
+  layers are transparent projection sized rectangles through their
+  effects; light layers fill the light uniforms of lit programs each
+  frame (`../render/README.md` section 12).
   Particle layers (`../particles/README.md` sections 6 to 9) own a
   `ParticleSystem` with its child systems, stepped once per `advance()`
   while shown (whatever the number of frame sizes drawn) with the layer's

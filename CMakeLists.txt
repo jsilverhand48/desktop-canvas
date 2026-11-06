@@ -304,6 +304,8 @@ if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND AND F
         src/scene/render/Animation.cpp
         src/scene/particles/ParticleFile.cpp
         src/scene/particles/ParticleSystem.cpp
+        src/scene/puppet/MdlFile.cpp
+        src/scene/puppet/Skeleton.cpp
         src/scene/text/TextFont.cpp
         src/scene/text/TextLayout.cpp
         src/scene/script/ScriptEngine.cpp

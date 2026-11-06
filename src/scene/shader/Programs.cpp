@@ -2,6 +2,7 @@
 // Programs.h.
 #include "scene/shader/Programs.h"
 
+#include <algorithm>
 #include <set>
 
 #include "scene/particles/ParticleSystem.h"
@@ -17,6 +18,22 @@ void apply(ProgramRequest& request, const MaterialPass& pass, const LoadedScene&
     for (const auto& [name, value] : pass.combos) request.combos[name] = value;
     if (instanceCombos)
         for (const auto& [name, value] : *instanceCombos) request.combos[name] = value;
+    // Lit materials get the scene's light counts (src/scene/render/README.md
+    // section 12); shadows and cookies are not drawn.
+    if (auto it = request.combos.find("LIGHTING"); it != request.combos.end() && it->second != 0) {
+        int counts[4] = {0, 0, 0, 0};
+        for (const auto& o : scene.scene.objects)
+            if (o.light) {
+                const LightKind kind = lightKind(o.light->light.value);
+                if (kind != LightKind::Unknown) counts[int(kind)] = std::min(counts[int(kind)] + 1, 4);
+            }
+        request.combos["LIGHTS_POINT"] = counts[int(LightKind::Point)];
+        request.combos["LIGHTS_SPOT"] = counts[int(LightKind::Spot)];
+        request.combos["LIGHTS_TUBE"] = counts[int(LightKind::Tube)];
+        request.combos["LIGHTS_DIRECTIONAL"] = counts[int(LightKind::Directional)];
+        request.combos["LIGHTS_SHADOW_MAPPING"] = 0;
+        request.combos["LIGHTS_COOKIE"] = 0;
+    }
     for (size_t i = 0; i < size_t(kMaxTextureSlots); i++) {
         const std::optional<std::string>* name = nullptr;
         if (i < pass.textures.size() && pass.textures[i]) name = &pass.textures[i];

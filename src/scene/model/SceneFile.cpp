@@ -264,6 +264,9 @@ void parseKind(SceneObject& obj, const json& o, LoadReport& report, const std::s
             read(l.cascade0, o, "cascadedistance0", report, ctx);
             read(l.cascade1, o, "cascadedistance1", report, ctx);
             read(l.cascade2, o, "cascadedistance2", report, ctx);
+            read(l.innerCone, o, "innercone", report, ctx);
+            read(l.outerCone, o, "outercone", report, ctx);
+            read(l.controlPoint, o, "controlpoint", report, ctx);
             break;
         }
         case ObjectKind::Camera: {
@@ -391,6 +394,14 @@ SceneFile parseSceneFile(const json& scene, LoadReport& report) {
     }
     file.version = integer(scene, "version");
     return file;
+}
+
+LightKind lightKind(const std::string& name) {
+    if (name == "lpoint" || name == "point") return LightKind::Point;
+    if (name == "lspot" || name == "spot") return LightKind::Spot;
+    if (name == "ltube" || name == "tube") return LightKind::Tube;
+    if (name == "ldirectional" || name == "directional") return LightKind::Directional;
+    return LightKind::Unknown;
 }
 
 }  // namespace canvas::scene
