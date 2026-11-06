@@ -125,6 +125,51 @@ bool readAnimationHeader(ByteReader& r, size_t boneCount, PuppetAnimation& a, ui
     return r.ok() && parseMode(mode, a.mode) && a.fps > 0 && a.fps <= 1000 && tracks == boneCount;
 }
 
+// The bytes after an animation's bone tracks (section 2.4): blend shape
+// weight tracks (version 6) or IK controller tracks (version 4). Best
+// effort: a mismatch leaves them out.
+void readAnimationTail(std::span<const uint8_t> data, int, int version, PuppetAnimation& anim) {
+    ByteReader r(data);
+    const size_t keys = size_t(anim.length) + 1;
+    if (version >= 6) {
+        auto zeros = r.bytes(5, "tail");
+        auto count = r.bytes(1, "shape tracks");
+        if (!r.ok() || count.empty()) return;
+        (void)zeros;
+        for (uint8_t t = 0; t < count[0] && r.ok(); t++) {
+            r.u32("shape track field");
+            r.f32("shape track range");
+            r.u32("shape track field");
+            const uint32_t size = r.u32("shape track size");
+            if (!r.ok() || size != keys * 4) return;
+            auto values = r.bytes(size, "shape weights");
+            if (!r.ok()) return;
+            std::vector<float> w(keys);
+            for (size_t k = 0; k < keys; k++) w[k] = std::clamp(readF32(values.data() + 4 * k), 0.0f, 1.0f);
+            anim.shapeWeights.push_back(std::move(w));
+        }
+    } else if (version >= 4) {
+        while (r.remaining() >= 8) {
+            const size_t at = r.offset();
+            const uint32_t field = r.u32("controller field");
+            const uint32_t size = r.u32("controller size");
+            if (!r.ok() || field != 0 || size != keys * 36 || r.remaining() < size) {
+                (void)at;
+                return;
+            }
+            auto track = r.bytes(size, "controller keys");
+            std::vector<PuppetKey> out(keys);
+            for (size_t k = 0; k < keys; k++) {
+                const uint8_t* p = track.data() + k * 36;
+                out[k].position = {readF32(p), readF32(p + 4), readF32(p + 8)};
+                out[k].angles = {readF32(p + 12), readF32(p + 16), readF32(p + 20)};
+                out[k].scale = {readF32(p + 24), readF32(p + 28), readF32(p + 32)};
+            }
+            anim.controllers.push_back(std::move(out));
+        }
+    }
+}
+
 Vec2 vec2Of(const nlohmann::json& j, Vec2 fallback) {
     if (!j.is_string()) return fallback;
     std::istringstream in(j.get<std::string>());
@@ -182,6 +227,7 @@ BonePhysics parseBonePhysics(const std::string& text) {
     p.gravity = boolOf(j, "ge", false);
     if (auto it = j.find("gd"); it != j.end()) p.gravityDirection = vec2Of(*it, p.gravityDirection);
     p.ik = boolOf(j, "ik", false);
+    p.ikDepth = int(std::clamp(numberOf(j, "ikd", 2), 1.0f, 2.0f));
     return p;
 }
 
@@ -247,6 +293,11 @@ MdlFile MdlFile::parse(std::span<const uint8_t> data, std::string& error) {
     for (size_t v = 0; v < count; v++) {
         const uint8_t* p = vertices.data() + v * layout->stride;
         m.positions[v] = {readF32(p), readF32(p + 4), readF32(p + 8)};
+        if (layout->format == 0x181000E) {
+            const float index = readF32(p + 12);  // 1 based blend shape record (section 2.5)
+            if (m.shapeIndex.empty()) m.shapeIndex.resize(count, 0);
+            m.shapeIndex[v] = index >= 1 && index < 1e7f ? uint32_t(index) : 0;
+        }
         m.uvs[v] = {readF32(p + layout->uv), readF32(p + layout->uv + 4)};
         if (layout->bones >= 0)
             for (size_t k = 0; k < 4; k++) {
@@ -264,7 +315,37 @@ MdlFile MdlFile::parse(std::span<const uint8_t> data, std::string& error) {
         }
     }
     const size_t meshEnd = r.offset();
-    f.blendShapes = findTag(data, meshEnd, "MDMP") != std::string::npos;
+    if (const size_t at = findTag(data, meshEnd, "MDMP"); at != std::string::npos) {
+        // Blend shapes (section 2.5).
+        ByteReader b(data.subspan(at + 9));
+        b.u32("shapes end");
+        const uint32_t count = u16(b, "shape count");
+        for (uint32_t i = 0; i < count && i < 256 && b.ok(); i++) {
+            BlendShape shape;
+            shape.range = b.f32("shape range");
+            const uint32_t records = b.u32("shape records");
+            shape.id = b.i32("shape id");
+            b.u32("shape field");
+            shape.name = cstring(b, "shape name", 1024);
+            const uint32_t size = b.u32("shape bytes");
+            if (!b.ok() || records > kMaxVertices || size != records * 6) {
+                b.fail("shape", "record size");
+                break;
+            }
+            auto bytes = b.bytes(size, "shape records");
+            const uint32_t extra = b.u32("shape extra bytes");
+            b.bytes(extra, "shape extra");
+            if (!b.ok() || !std::isfinite(shape.range)) break;
+            shape.offsets.resize(records);
+            for (uint32_t k = 0; k < records; k++) {
+                auto i16 = [&](size_t o) { return int16_t(bytes[o] | bytes[o + 1] << 8); };
+                shape.offsets[k] = {float(i16(6 * k)) / 32767.0f * shape.range,
+                                    float(i16(6 * k + 2)) / 32767.0f * shape.range};
+            }
+            f.blendShapes.push_back(std::move(shape));
+        }
+        if (!b.ok()) f.notes.push_back("blend shapes damaged: " + b.error());
+    }
 
     // Skeleton (section 2.2).
     const size_t skeletonAt = findTag(data, meshEnd, "MDLS");
@@ -331,14 +412,22 @@ MdlFile MdlFile::parse(std::span<const uint8_t> data, std::string& error) {
     const size_t animAt = findTag(data, meshEnd, "MDLA");
     if (animAt != std::string::npos && skeletonWhole && !f.bones.empty()) {
         const size_t nb = f.bones.size();
+        const int animationVersion = tagVersion(data, animAt);
         ByteReader a(data.subspan(animAt + 9));
         a.u32("animations end");
         uint32_t n = std::min(a.u32("animation count"), kMaxAnimations);
         const size_t base = animAt + 9;
         size_t pos = a.offset();
+        auto atHeader = [&](size_t p) {
+            if (p + 40 > data.size() - base) return false;
+            ByteReader probe(data.subspan(base + p));
+            PuppetAnimation tmp;
+            uint32_t tracks = 0;
+            return readAnimationHeader(probe, nb, tmp, tracks);
+        };
         for (uint32_t i = 0; i < n; i++) {
-            if (i > 0) {
-                // Skip the version specific bytes up to the next header.
+            if (i > 0 && !atHeader(pos)) {
+                // Skip unknown version specific bytes up to the next header.
                 bool found = false;
                 for (size_t p = pos; p + 40 <= data.size() - base; p++) {
                     ByteReader probe(data.subspan(base + p));
@@ -388,11 +477,49 @@ MdlFile MdlFile::parse(std::span<const uint8_t> data, std::string& error) {
                 break;
             }
             pos += h.offset();
+            if (good) readAnimationTail(data.subspan(base + pos), f.version, animationVersion, anim);
             if (good) f.animations.push_back(std::move(anim));
             else f.notes.push_back("animation " + std::to_string(anim.id) + " dropped");
         }
     }
+    findIkChains(f);
     return f;
+}
+
+// Section 3.4: an IK bone's target track starts at the bone's rest world
+// origin; another track of the same animation is the pole.
+void findIkChains(MdlFile& f) {
+    if (!f.ik) return;
+    std::vector<Mat4> world(f.bones.size());
+    for (size_t b = 0; b < f.bones.size(); b++)
+        world[b] = f.bones[b].parent >= 0 ? world[size_t(f.bones[b].parent)] * f.bones[b].rest : f.bones[b].rest;
+    const PuppetAnimation* first = nullptr;
+    for (const auto& a : f.animations)
+        if (!a.controllers.empty()) {
+            first = &a;
+            break;
+        }
+    for (size_t b = 0; b < f.bones.size(); b++) {
+        if (!f.bones[b].physics.ik || f.bones[b].parent < 0) continue;
+        IkChain chain;
+        chain.bone = int(b);
+        chain.depth = f.bones[b].physics.ikDepth;
+        chain.restOrigin = {world[b].m[12], world[b].m[13]};
+        chain.restAngle = std::atan2(world[b].m[1], world[b].m[0]);
+        if (first)
+            for (size_t t = 0; t < first->controllers.size(); t++) {
+                const Vec3& p = first->controllers[t][0].position;
+                if (std::fabs(p[0] - chain.restOrigin[0]) < 0.5f && std::fabs(p[1] - chain.restOrigin[1]) < 0.5f)
+                    chain.target = int(t);
+            }
+        if (chain.target < 0) continue;
+        for (size_t t = 0; first && t < first->controllers.size(); t++)
+            if (int(t) != chain.target) {
+                chain.pole = int(t);
+                break;
+            }
+        f.ikChains.push_back(chain);
+    }
 }
 
 int MdlFile::boneIndex(const std::string& name) const {
@@ -405,6 +532,12 @@ const PuppetAnimation* MdlFile::animation(int32_t id) const {
     for (const auto& a : animations)
         if (a.id == id) return &a;
     return nullptr;
+}
+
+int MdlFile::blendShapeIndex(const std::string& name) const {
+    for (size_t i = 0; i < blendShapes.size(); i++)
+        if (blendShapes[i].name == name) return int(i);
+    return -1;
 }
 
 int MdlFile::attachmentIndex(const std::string& name) const {

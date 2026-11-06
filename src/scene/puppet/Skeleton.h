@@ -1,7 +1,8 @@
 // A posed puppet, per src/scene/puppet/README.md sections 3, 4 and 6:
 // animation layers with their own clocks and fades, the bone pose
-// (normal and additive blending, script overrides, bone physics), world
-// and skin matrices, CPU skinning and attachment frames.
+// (normal and additive blending, script overrides, bone physics, inverse
+// kinematics), world and skin matrices, blend shapes, CPU skinning and
+// attachment frames.
 //
 // Each frame: advance(dt) moves the layer clocks and fades, scripts may
 // then set overrides, and evaluate(dt) builds the pose (overrides apply
@@ -72,7 +73,11 @@ public:
     float localAngle(int bone) const { return local_[size_t(bone)].angle; }
     Vec2 localScale(int bone) const { return local_[size_t(bone)].scale; }
     Mat4 localMatrix(int bone) const;
-    // Section 3.4: skinned positions of every vertex (z kept).
+    // Blend shapes (section 3.5): current weights; a set weight replaces
+    // the animated one from then on.
+    float blendShapeWeight(int shape) const;
+    void setBlendShapeWeight(int shape, float weight);
+    // Section 3.5: skinned positions of every vertex (z kept).
     void skin(std::vector<Vec3>& out) const;
     // Section 4: bone world * attachment matrix (rest pose before the
     // first evaluation); identity for a bad index.
@@ -103,6 +108,10 @@ private:
     std::vector<std::optional<Pose>> localOverride_;
     std::vector<Physics> physics_;
     std::vector<int> onlyChild_;  // the single child, -1 for none or several
+    std::vector<float> shapeWeight_;
+    std::vector<std::optional<float>> shapeOverride_;
+    void solveIk(const std::vector<Vec2>& targets, const std::vector<float>& angles,
+                 const std::vector<std::optional<Vec2>>& poles, std::vector<Pose>& pose);
     uint64_t nextUid_ = 1;
     bool evaluated_ = false;
 };

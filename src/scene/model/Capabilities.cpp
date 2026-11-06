@@ -40,13 +40,8 @@ std::set<std::string> sceneFeatures(LoadedScene& scene) {
             // A missing file draws the plain image (its rest pose); one
             // that cannot be read is unsupported.
             auto mdl = scene.puppets.find(m.puppet);
-            if (mdl == scene.puppets.end()) {
-            } else if (!mdl->second) {
-                if (scene.unreadablePuppets.count(m.puppet)) f.insert("puppet-unreadable");
-            } else {
-                if (mdl->second->blendShapes) f.insert("puppet-blendshapes");
-                if (mdl->second->ik) f.insert("puppet-ik");
-            }
+            if (mdl != scene.puppets.end() && !mdl->second && scene.unreadablePuppets.count(m.puppet))
+                f.insert("puppet-unreadable");
         }
         bool compose = m.passthrough;
         if (auto mat = scene.materials.find(m.material);

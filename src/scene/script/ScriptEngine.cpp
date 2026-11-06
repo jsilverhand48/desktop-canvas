@@ -116,9 +116,9 @@ class Layer {
     n.puppet(this.__i, 'impulse', b === undefined ? -1 : b, arr(d), arr(a));
   }
   resetBonePhysicsSimulation(b) { n.puppet(this.__i, 'reset', b === undefined ? -1 : b); }
-  getBlendShapeIndex() { return -1; }
-  getBlendShapeWeight() { return 0; }
-  setBlendShapeWeight() {}
+  getBlendShapeIndex(name) { const i = n.puppet(this.__i, 'shapeIndex', String(name)); return i === undefined ? -1 : i; }
+  getBlendShapeWeight(x) { return n.puppet(this.__i, 'shapeGet', x) || 0; }
+  setBlendShapeWeight(x, w) { n.puppet(this.__i, 'shapeSet', x, Number(w)); }
   getAttachmentIndex(name) { const a = n.puppet(this.__i, 'attachIndex', String(name)); return a === undefined ? -1 : a; }
   getAttachmentMatrix(a) { return mat(n.puppet(this.__i, 'attachGet', a, 'matrix')); }
   getAttachmentOrigin(a) { return v3(n.puppet(this.__i, 'attachGet', a, 'origin')); }
@@ -1797,6 +1797,15 @@ struct ScriptEngine::Impl {
         if (k == "boneCount") return JS_NewInt64(ctx, int64_t(rig->boneCount()));
         if (k == "boneIndex") return JS_NewInt64(ctx, rig->file().boneIndex(string(a).value_or("")));
         if (k == "attachIndex") return JS_NewInt64(ctx, rig->file().attachmentIndex(string(a).value_or("")));
+        if (k == "shapeIndex") return JS_NewInt64(ctx, rig->file().blendShapeIndex(string(a).value_or("")));
+        if (k == "shapeGet" || k == "shapeSet") {
+            int shape = -1;
+            if (JS_IsString(a)) shape = rig->file().blendShapeIndex(string(a).value_or(""));
+            else if (auto d = number(a)) shape = int(*d);
+            if (k == "shapeGet") return JS_NewFloat64(ctx, rig->blendShapeWeight(shape));
+            if (auto w = number(b)) rig->setBlendShapeWeight(shape, float(*w));
+            return JS_UNDEFINED;
+        }
         if (k == "boneParent") {
             const int bone = boneOf(*rig, a);
             return JS_NewInt64(ctx, bone < 0 ? -1 : rig->file().bones[size_t(bone)].parent);

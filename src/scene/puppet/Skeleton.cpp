@@ -59,6 +59,18 @@ PuppetRig::PuppetRig(std::shared_ptr<const MdlFile> file) : file_(std::move(file
         if (children[b] != 1) onlyChild_[b] = -1;
     restPose();
     for (size_t b = 0; b < n; b++) inverseRestWorld_[b] = world_[b].inverse();
+    shapeWeight_.assign(file_->blendShapes.size(), 0.0f);
+    shapeOverride_.resize(file_->blendShapes.size());
+}
+
+float PuppetRig::blendShapeWeight(int shape) const {
+    return shape >= 0 && size_t(shape) < shapeWeight_.size() ? shapeWeight_[size_t(shape)] : 0.0f;
+}
+
+void PuppetRig::setBlendShapeWeight(int shape, float weight) {
+    if (shape < 0 || size_t(shape) >= shapeOverride_.size() || !std::isfinite(weight)) return;
+    shapeOverride_[size_t(shape)] = std::clamp(weight, 0.0f, 1.0f);
+    shapeWeight_[size_t(shape)] = *shapeOverride_[size_t(shape)];
 }
 
 void PuppetRig::restPose() {
@@ -269,6 +281,55 @@ void PuppetRig::stepPhysics(size_t bone, const Mat4& parentWorld, Pose& pose, fl
     }
 }
 
+// Section 3.4. world_ holds the pose before IK; angles turn additively
+// (2D bones).
+void PuppetRig::solveIk(const std::vector<Vec2>& targets, const std::vector<float>& angles,
+                        const std::vector<std::optional<Vec2>>& poles, std::vector<Pose>& pose) {
+    const auto& chains = file_->ikChains;
+    auto origin = [&](int b) { return Vec2{world_[size_t(b)].m[12], world_[size_t(b)].m[13]}; };
+    auto worldAngle = [&](int b) { return std::atan2(world_[size_t(b)].m[1], world_[size_t(b)].m[0]); };
+    auto dir = [](const Vec2& from, const Vec2& to) { return std::atan2(to[1] - from[1], to[0] - from[0]); };
+    auto wrap = [](float a) { return std::remainder(a, 2 * kPi); };
+    for (size_t c = 0; c < chains.size(); c++) {
+        const IkChain& chain = chains[c];
+        const int e = chain.bone;
+        const int b = file_->bones[size_t(e)].parent;
+        if (b < 0) continue;
+        const int a = chain.depth >= 2 ? file_->bones[size_t(b)].parent : -1;
+        const Vec2 T = targets[c];
+        const Vec2 E = origin(e), B = origin(b);
+        float turnA = 0, turnB = 0;
+        if (a >= 0) {
+            const Vec2 A = origin(a);
+            const float l1 = std::hypot(B[0] - A[0], B[1] - A[1]);
+            const float l2 = std::hypot(E[0] - B[0], E[1] - B[1]);
+            if (l1 < 1e-3f || l2 < 1e-3f) continue;
+            float d = std::hypot(T[0] - A[0], T[1] - A[1]);
+            d = std::clamp(d, std::fabs(l1 - l2) + 1e-3f, l1 + l2);
+            const float base = dir(A, T);
+            const float cosA = std::clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1.0f, 1.0f);
+            const float spread = std::acos(cosA);
+            // Which side the middle joint goes: the pole's, else the current one.
+            float side;
+            if (poles[c]) {
+                const Vec2& P = *poles[c];
+                side = (T[0] - A[0]) * (P[1] - A[1]) - (T[1] - A[1]) * (P[0] - A[0]);
+            } else {
+                side = (E[0] - A[0]) * (B[1] - A[1]) - (E[1] - A[1]) * (B[0] - A[0]);
+            }
+            const float upper = base + (side >= 0 ? spread : -spread);
+            const Vec2 joint{A[0] + l1 * std::cos(upper), A[1] + l1 * std::sin(upper)};
+            turnA = wrap(upper - dir(A, B));
+            turnB = wrap(dir(joint, T) - (dir(B, E) + turnA));
+            pose[size_t(a)].angle += turnA;
+        } else {
+            turnB = wrap(dir(B, T) - dir(B, E));
+        }
+        pose[size_t(b)].angle += turnB;
+        pose[size_t(e)].angle += wrap(angles[c] - (worldAngle(e) + turnA + turnB));
+    }
+}
+
 void PuppetRig::evaluate(double dt) {
     if (!(dt > 0) || !std::isfinite(dt)) dt = 0;
     const size_t n = local_.size();
@@ -277,6 +338,16 @@ void PuppetRig::evaluate(double dt) {
     for (size_t b = 0; b < n; b++) {
         const PuppetBone& bone = file_->bones[b];
         pose[b] = {bone.restPosition, bone.restZ, bone.restAngle, bone.restScale};
+    }
+    // Blend shape weights and IK targets start at rest (sections 3.4, 3.5).
+    const auto& chains = file_->ikChains;
+    std::vector<float> shapes(shapeWeight_.size(), 0.0f);
+    std::vector<Vec2> targets(chains.size());
+    std::vector<float> targetAngles(chains.size());
+    std::vector<std::optional<Vec2>> poles(chains.size());
+    for (size_t c = 0; c < chains.size(); c++) {
+        targets[c] = chains[c].restOrigin;
+        targetAngles[c] = chains[c].restAngle;
     }
     for (const PuppetLayer& layer : layers_) {
         const float weight = layer.blend * layer.fade;
@@ -287,6 +358,38 @@ void PuppetRig::evaluate(double dt) {
         const uint32_t k0 = std::min(uint32_t(std::floor(f)), a->length);
         const uint32_t k1 = std::min(k0 + 1, a->length);
         const float t = float(f - std::floor(f));
+        for (size_t sIdx = 0; sIdx < shapes.size() && sIdx < a->shapeWeights.size(); sIdx++) {
+            const auto& w = a->shapeWeights[sIdx];
+            const float v = w[k0] + (w[k1] - w[k0]) * t;
+            shapes[sIdx] = layer.additive ? shapes[sIdx] + v * weight : shapes[sIdx] + (v - shapes[sIdx]) * weight;
+        }
+        for (size_t c = 0; c < chains.size(); c++) {
+            const auto track = [&](int index) -> const std::vector<PuppetKey>* {
+                return index >= 0 && size_t(index) < a->controllers.size() ? &a->controllers[size_t(index)] : nullptr;
+            };
+            if (const auto* tr = track(chains[c].target)) {
+                const PuppetKey& p = (*tr)[k0];
+                const PuppetKey& q = (*tr)[k1];
+                const Vec2 key{p.position[0] + (q.position[0] - p.position[0]) * t,
+                               p.position[1] + (q.position[1] - p.position[1]) * t};
+                const float ang = p.angles[2] + (q.angles[2] - p.angles[2]) * t;
+                if (layer.additive) {
+                    targets[c] = {targets[c][0] + (key[0] - chains[c].restOrigin[0]) * weight,
+                                  targets[c][1] + (key[1] - chains[c].restOrigin[1]) * weight};
+                    targetAngles[c] += (ang - chains[c].restAngle) * weight;
+                } else {
+                    targets[c] = {targets[c][0] + (key[0] - targets[c][0]) * weight,
+                                  targets[c][1] + (key[1] - targets[c][1]) * weight};
+                    targetAngles[c] += (ang - targetAngles[c]) * weight;
+                }
+            }
+            if (const auto* tr = track(chains[c].pole)) {
+                const PuppetKey& p = (*tr)[k0];
+                const PuppetKey& q = (*tr)[k1];
+                poles[c] = Vec2{p.position[0] + (q.position[0] - p.position[0]) * t,
+                                p.position[1] + (q.position[1] - p.position[1]) * t};
+            }
+        }
         for (size_t b = 0; b < n; b++) {
             const PuppetKey& p = a->key(b, k0);
             const PuppetKey& q = a->key(b, k1);
@@ -334,6 +437,24 @@ void PuppetRig::evaluate(double dt) {
         }
         local_[b] = p;
         skin_[b] = world_[b] * inverseRestWorld_[b];
+    }
+    for (size_t sIdx = 0; sIdx < shapes.size(); sIdx++)
+        shapeWeight_[sIdx] = shapeOverride_[sIdx] ? *shapeOverride_[sIdx] : std::clamp(shapes[sIdx], 0.0f, 1.0f);
+    if (!chains.empty()) {
+        // Section 3.4: turn the limbs, then evaluate every bone again from
+        // the new angles (world overrides still win).
+        solveIk(targets, targetAngles, poles, pose);
+        for (size_t b = 0; b < n; b++) {
+            const PuppetBone& bone = file_->bones[b];
+            if (worldOverride_[b]) continue;
+            const Mat4 parentWorld = bone.parent >= 0 ? world_[size_t(bone.parent)] : Mat4::identity();
+            const Pose& p = pose[b];
+            world_[b] = parentWorld * makeLocal(p.position, p.z, p.angle, p.scale);
+            local_[b] = p;
+            skin_[b] = world_[b] * inverseRestWorld_[b];
+        }
+    }
+    for (size_t b = 0; b < n; b++) {
         worldOverride_[b].reset();
         localOverride_[b].reset();
     }
@@ -353,8 +474,18 @@ void PuppetRig::skin(std::vector<Vec3>& out) const {
     const PuppetMesh& m = file_->mesh;
     out.resize(m.positions.size());
     const bool weighted = !m.bones.empty() && !skin_.empty();
+    const bool shaped = !m.shapeIndex.empty() && !file_->blendShapes.empty();
     for (size_t v = 0; v < m.positions.size(); v++) {
-        const Vec3& rest = m.positions[v];
+        Vec3 rest = m.positions[v];
+        if (shaped && m.shapeIndex[v]) {
+            const uint32_t record = m.shapeIndex[v] - 1;
+            for (size_t sIdx = 0; sIdx < file_->blendShapes.size(); sIdx++) {
+                const auto& offsets = file_->blendShapes[sIdx].offsets;
+                if (record >= offsets.size() || shapeWeight_[sIdx] == 0) continue;
+                rest[0] += offsets[record][0] * shapeWeight_[sIdx];
+                rest[1] += offsets[record][1] * shapeWeight_[sIdx];
+            }
+        }
         if (!weighted) {
             out[v] = rest;
             continue;

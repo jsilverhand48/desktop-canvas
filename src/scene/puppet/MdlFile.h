@@ -1,6 +1,7 @@
 // Puppet MDL files, per src/scene/puppet/README.md section 2: the mesh
 // (four known vertex formats), the skeleton with rest matrices and bone
-// physics settings, attachments and animations.
+// physics settings, attachments, animations with their blend shape weight
+// and IK controller tracks, blend shapes and IK chains.
 //
 // MdlFile::parse reads untrusted bytes with bounds checks. Sections after
 // the mesh are found by their tag text; a damaged skeleton keeps the bones
@@ -26,6 +27,25 @@ struct PuppetMesh {
     std::vector<std::array<uint32_t, 4>> bones;  // empty without a skeleton
     std::vector<Vec4> weights;
     std::vector<uint16_t> indices;  // three per triangle
+    // Format 0x181000E: each vertex's 1 based blend shape record, 0 none
+    // (empty for other formats).
+    std::vector<uint32_t> shapeIndex;
+};
+
+// One blend shape (section 2.5): offsets in mesh pixels, Y up.
+struct BlendShape {
+    std::string name;
+    int32_t id = 0;
+    float range = 0;
+    std::vector<Vec2> offsets;
+};
+
+// An IK limb (section 3.4): the IK bone, how many bones above it turn, its
+// target and pole controller tracks and its rest world placement.
+struct IkChain {
+    int bone = 0, depth = 2, target = -1, pole = -1;
+    Vec2 restOrigin{0, 0};
+    float restAngle = 0;
 };
 
 // Bone physics settings (section 6; key names are an inference).
@@ -42,6 +62,7 @@ struct BonePhysics {
     bool gravity = false;
     Vec2 gravityDirection{0, -1};
     bool ik = false;
+    int ikDepth = 2;
     bool simulated() const { return rotation || translation; }
 };
 
@@ -79,6 +100,8 @@ struct PuppetAnimation {
     float fps = 30;
     uint32_t length = 0;  // frames; every track has length + 1 keys
     std::vector<PuppetKey> keys;  // bone b's key k at b * (length + 1) + k
+    std::vector<std::vector<float>> shapeWeights;   // per blend shape, length + 1 values
+    std::vector<std::vector<PuppetKey>> controllers;  // IK controller tracks, length + 1 keys
     const PuppetKey& key(size_t bone, uint32_t frame) const { return keys[bone * (length + 1) + frame]; }
 };
 
@@ -90,8 +113,9 @@ struct MdlFile {
     std::vector<PuppetBone> bones;
     std::vector<PuppetAttachment> attachments;
     std::vector<PuppetAnimation> animations;
-    bool blendShapes = false;  // an MDMP section (section 2.5)
-    bool ik = false;           // a bone with inverse kinematics
+    std::vector<BlendShape> blendShapes;  // the MDMP section (section 2.5)
+    std::vector<IkChain> ikChains;        // section 3.4
+    bool ik = false;                      // a bone with inverse kinematics
     std::vector<std::string> notes;  // what was skipped and why
 
     // Empty error on success; a mesh that cannot be read is an error.
@@ -99,7 +123,11 @@ struct MdlFile {
     int boneIndex(const std::string& name) const;
     const PuppetAnimation* animation(int32_t id) const;
     int attachmentIndex(const std::string& name) const;
+    int blendShapeIndex(const std::string& name) const;
 };
+
+// Section 3.4's chains of a parsed file (parse() calls it).
+void findIkChains(MdlFile& file);
 
 // The physics JSON text of one bone (empty: defaults, not simulated).
 BonePhysics parseBonePhysics(const std::string& json);

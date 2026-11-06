@@ -332,4 +332,4 @@ loader reads every model's MDL once (`LoadedScene::puppets`).
 
 - `MdlFile.h`, `MdlFile.cpp`: section 2, the MDL reader.
 - `Skeleton.h`, `Skeleton.cpp`: sections 3 and 6, layers, pose,
-  physics and skinning.
+  inverse kinematics, physics, blend shapes and skinning.
