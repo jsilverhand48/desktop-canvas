@@ -433,10 +433,39 @@ TranslatedProgram translateProgram(const ShaderLoader& loader, const ProgramRequ
     // 3. Interface.
     std::vector<std::pair<std::string, std::string>> fragVaryings;
     parseDeclarations(vert.text, out.interface, true, out.interface.varyings);
+    // A uniform both stages declare for different material values gets a
+    // vertex copy of its own: Direct3D gives each stage its own constants
+    // (section 5) [corpus: foliagesway's g_Strength is "strength" in the
+    // vertex stage and "strengthuv" in the fragment stage].
+    std::map<std::string, std::string> vertexRenames;
+    {
+        ShaderInterface fragOnly;
+        std::vector<std::pair<std::string, std::string>> ignored;
+        parseDeclarations(frag.text, fragOnly, false, ignored);
+        auto material = [](const UniformDeclaration& u) {
+            return u.annotation.is_object() && u.annotation.contains("material") && u.annotation["material"].is_string()
+                       ? u.annotation["material"].get<std::string>()
+                       : std::string();
+        };
+        for (const auto& f : fragOnly.uniforms) {
+            if (f.type.rfind("sampler", 0) == 0) continue;
+            for (auto& v : out.interface.uniforms) {
+                if (v.name != f.name) continue;
+                const std::string vm = material(v), fm = material(f);
+                if (vm.empty() || fm.empty() || vm == fm) break;
+                const std::string renamed = "desktopCanvas_vs_" + v.name;
+                vertexRenames[v.name] = renamed;
+                v.name = renamed;
+                out.notes.push_back("uniform " + f.name + " differs per stage: vertex copy " + renamed);
+                break;
+            }
+        }
+    }
     parseDeclarations(frag.text, out.interface, false, fragVaryings);
 
     // 4. Rewrites and repairs.
     std::string vcode = replaceIdentifiers(vert.text, {{"attribute", "in"}, {"varying", "out"}});
+    if (!vertexRenames.empty()) vcode = replaceIdentifiers(vcode, vertexRenames);
     {  // fixed locations for the documented attributes
         static const std::regex inputRe(
             R"(^(\s*)(in\s+(?:(?:highp|mediump|lowp)\s+)?\w+\s+(\w+)\s*;.*)$)");

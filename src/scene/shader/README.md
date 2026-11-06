@@ -110,6 +110,15 @@ used as is.
 Samplers `g_Texture0` to `g_Texture7` (and beyond in assets) are bound by
 index; their resolution uniforms are engine values (section 5).
 
+Direct3D gives each stage its own constants, so a uniform both stages
+declare may carry different annotations: when its `material` names
+differ, each stage gets its own value. The translator renames the vertex
+stage's copy to `desktopCanvas_vs_<name>` with the vertex annotation, and
+the fragment declaration keeps the name [corpus: a workshop foliagesway
+declares `g_Strength` as "strength", default 100, in the vertex stage and
+"strengthuv", 0.3, in the fragment stage; one shared value distorted the
+whole layer].
+
 ## 4. Combos and the preprocessor
 
 Combos become integer defines. A program's combo values, later wins:
