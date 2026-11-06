@@ -240,6 +240,8 @@ void SceneHost::handleMessage(const std::string& data) {
         renderer_.setPointer(message->value("output", ""),
                              message->value("x", 0.0),
                              message->value("y", 0.0));
+    } else if (type == "media") {
+        renderer_.setMedia(*message);
     } else if (type == "props") {
         auto values = message->find("values");
         if (values != message->end() && values->is_object()) {

@@ -212,6 +212,38 @@ void decodeBlock(PixelLayout layout, const uint8_t* block, Rgba texels[16]) {
 
 }  // namespace
 
+bool decodeImageFile(std::span<const uint8_t> data, DecodedImage& out, std::string& error) {
+    out = DecodedImage{};
+    if (data.size() >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) {
+        std::unique_ptr<void, int (*)(tjhandle)> handle(tjInitDecompress(), tjDestroy);
+        int w = 0, h = 0, subsampling = 0, colorspace = 0;
+        if (!handle || tjDecompressHeader3(handle.get(), data.data(), static_cast<unsigned long>(data.size()), &w, &h,
+                                           &subsampling, &colorspace) != 0 || w <= 0 || h <= 0) {
+            error = "bad JPEG";
+            return false;
+        }
+        out.width = uint32_t(w);
+        out.height = uint32_t(h);
+        return decodeJpeg(data, out.width, out.height, out.pixels, error);
+    }
+    if (data.size() >= 8 && std::memcmp(data.data(), "\x89PNG", 4) == 0) {
+        png_image image;
+        std::memset(&image, 0, sizeof(image));
+        image.version = PNG_IMAGE_VERSION;
+        if (!png_image_begin_read_from_memory(&image, data.data(), data.size())) {
+            error = "bad PNG";
+            png_image_free(&image);
+            return false;
+        }
+        out.width = image.width;
+        out.height = image.height;
+        png_image_free(&image);
+        return decodePng(data, out.width, out.height, out.pixels, error);
+    }
+    error = "not a JPEG or PNG file";
+    return false;
+}
+
 bool decodeMip(const TextureFile& texture, const TextureMip& mip, DecodedImage& out,
                std::string& error) {
     out = DecodedImage{};

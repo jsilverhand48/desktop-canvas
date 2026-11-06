@@ -40,6 +40,7 @@ ScriptEngine::~ScriptEngine() = default;
 size_t ScriptEngine::scriptCount() const { return 0; }
 size_t ScriptEngine::failedCount() const { return 0; }
 bool ScriptEngine::usesAudio() const { return false; }
+void ScriptEngine::setMedia(const MediaInfo&, const AlbumArtColors&) {}
 void ScriptEngine::update(const ScriptFrame&) {}
 void ScriptEngine::userPropertiesChanged(const std::vector<std::string>&) {}
 std::vector<std::string> ScriptEngine::takeLog() { return {}; }
@@ -272,8 +273,17 @@ struct ScriptEngine::Impl {
         std::function<void(JSValueConst)> set;
         JSValue ns = JS_UNDEFINED;
         JSValue init = JS_UNDEFINED, update = JS_UNDEFINED, apply = JS_UNDEFINED, destroy = JS_UNDEFINED;
-        std::map<std::string, JSValue> events;  // cursor events by name
+        std::map<std::string, JSValue> events;  // cursor, resize and media events by name
         bool started = false, failed = false;
+        // Media state this script was told (src/scene/audio/README.md
+        // section 7); nothing yet until mediaTold.
+        bool mediaTold = false, mediaEnabled = false;
+        int mediaState = -1;
+        MediaInfo mediaProps;
+        bool propsTold = false;
+        std::string artTold;
+        bool artToldOnce = false;
+        uint64_t timelineTold = 0;
     };
     struct Timer {
         uint64_t id = 0;
@@ -308,6 +318,9 @@ struct ScriptEngine::Impl {
     int64_t current = -1;  // object of the running script (timers keep it)
     Script* running = nullptr;
     std::vector<std::string> log;       // console lines
+    MediaInfo media;                    // the latest media state (section 7)
+    AlbumArtColors art;
+    bool mediaKnown = false;
     std::vector<std::string> problems;  // failures, each once
     std::map<const Script*, std::pair<double, int>> logBudget;  // minute start, lines
     json storage = json{{"global", json::object()}, {"screen", json::object()}};
@@ -715,7 +728,9 @@ struct ScriptEngine::Impl {
         s.apply = exported("applyUserProperties");
         s.destroy = exported("destroy");
         for (const char* e :
-             {"cursorEnter", "cursorLeave", "cursorMove", "cursorDown", "cursorUp", "cursorClick", "resizeScreen"}) {
+             {"cursorEnter", "cursorLeave", "cursorMove", "cursorDown", "cursorUp", "cursorClick", "resizeScreen",
+              "mediaStatusChanged", "mediaPlaybackChanged", "mediaPropertiesChanged", "mediaThumbnailChanged",
+              "mediaTimelineChanged"}) {
             JSValue v = exported(e);
             if (!JS_IsUndefined(v)) s.events[e] = v;
         }
@@ -917,9 +932,80 @@ struct ScriptEngine::Impl {
             }
             if (!s.failed && JS_IsFunction(ctx, s.update)) callWithValue(s, s.update, true);
         }
+        mediaEvents();
         runTimers();
         runJobs();
         if (storageDirty) saveStorage();
+    }
+
+    // Media events after a script's first update, then on every change
+    // (section 7).
+    void mediaEvents() {
+        if (!mediaKnown) return;
+        auto has = [](const Script& s, const char* name) { return s.events.count(name) != 0; };
+        for (auto& s : scripts) {
+            if (s.failed || !s.started) continue;
+            if (!s.mediaTold || s.mediaEnabled != media.enabled) {
+                s.mediaTold = true;
+                s.mediaEnabled = media.enabled;
+                if (has(s, "mediaStatusChanged")) {
+                    JSValue e = JS_NewObject(ctx);
+                    JS_SetPropertyStr(ctx, e, "enabled", JS_NewBool(ctx, media.enabled));
+                    callEvent(s, "mediaStatusChanged", e);
+                    JS_FreeValue(ctx, e);
+                }
+            }
+            if (!media.enabled) continue;
+            if (s.mediaState != media.state) {
+                s.mediaState = media.state;
+                if (has(s, "mediaPlaybackChanged")) {
+                    JSValue e = JS_NewObject(ctx);
+                    JS_SetPropertyStr(ctx, e, "state", JS_NewInt32(ctx, media.state));
+                    callEvent(s, "mediaPlaybackChanged", e);
+                    JS_FreeValue(ctx, e);
+                }
+            }
+            if (!s.propsTold || !s.mediaProps.sameProperties(media)) {
+                s.propsTold = true;
+                s.mediaProps = media;
+                if (has(s, "mediaPropertiesChanged")) {
+                    JSValue e = JS_NewObject(ctx);
+                    const std::pair<const char*, const std::string*> fields[] = {
+                        {"title", &media.title},           {"artist", &media.artist},
+                        {"subTitle", &media.subTitle},     {"albumTitle", &media.albumTitle},
+                        {"albumArtist", &media.albumArtist}, {"genres", &media.genres},
+                        {"contentType", &media.contentType}};
+                    for (const auto& [key, value] : fields) JS_SetPropertyStr(ctx, e, key, toJs(*value));
+                    callEvent(s, "mediaPropertiesChanged", e);
+                    JS_FreeValue(ctx, e);
+                }
+            }
+            if (!s.artToldOnce || s.artTold != media.artPath) {
+                s.artToldOnce = true;
+                s.artTold = media.artPath;
+                if (has(s, "mediaThumbnailChanged")) {
+                    JSValue e = JS_NewObject(ctx);
+                    JS_SetPropertyStr(ctx, e, "hasThumbnail", JS_NewBool(ctx, art.hasThumbnail));
+                    JS_SetPropertyStr(ctx, e, "primaryColor", toJs(art.primary));
+                    JS_SetPropertyStr(ctx, e, "secondaryColor", toJs(art.secondary));
+                    JS_SetPropertyStr(ctx, e, "tertiaryColor", toJs(art.tertiary));
+                    JS_SetPropertyStr(ctx, e, "textColor", toJs(art.text));
+                    JS_SetPropertyStr(ctx, e, "highContrastColor", toJs(art.highContrast));
+                    callEvent(s, "mediaThumbnailChanged", e);
+                    JS_FreeValue(ctx, e);
+                }
+            }
+            if (media.timelineSerial && s.timelineTold != media.timelineSerial) {
+                s.timelineTold = media.timelineSerial;
+                if (has(s, "mediaTimelineChanged")) {
+                    JSValue e = JS_NewObject(ctx);
+                    JS_SetPropertyStr(ctx, e, "position", JS_NewFloat64(ctx, media.position));
+                    JS_SetPropertyStr(ctx, e, "duration", JS_NewFloat64(ctx, media.duration));
+                    callEvent(s, "mediaTimelineChanged", e);
+                    JS_FreeValue(ctx, e);
+                }
+            }
+        }
     }
 
     void cursorEvents() {
@@ -1468,6 +1554,12 @@ size_t ScriptEngine::scriptCount() const {
 size_t ScriptEngine::failedCount() const { return impl_->scripts.size() - scriptCount(); }
 
 bool ScriptEngine::usesAudio() const { return impl_->audioBufferCount() > 0; }
+
+void ScriptEngine::setMedia(const MediaInfo& media, const AlbumArtColors& art) {
+    impl_->media = media;
+    impl_->art = art;
+    impl_->mediaKnown = true;
+}
 
 void ScriptEngine::update(const ScriptFrame& frame) { impl_->update(frame); }
 

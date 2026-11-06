@@ -24,6 +24,7 @@
 
 #include "core/AudioSpectrum.h"
 #include "scene/assets/AssetLocator.h"
+#include "scene/audio/MediaInfo.h"
 #include "scene/model/SceneLoader.h"
 
 namespace canvas::scene {
@@ -83,6 +84,9 @@ public:
     size_t failedCount() const;  // scripts that failed (reported once)
     // True once a script registered audio buffers.
     bool usesAudio() const;
+    // The latest media state and album art colours; scripts get the media
+    // events of src/scene/audio/README.md section 7 on their next update.
+    void setMedia(const MediaInfo& media, const AlbumArtColors& art);
     void update(const ScriptFrame& frame);
     // Live user property changes: re-sent script properties and
     // applyUserProperties(changed) on the next update.

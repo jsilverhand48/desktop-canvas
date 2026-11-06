@@ -54,6 +54,7 @@ void NativeRenderer::start() {
     renderer_->setMuted(muted_);
     renderer_->setVolume(volume_);
     renderer_->setSoundPaused(paused_);
+    if (!media_.is_null()) renderer_->setMedia(media_);
     std::string error;
     if (!renderer_->load(std::move(*pending_), error)) {
         log::warn() << "native renderer: " << error;
@@ -83,6 +84,11 @@ void NativeRenderer::setMuted(bool muted) {
 void NativeRenderer::setVolume(int percent) {
     volume_ = percent;
     if (renderer_) renderer_->setVolume(percent);
+}
+
+void NativeRenderer::setMedia(const nlohmann::json& message) {
+    media_ = message;
+    if (renderer_) renderer_->setMedia(message);
 }
 
 void NativeRenderer::setPaused(bool paused) {

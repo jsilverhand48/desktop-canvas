@@ -13,6 +13,8 @@
 #include <cstdint>
 #include <string>
 
+#include <nlohmann/json.hpp>
+
 namespace canvas::scenehost {
 
 class Renderer {
@@ -42,6 +44,8 @@ public:
     // True while the scene reads the audio spectrum (the host asks the
     // daemon for capture, src/scene/audio/README.md section 3).
     virtual bool wantsAudio() const { return false; }
+    // The daemon's "media" message (process/HelperProtocol.h).
+    virtual void setMedia(const nlohmann::json& /*message*/) {}
 };
 
 }  // namespace canvas::scenehost

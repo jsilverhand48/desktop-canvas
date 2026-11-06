@@ -205,7 +205,7 @@ target_compile_definitions(canvas_daemon PRIVATE
 # it Plasma gets no fullscreen pause and no cursor under the desktop icons.
 pkg_check_modules(LIBSYSTEMD IMPORTED_TARGET libsystemd)
 if(LIBSYSTEMD_FOUND)
-    target_sources(canvas_daemon PRIVATE src/desktop/KdeBridge.cpp)
+    target_sources(canvas_daemon PRIVATE src/desktop/KdeBridge.cpp src/desktop/MprisWatcher.cpp)
     target_link_libraries(canvas_daemon PUBLIC PkgConfig::LIBSYSTEMD)
     target_compile_definitions(canvas_daemon PUBLIC CANVAS_HAVE_SDBUS=1)
 else()
@@ -308,6 +308,7 @@ if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND AND F
         src/scene/text/TextLayout.cpp
         src/scene/script/ScriptEngine.cpp
         src/scene/audio/SoundLayer.cpp
+        src/scene/audio/MediaInfo.cpp
     )
     target_link_libraries(canvas_scene_core
         PUBLIC canvas_core canvas_scene_props

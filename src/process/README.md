@@ -50,7 +50,9 @@ Supervised child processes: linux-wallpaperengine (lwe) for scenes on the
   so respawned helpers pick it up. `Launch::span` adds `--span`;
   `Launch::audioFd` hands the spectrum memory over with `--audio-fd 4`,
   and `setOnAudioDemand` reports whether the helper needs the capture
-  (its scene reads audio and it runs unpaused; false on exit and stop). No
+  (its scene reads audio and it runs unpaused; false on exit and stop).
+  `setMedia` sends the media players' state as "media" (re-sent after
+  every hello, like the rest of the state). No
   message for 10 s means the helper hung: SIGKILL, which the supervisor
   counts as a crash.
   A strict helper's unsupported report fires `onUnsupported` (deferred one

@@ -185,7 +185,14 @@ void SceneHelperInstance::sendState() {
     if (paused_) send({{"type", "pause"}});
     for (const auto& [output, covered] : covered_)
         send({{"type", "covered"}, {"output", output}, {"covered", covered}});
+    if (!media_.is_null()) send(media_);
     flushPointer();
+}
+
+void SceneHelperInstance::setMedia(const nlohmann::json& media) {
+    media_ = media;
+    media_["type"] = "media";
+    send(media_);
 }
 
 void SceneHelperInstance::setCovered(const std::string& output, bool covered) {

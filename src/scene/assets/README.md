@@ -268,8 +268,10 @@ All in namespace `canvas::scene`, built into `canvas_scene_core`.
   `LZ4_decompress_safe`, JPEG through the TurboJPEG 2.x interface of
   libjpeg-turbo 2.1 or later with the progressive scan limit and the size
   checked before allocating, PNG through libpng's simplified API, raw size
-  checks) and `expandBlocks()` (CPU DXT1/3/5 to RGBA8). Stateless, any
-  thread.
+  checks) and `expandBlocks()` (CPU DXT1/3/5 to RGBA8);
+  `decodeImageFile()` decodes a whole JPEG or PNG file with its size from
+  its header (album art for media events, `../audio/README.md` section
+  7). Stateless, any thread.
 
 Tests: `claude_tests/test_scene_assets.cpp`, `test_scene_corpus.cpp`,
 `test_scene_dxt_gl.cpp` and `fuzz/` (see `claude_tests/README.md`).

@@ -25,6 +25,16 @@ doing, and Plasma specifics. Part of the `canvas_daemon` library.
   linux-wallpaperengine reads its own input, so lwe scenes do not get it.
   `desktop-canvas --probe-kde-bridge N` runs only the bridge for N seconds
   and prints what KWin reports.
+- `MprisWatcher` (also `CANVAS_HAVE_SDBUS`): media players over MPRIS for
+  scene script media events (`src/scene/audio/README.md` section 7). It
+  lists the `org.mpris.MediaPlayer2.*` names, reads each player's
+  `PlaybackStatus` and `Metadata` with GetAll when it appears or signals
+  PropertiesChanged, follows the player that started playing last (else
+  the one paused last), asks its `Position` once a second while it plays,
+  and hands every change to `InstanceManager::setMedia` as a "media"
+  message body (album art only as a local file path; nothing is fetched).
+  All bus calls are asynchronous; config `audio.media` starts and stops
+  it.
 
 Where windows come from: X11 (EWMH, `display/x11/X11Toplevels`) and wlroots
 compositors (`display/wayland/WaylandToplevels`) report them through

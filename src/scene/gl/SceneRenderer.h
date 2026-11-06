@@ -34,6 +34,8 @@
 #include <utility>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "core/AudioSpectrum.h"
 #include "scene/assets/AssetLocator.h"
 #include "scene/model/SceneLoader.h"
@@ -116,6 +118,9 @@ public:
     void setMuted(bool muted);
     void setSoundPaused(bool paused);
     size_t soundCount() const;  // sound layers with at least one file
+    // The daemon's "media" message (src/scene/audio/README.md section 7):
+    // album art is decoded here, scripts get the events.
+    void setMedia(const nlohmann::json& message);
 
     const std::vector<std::string>& problems() const;
     size_t layerCount() const;

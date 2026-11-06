@@ -45,6 +45,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "config/Config.h"
 #include "display/Platform.h"
 #include "render/NativeSupportCache.h"
@@ -154,6 +156,13 @@ public:
     void setOthersPlaying(bool playing);
     void setAutoMute(bool enabled);
     bool autoMuted() const { return autoMute_ && othersPlaying_; }
+    // Media player state for native scene helpers (a "media" message body,
+    // src/scene/audio/README.md section 7), kept for instances started
+    // later. setMediaEnabled(false) sends {"enabled": false} and tells the
+    // owner (onMediaEnabled) to stop watching players.
+    void setMedia(const nlohmann::json& media);
+    void setMediaEnabled(bool enabled);
+    void setOnMediaEnabled(std::function<void(bool)> cb) { onMediaEnabled_ = std::move(cb); }
 
     // Fullscreen pause. setToplevels stores the desktop's latest window list
     // (Platform::watchToplevels or the KDE bridge) and recomputes the
@@ -234,6 +243,9 @@ private:
     SpectrumService* spectrum_ = nullptr;
     bool autoMute_ = true;
     bool othersPlaying_ = false;
+    nlohmann::json media_ = {{"enabled", false}};
+    bool mediaEnabled_ = true;
+    std::function<void(bool)> onMediaEnabled_;
     void applyAutoMute();
     std::optional<bool> lweLayer_;  // lazy `lwe --help` probe result
     std::string sceneHelper_;       // desktop-canvas-scene, empty if missing

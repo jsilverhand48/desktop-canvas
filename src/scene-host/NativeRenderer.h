@@ -58,6 +58,7 @@ public:
     void setMuted(bool muted) override;
     void setVolume(int percent) override;
     void setPaused(bool paused) override;
+    void setMedia(const nlohmann::json& message) override;
 
     // Problems the engine met so far (empty before the first render).
     std::vector<std::string> problems() const;
@@ -79,6 +80,7 @@ private:
     bool leftDown_ = false;
     bool muted_ = true, paused_ = false;
     int volume_ = 15;
+    nlohmann::json media_;  // the latest media message, for a renderer made later
     canvas::SpectrumReader spectrum_;
     int lastWidth_ = 0, lastHeight_ = 0;
 };

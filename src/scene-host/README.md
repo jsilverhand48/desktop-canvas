@@ -74,7 +74,8 @@ blocks the daemon's single threaded event loop.
 - `Renderer` the interface SceneHost drives: `advance(dt)` once per tick,
   then `render(width, height)` per output into the bound framebuffer, plus
   live pointer (motion and buttons), property, mute and volume inputs,
-  `setPaused()` (the host stopped ticking) and `wantsAudio()`.
+  `setPaused()` (the host stopped ticking), `setMedia()` and
+  `wantsAudio()`.
 - `NativeRenderer` the scene engine (`scene/gl/SceneRenderer`) behind
   that interface: `create()` reads the wallpaper and loads the scene
   before GL exists (and before the sandbox), the first `render()` builds
@@ -93,7 +94,9 @@ blocks the daemon's single threaded event loop.
   runs only for scenes that need it (`src/scene/audio/README.md`).
   Sound layers play only in live runs (never for `--screenshot`), at the
   daemon's volume and mute, and pause whenever the host stops ticking
-  (paused, or every output covered). GL
+  (paused, or every output covered). "media" messages go to the engine,
+  which decodes the named local album art and hands scripts their media
+  events. GL
   objects are freed only by
   `shutdown()` with the context current (the screenshot path does so);
   otherwise the driver frees them at exit.

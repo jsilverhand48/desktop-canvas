@@ -80,7 +80,7 @@ objects) [asset]. `destroy()` runs when the scene unloads [doc].
 `resizeScreen(size)` runs when the output size changes [doc], with the
 output size in pixels as a `Vec2`, from the second frame on (the first
 size is no change). Media events (`mediaStatusChanged` and the
-others) never fire: there is no media integration before phase P7c
+others) fire from phase P7c as `../audio/README.md` section 7 describes
 [corpus: 70 scripts export one]. Nor does `applyGeneralSettings`: its
 only setting is the editor's language [doc].
 

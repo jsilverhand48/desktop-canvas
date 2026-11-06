@@ -14,7 +14,9 @@ Wallpaper instance orchestration and in-process backends.
   `src/audio/README.md`), mutes instances that can mute live (native
   helpers, videos; `WallpaperInstance::mutesLive`) while other
   applications play (`setOthersPlaying`, `setAutoMute`; lwe mutes
-  itself, web helpers would need a restart), and blacklists scene wallpapers whose child
+  itself, web helpers would need a restart), and keeps the latest media
+  player state for native helpers (`setMedia`, `setMediaEnabled`, with
+  `setOnMediaEnabled` telling main.cpp to start or stop the watcher), and blacklists scene wallpapers whose child
   process keeps crashing (config "broken" list). Resolution order for an
   output is: runtime override (exact name, then `*`), then the config
   assignment (exact name, then `*`). Overrides belong to Rotator and are

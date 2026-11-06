@@ -82,6 +82,8 @@ public:
     void setPointer(const std::string& output, double x, double y) override;
     // Sent as "covered"; the helper stops presenting on covered outputs.
     void setCovered(const std::string& output, bool covered) override;
+    // Sent as "media"; the latest is re-sent after every hello.
+    void setMedia(const nlohmann::json& media) override;
 
     const std::string& wallpaperId() const override { return wallpaper_id_; }
     const std::string& outputName() const override { return output_name_; }
@@ -125,6 +127,7 @@ private:
     std::vector<std::string> unsupported_;  // from the latest helper
     std::map<std::string, std::pair<double, double>> pointer_;  // pending
     std::map<std::string, bool> covered_;  // re-sent after every hello
+    nlohmann::json media_;                  // likewise, when set
     uint64_t pointer_timer_ = 0;
     uint64_t watchdog_timer_ = 0;
     std::function<void(const std::vector<std::string>&)> on_unsupported_;

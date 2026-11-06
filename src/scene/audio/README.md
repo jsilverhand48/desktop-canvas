@@ -233,6 +233,17 @@ Phase P7b (sound layers):
   host), `../../scene-host/SceneCheck.cpp` (`sound` unsupported without
   libmpv).
 
-Tests: `claude_tests/test_audio_spectrum`, `test_scene_sound`, the audio
+Phase P7c (muting while others play, media information):
+- `../../audio/PlaybackWatcher.h` (daemon): section 6's rule and the sink
+  input watcher; `../../render/InstanceManager.h` applies it to instances
+  that mute live.
+- `../../desktop/MprisWatcher.h` (daemon): section 7's players.
+- `MediaInfo.h`, `MediaInfo.cpp` (`canvas_scene_core`): the media
+  message read back and the album art colours; `../assets/TextureDecode.h`
+  (`decodeImageFile`); `../script/ScriptEngine.h` (`setMedia`, the
+  events).
+
+Tests: `claude_tests/test_audio_spectrum`, `test_scene_sound`,
+`test_media` (on a private bus), the audio
 parts of `test_engine_selection`, `test_scene_particles`,
 `test_scene_script` and `test_scene_render`.

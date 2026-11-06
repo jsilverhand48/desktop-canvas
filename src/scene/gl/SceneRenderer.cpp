@@ -25,6 +25,8 @@
 #include "scene/model/Json.h"
 #include "scene/particles/ParticleSystem.h"
 #include "scene/render/Animation.h"
+#include "scene/assets/TextureDecode.h"
+#include "scene/audio/MediaInfo.h"
 #include "scene/audio/SoundLayer.h"
 #include "scene/gl/SoundOutputMpv.h"
 #include "scene/script/ScriptEngine.h"
@@ -657,6 +659,9 @@ struct SceneRenderer::Impl : ScriptHost {
     int wallpaperVolume = 15;  // the daemon's 0..100
     bool wallpaperMuted = true;
     bool soundPaused = false;
+    MediaInfo media;  // the latest media state, kept for scripts
+    AlbumArtColors art;
+    bool mediaKnown = false;
     float projection[2] = {1920, 1080};
     // RGBA16F for hdr scenes: the frame, its copies, layer buffers and
     // rgba_backbuffer fbos (section 5).
@@ -1644,6 +1649,7 @@ struct SceneRenderer::Impl : ScriptHost {
             return;
         }
         takeScriptOutput();
+        if (mediaKnown) scripts->setMedia(media, art);
     }
 
     // Failures become problems; console lines go to the log ("object 7
@@ -2809,6 +2815,34 @@ void SceneRenderer::setSoundPaused(bool paused) {
 }
 
 size_t SceneRenderer::soundCount() const { return impl_->sounds.size(); }
+
+void SceneRenderer::setMedia(const nlohmann::json& message) {
+    Impl& m = *impl_;
+    MediaInfo next = MediaInfo::fromJson(message);
+    if (!m.mediaKnown || next.artPath != m.media.artPath) {
+        m.art = AlbumArtColors{};
+        if (!next.artPath.empty()) {
+            // A local image the daemon named; read with a size cap.
+            std::ifstream in(next.artPath, std::ios::binary);
+            std::vector<uint8_t> bytes;
+            if (in) {
+                in.seekg(0, std::ios::end);
+                const std::streamoff size = in.tellg();
+                if (size > 0 && size <= (32 << 20)) {
+                    bytes.resize(size_t(size));
+                    in.seekg(0);
+                    in.read(reinterpret_cast<char*>(bytes.data()), size);
+                }
+            }
+            DecodedImage image;
+            std::string error;
+            if (!bytes.empty() && decodeImageFile(bytes, image, error)) m.art = albumArtColors(image);
+        }
+    }
+    m.media = next;
+    m.mediaKnown = true;
+    if (m.scripts) m.scripts->setMedia(m.media, m.art);
+}
 
 bool SceneRenderer::wantsAudio() const {
     const Impl& m = *impl_;

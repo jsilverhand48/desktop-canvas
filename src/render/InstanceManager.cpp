@@ -297,6 +297,7 @@ void InstanceManager::startInstance(const std::vector<std::string>& group,
                 << info.id << " (" << info.title << ") on " << where;
     // Muted while other applications play, where that needs no restart.
     if (instance->mutesLive() && autoMuted()) instance->setMuted(true);
+    instance->setMedia(media_);
     instance->start();
     for (const auto& name : group) {
         slots_[name] = Slot{instance, group};
@@ -619,6 +620,18 @@ void InstanceManager::setAutoMute(bool enabled) {
     if (enabled == autoMute_) return;
     autoMute_ = enabled;
     applyAutoMute();
+}
+
+void InstanceManager::setMedia(const nlohmann::json& media) {
+    media_ = mediaEnabled_ ? media : nlohmann::json{{"enabled", false}};
+    for (auto* instance : instances()) instance->setMedia(media_);
+}
+
+void InstanceManager::setMediaEnabled(bool enabled) {
+    if (enabled == mediaEnabled_) return;
+    mediaEnabled_ = enabled;
+    if (!enabled) setMedia({{"enabled", false}});
+    if (onMediaEnabled_) onMediaEnabled_(enabled);
 }
 
 void InstanceManager::applyAutoMute() {

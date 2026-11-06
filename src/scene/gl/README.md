@@ -73,6 +73,9 @@ context; the GPU free parts live in the other `src/scene/` modules.
   libmpv is built in, silent otherwise; every `advance()` updates them
   with the layer volume and the wallpaper's `setVolume`/`setMuted`, and
   `setSoundPaused` holds them while the wallpaper is paused.
+  `setMedia()` takes the daemon's media message: the album art file it
+  names is read (at most 32 MiB) and decoded (`decodeImageFile`) into
+  `albumArtColors`, and scripts get the state for their media events.
 - `SoundOutputMpv` a sound layer's libmpv player: audio only, reading the
   layer's files from memory through mpv's stream callbacks like
   `VideoTexture`; built only with libmpv. GL objects need the context current, including at

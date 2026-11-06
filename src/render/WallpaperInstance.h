@@ -14,6 +14,8 @@
 // outputs (a merged scene group); outputName() is the first of them.
 #pragma once
 
+#include <nlohmann/json.hpp>
+
 #include <string>
 
 namespace canvas {
@@ -34,6 +36,10 @@ public:
     // other applications play (src/scene/audio/README.md section 6) only
     // touches these.
     virtual bool mutesLive() const { return true; }
+
+    // What media players play (src/scene/audio/README.md section 7), the
+    // body of a "media" message; only native scene helpers use it.
+    virtual void setMedia(const nlohmann::json& /*media*/) {}
 
     // Applies a new volume (0..100) live and returns true, or returns false
     // when the backend can only take it at launch; the owner then restarts

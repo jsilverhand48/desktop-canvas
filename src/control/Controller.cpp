@@ -430,6 +430,7 @@ bool Controller::updateSettings(const json& patch, std::string& error,
     if (volumeChanged) manager_.setVolume(config_.audioVolume);
     manager_.setAudioProcessing(config_.audioProcessing);
     manager_.setAutoMute(config_.audioAutoMute);
+    manager_.setMediaEnabled(config_.audioMedia);
     if (mutedChanged) manager_.setMuted(newMuted);
     if (coverage) manager_.refreshCoverage();
     for (const auto& id : unbroken) manager_.clearBroken(id);

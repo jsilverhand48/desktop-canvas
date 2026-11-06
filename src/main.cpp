@@ -24,6 +24,9 @@
 
 #include "audio/AudioPolicy.h"
 #include "audio/SpectrumService.h"
+#ifdef CANVAS_HAVE_SDBUS
+#include "desktop/MprisWatcher.h"
+#endif
 #ifdef CANVAS_HAVE_PULSE
 #include "audio/PlaybackWatcher.h"
 #include "audio/PulseCapture.h"
@@ -193,6 +196,16 @@ int runDaemon(Config& config) {
     InstanceManager manager(loop, platform.get(), config, audio, supervisor);
     manager.setSpectrumService(&spectrum);
     manager.setAutoMute(config.audioAutoMute);
+#ifdef CANVAS_HAVE_SDBUS
+    // Media players for scene scripts (src/scene/audio/README.md section 7).
+    MprisWatcher mpris(loop, [&manager](const nlohmann::json& media) { manager.setMedia(media); });
+    manager.setOnMediaEnabled([&mpris](bool on) {
+        if (on) mpris.start();
+        else mpris.stop();
+    });
+    if (config.audioMedia) mpris.start();
+    else manager.setMediaEnabled(false);
+#endif
 #ifdef CANVAS_HAVE_PULSE
     // Muting while other applications play (src/scene/audio/README.md
     // section 6); the manager applies it only where config allows.

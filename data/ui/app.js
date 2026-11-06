@@ -515,6 +515,7 @@ function renderSettings() {
   const volumeText = el('span', { text: s.audio.volume });
   const processing = el('input', { type: 'checkbox', checked: s.audio.processing !== false });
   const autoMute = el('input', { type: 'checkbox', checked: s.audio.auto_mute !== false });
+  const media = el('input', { type: 'checkbox', checked: s.audio.media !== false });
   volume.addEventListener('input', () => { volumeText.textContent = volume.value; });
 
   const interval = el('input', { type: 'number', min: 0, step: 'any', value: +(s.playlist.interval / 60).toFixed(2), style: 'width: 120px' });
@@ -582,7 +583,8 @@ function renderSettings() {
       ...field('Muted', muted),
       ...field('Volume', el('div', { class: 'row' }, volume, volumeText)),
       ...field('Audio responsive scenes', processing, 'Lets native scenes react to what your computer plays (visualizers, beats). Nothing is recorded or kept.'),
-      ...field('Mute while other apps play', autoMute, 'Silences wallpaper sound while another application plays audio.')),
+      ...field('Mute while other apps play', autoMute, 'Silences wallpaper sound while another application plays audio.'),
+      ...field('Now playing for scenes', media, 'Lets native scenes show what your media player plays (title, artist, album art colours).')),
     el('fieldset', {}, el('legend', { text: 'Rotation' }),
       ...field('Interval (minutes)', interval, '0 turns rotation off. Enable wallpapers in the Library tab.'),
       ...field('Rotating outputs', el('div', { class: 'row' },
@@ -633,7 +635,7 @@ function renderSettings() {
       fps: Number(fps.value),
       scaling: scaling.value,
       layer: layer.value,
-      audio: { muted: muted.checked, volume: Number(volume.value), processing: processing.checked, auto_mute: autoMute.checked },
+      audio: { muted: muted.checked, volume: Number(volume.value), processing: processing.checked, auto_mute: autoMute.checked, media: media.checked },
       playlist: {
         interval: Math.round(Number(interval.value) * 60),
         outputs: rotateOutputs.filter(r => r.box.checked).map(r => r.name),

@@ -19,6 +19,12 @@
 //       user property overrides, values in --set-property text form
 //   {"type":"covered","output":"DP-1","covered":true}
 //       a fullscreen window hides that output (nothing to present there)
+//   {"type":"media","enabled":true,"state":1,"title":"...","artist":"...",
+//    "subTitle":"","albumTitle":"...","albumArtist":"...","genres":"...",
+//    "contentType":"audio","thumbnail":"/local/art.png","position":12.5,
+//    "duration":200,"timeline":7}
+//       what media players play (src/scene/audio/README.md section 7);
+//       the latest is re-sent after every hello
 //   {"type":"quit"}    exit with kExitClean promptly
 // Helper to daemon:
 //   {"type":"hello","proto":1,"pid":123}     first message after start

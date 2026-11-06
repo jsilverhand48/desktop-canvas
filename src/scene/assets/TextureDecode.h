@@ -49,4 +49,9 @@ bool decodeMip(const TextureFile& texture, const TextureMip& mip,
 // other layouts are copied unchanged.
 bool expandBlocks(const DecodedImage& in, DecodedImage& out, std::string& error);
 
+// A whole JPEG or PNG file (album art for media events,
+// src/scene/audio/README.md section 7) to RGBA8, its size taken from its
+// header; the same size limit applies.
+bool decodeImageFile(std::span<const uint8_t> data, DecodedImage& out, std::string& error);
+
 }  // namespace canvas::scene
