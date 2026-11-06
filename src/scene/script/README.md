@@ -173,8 +173,10 @@ first whose `options.name` matches, or the first at all without a name
 clock (`../render/README.md` section 10): `stop` also rewinds it [doc:
 "Stop the animation and reset the current time to zero"], and
 `startpaused` ones wait on frame 0 until played [asset: the option's
-name]. `getTextureAnimation()` returns controls that do nothing yet. Puppet bones, attachments,
-video textures, sound layers and 3D models are later phases.
+name]. `getTextureAnimation()` returns controls that do nothing yet.
+Puppet image layers add animation layers, bones and blend shapes, and
+every layer the attachment calls (`../puppet/README.md` section 7,
+phase P8). Video textures and 3D models are later phases.
 
 ## 5. Cursor events
 

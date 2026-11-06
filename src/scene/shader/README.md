@@ -184,9 +184,13 @@ comments:
   sizes given by macros are expanded): Wallpaper Engine's own effect
   shaders include headers that use uniforms the shader declares after the
   `#include` (section 7);
-- `#require LightingV1` asks for engine provided lighting code; a program
-  that calls its `PerformLighting_V1` cannot render until phase P8 writes
-  it, one that does not call it is unaffected.
+- `#require LightingV1` asks for engine provided lighting code. A program
+  that calls `PerformLighting_V1` gets desktop-canvas's own function
+  (phase P8, `../render/README.md` section 12) inserted before the first
+  function definition, together with the light uniform arrays it reads
+  (declared only when the shader does not already declare them) and the
+  `LIGHTS_*` combos (zero lights unless the renderer sets counts); one
+  that does not call it is unaffected.
 
 `glslang` checks the result against the GLSL 3.30 core rules as a strict
 reference (tests and the corpus experiment); NVIDIA's core profile turned

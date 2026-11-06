@@ -42,7 +42,7 @@ Appendix A; they are cited as **[req A<n>]**.
 | `script/` | SceneScript: the QuickJS-ng runtime, scripts and their lifecycle, globals, layer objects, cursor events (implemented; needs QuickJS-ng in the build) | P6a |
 | `text/` | text layers: fonts, measuring, lines, placement, drawing (implemented) | P6b |
 | `audio/` | the audio spectrum and its sharing, audio responses, sound layers, muting while other applications play, media information (specified) | P7 |
-| `puppet/` | puppet warp meshes, skeletons, animation | P8 |
+| `puppet/` | puppet warp: MDL files, skeletons, animation layers, skinning, attachments, bone physics (specified) | P8 |
 
 ## Libraries
 

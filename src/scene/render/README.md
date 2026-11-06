@@ -120,8 +120,22 @@ Particle layers simulate and draw as `../particles/README.md` sections
 6 to 9 say (phases P5a and P5b), in `objects` order like other layers,
 child systems right after their parents. Text layers draw like image
 layers whose texture is the coloured text (`../text/README.md` section 6,
-phase P6b). Shape layers (`shape` "quad", 4 objects) and sound and light
-layers belong to later phases.
+phase P6b). Puppet image layers draw their final pass as a skinned mesh
+(`../puppet/README.md` section 5, phase P8). Sound layers play
+(`../audio/README.md`); light layers draw nothing and light lit
+materials (section 12).
+
+Shape layers (`shape` "quad", 4 objects in 3 scenes, each with one
+`lightshafts` effect [corpus]; the assets' light shafts preset is such
+an object [asset: presets/lightshafts/preset.json]) are image layers
+without a texture: a transparent rectangle the size of the projection
+[inference: the objects sit at the scene centre with scale 1, and the
+preset's previews scale them to about 2 for a 256 pixel scene], run
+through their effects like any image layer and drawn with translucent
+blending.
+
+Objects with an `attachment` sit in a puppet's attachment frame before
+parenting applies (`../puppet/README.md` section 4) [req A6].
 
 ## 3. Effects
 
@@ -411,6 +425,13 @@ Camera fade (`camerafade`, on in 204 scenes [corpus]) is "the fade
 effect when changing paths" [doc: SceneScript IScene]: camera paths,
 nothing to draw in a 2D scene.
 
+Camera path layers (`camera` objects with a `path` file, 1 object
+[corpus]) move a perspective camera along recorded paths. The one in the
+library names a file whose `paths` list is empty [corpus], so it never
+moves anything: `camera-path` is supported when every path file has an
+empty `paths` list and the layer is ignored; otherwise it stays
+unsupported [this project].
+
 Camera shake (`camerashake`, 7 scenes; editor defaults amplitude 0.5,
 roughness 1, speed 3 [corpus]): speed "sets the base speed", amplitude
 "the magnitude", roughness "how rough the camera will shake" [doc:
@@ -448,6 +469,66 @@ is 0.5 + (s - 0.5) * depth per axis with parallax on and (0.5, 0.5)
 otherwise [inference: depthparallax.frag centres it with `* 2 - 1`
 [asset]]. `g_PointerState` is not documented and stays zero.
 
+## 12. Lights
+
+Light layers (`light` objects, 9 in 3 scenes [corpus]: kinds `lpoint`
+3, `ltube` 3, `point` 1, `ldirectional` 1, `lspot` 1) light materials
+whose `LIGHTING` combo is 1 (genericimage2 with `VERSION` 2,
+genericimage3, genericimage4 in the library [corpus]). They draw
+nothing themselves; their `visible` (with ancestors, section 2) decides
+whether they shine. Fields: `color`, `intensity`, `radius`, and for
+spot lights `innercone`, `outercone` (degrees), for tube lights
+`controlpoint`; `castshadow`, `castvolumetrics`, `density`, `exponent`,
+`volumetricsexponent` and the cascade distances belong to shadows and
+light volumes, which are not drawn [this project].
+
+Positions are world positions (section 2, parents included, z as given:
+lights sit 35 to 519 units in front of the layers [corpus]). A spot or
+directional light points along its object's rotation applied to
+(0, 0, -1), into the scene [inference]. A tube runs from its origin to
+its object matrix applied to `controlpoint` [inference: the library's
+tubes are then centred on their parents]. `point` is the older name of
+`lpoint` [inference].
+
+Engine uniforms [asset: genericimage2, generic, genericimage3 and
+generic3 declare them without values]: `g_LightAmbientColor` is the
+scene's `ambientcolor` and `g_LightSkylightColor` its `skylightcolor`.
+The asset light function divides each light's color by the squared
+distance [asset: common_pbr.h ComputePBRLight], and genericimage3 scales
+it by its `.w` squared, so `.w` is read as the radius and the color as
+`color * intensity` [inference]:
+
+- genericimage3 and generic3: combos `LIGHTS_POINT`, `LIGHTS_SPOT`,
+  `LIGHTS_TUBE`, `LIGHTS_DIRECTIONAL` hold the number of lights of each
+  kind (at most 4 each, in `objects` order; the library has at most
+  3 of a kind [corpus]) and
+  `LIGHTS_SHADOW_MAPPING`, `LIGHTS_COOKIE` are 0. `g_LPoint_Color[i]` =
+  (color * intensity, radius), `g_LPoint_Origin[i]` = (position, 0);
+  spot: `g_LSpot_Origin[i].w` = cos(inner cone), `g_LSpot_Direction[i]`
+  = (direction, cos(outer cone)) [asset: the shader's smoothstep goes
+  from the `.w` of the direction to that of the origin]; tube:
+  `g_LTube_OriginA`, `g_LTube_OriginB`; directional:
+  `g_LDirectional_Direction[i]` = (the unit vector toward the light, 0),
+  color `.w` = 1.
+- genericimage2 and generic (`VERSION` 2): the first 4 lights,
+  any kind treated as a point at its position: `g_LightsPosition[i]`,
+  `g_LightsColorPremultiplied` packing colors 0 to 2 in `.rgb` and the
+  fourth color in the three `.w` [asset], each color premultiplied as
+  color * intensity * radius²; missing lights are black.
+  `g_LightsColorRadius[i]` = (color * intensity, radius).
+- genericimage4 and the other assets model shaders call
+  `PerformLighting_V1(worldPos, albedo, normal, viewVector,
+  specularTint, f0, roughness, metallic)` from `#require LightingV1`
+  [asset], engine code with no source in the assets: desktop-canvas
+  supplies its own function over the genericimage3 uniforms above,
+  summing the assets' Cook-Torrance light term for each light in the
+  same way [this project; asset: common_pbr_2.h]. The translator adds
+  the function and its uniforms to programs that call it
+  (`../shader/README.md`).
+
+Lights are evaluated every frame (scripts and timeline animations move
+and dim them [corpus]).
+
 ## Files
 
 - `Layout.h`, `Layout.cpp` (`canvas_scene_core`): matrices, world
@@ -461,7 +542,7 @@ otherwise [inference: depthparallax.frag centres it with `* 2 - 1`
   texture region), sprite sheet frames (section 9).
 - `../gl/VideoTexture.h`, `.cpp`: video textures (section 9).
 - `../gl/SceneRenderer.h`, `../gl/SceneRenderer.cpp`: sections 1 to 6
-  and 8 to 11 (time, animations, shake, parallax, pointer).
+  and 8 to 12 (time, animations, shake, parallax, pointer, lights).
 - `../../scene-host/NativeRenderer.h`, `.cpp`: the renderer inside
   `desktop-canvas-scene`.
 - Tests: `claude_tests/test_scene_render.cpp` (layout math, debug

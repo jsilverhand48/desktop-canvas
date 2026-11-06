@@ -306,7 +306,9 @@ clear colour and projection: every scene), `image`, `effects`, `solid-layer`, `f
 `particle-controlpoints`, `particle-children`, `particle-trails`
 (particle systems using what phase P5b brings,
 `../particles/README.md` section 7), `script-layers` (a script that
-calls `createLayer`). A build
+calls `createLayer`), `puppet-blendshapes`, `puppet-ik` (puppets with
+blend shapes or inverse kinematics bones, `../puppet/README.md` section
+8). A build
 supports the features of the phases it contains; this one (phase P4a)
 supports `scene`, `image`, `effects`, `solid-layer`, `fullscreen-layer`,
 `composition-layer`, `group`, `user-properties`, `bloom` and `hdr`
@@ -317,8 +319,9 @@ section 5) from phase P4a, `timeline`, `parallax`, `camera-shake`,
 `particle-trails` from P5b, `text` from P6b, and `script` from P6a
 (only in builds with QuickJS-ng, `../script/README.md` section 6;
 `script-layers`, scripts that call `createLayer`, is not supported yet),
-and `sound` from P7b (only with libmpv, which the helper's check
-verifies), so
+`sound` from P7b (only with libmpv, which the helper's check
+verifies), and `puppet`, `light`, `shape-layer` and `camera-path` (when
+its paths are empty, `../render/README.md` section 11) from P8, so
 the "auto" engine uses the native renderer only for scenes made of those
 and keeps linux-wallpaperengine for the rest.
 `--check-all ROOT` runs the check on every scene folder in ROOT and
