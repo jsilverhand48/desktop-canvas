@@ -70,7 +70,7 @@ should Recommend/Suggest it. The native replacement, desktop-canvas-scene,
 is built from this repository (libepoxy, libpng, lz4, libjpeg-turbo 2.1
 or later, FreeType and fontconfig at build and run time, listed in the Arch `depends` and Debian
 `Build-Depends`; the Flatpak runtime already ships them; as is libsystemd
-for the KDE bridge; QuickJS-ng runs scene scripts when the build finds
+for the KDE bridge and libpulse for the daemon's audio capture; QuickJS-ng runs scene scripts when the build finds
 it: Arch `depends` lists `quickjs-ng`, while Debian and the Flatpak have
 no package yet, so scenes with scripts fall back there) and installed into the main package; once it renders scenes (plan phases P1 to P9) the
 linux-wallpaperengine dependency goes away. `-DDESKTOP_CANVAS_BUNDLE_LWE=ON` (see

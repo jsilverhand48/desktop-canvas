@@ -56,6 +56,9 @@ public:
         std::vector<std::pair<std::string, std::string>> properties;
         bool strict = false;  // engine "auto": exit 3 on unsupported content
         bool span = false;    // one canvas over all outputs (config spans)
+        // The audio spectrum memory to hand the helper (--audio-fd); -1
+        // none. Not owned; must outlive the instance.
+        int audioFd = -1;
     };
 
     // tag = "native:<first output>" (InstanceManager::handleBroken uses the
@@ -89,6 +92,10 @@ public:
         std::function<void(const std::vector<std::string>& features)> cb) {
         on_unsupported_ = std::move(cb);
     }
+    // Whether this helper needs the audio capture: its scene reads the
+    // spectrum ("audio" message) and it runs unpaused. Called on changes
+    // only, false last (exit, stop, destruction).
+    void setOnAudioDemand(std::function<void(bool)> cb) { on_audio_demand_ = std::move(cb); }
     // True once the current helper process reported "ready".
     bool helperReady() const { return helper_ready_; }
 
@@ -101,6 +108,7 @@ private:
     void flushPointer();
     void armWatchdog();
     void cancelTimers();
+    void reportAudioDemand();
 
     EventLoop& loop_;
     ChildSupervisor& supervisor_;
@@ -120,6 +128,9 @@ private:
     uint64_t pointer_timer_ = 0;
     uint64_t watchdog_timer_ = 0;
     std::function<void(const std::vector<std::string>&)> on_unsupported_;
+    std::function<void(bool)> on_audio_demand_;
+    bool audio_wanted_ = false;  // the current helper's last "audio" message
+    bool audio_demand_ = false;  // last value reported
     // Cleared in the destructor; deferred callbacks check it.
     std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 };

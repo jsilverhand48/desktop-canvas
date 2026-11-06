@@ -94,7 +94,9 @@ projection size), `screenResolution` (the output size), `userProperties`
 `isMobileDevice()` false, `isPortrait()` and `isLandscape()` from the
 output size, `AUDIO_RESOLUTION_16`, `_32`, `_64`, `registerAudioBuffers(n)`
 returning an object with `left`, `right` and `average` Float32Arrays of n
-values, all zero until phase P7 feeds them [corpus: 94 scripts register],
+values, filled before every frame's calls from the spectrum
+(`../audio/README.md` section 1; zero without capture) [corpus: 94
+scripts register],
 `setTimeout(fn, ms)` and `setInterval(fn, ms)` returning a function that
 cancels them [doc: "Returns a new callback that can be used to stop
 the timeout"], `openUserShortcut()` false, `registerAsset()` null [corpus:

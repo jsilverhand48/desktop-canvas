@@ -114,6 +114,7 @@ private:
     std::map<std::string, Output> outputs_;
     bool started_ = false;
     bool paused_ = false;
+    bool audio_wanted_ = false;  // last "audio" message sent
     bool ready_sent_ = false;
     uint64_t ticks_ = 0;
     std::chrono::steady_clock::time_point last_tick_{};

@@ -20,6 +20,15 @@ The wallpaper a rotation tick picks is deliberately not persisted: it lives
 in InstanceManager's runtime override map, so `assignments` keeps meaning the
 user's own choice and the config file is not rewritten every interval.
 
+`audio.processing` (default true; lwe's `--no-audio-processing` turned
+around) lets native scenes react to what the system plays: while on, the
+daemon captures the default output's monitor whenever a running scene
+needs it (`src/audio/README.md`). Applied live. `audio.auto_mute`
+(default true, like lwe without `--noautomute`) mutes native scenes and
+videos while another application plays audio. `audio.media` (default
+true) lets scene scripts receive what media players play
+(`src/scene/audio/README.md` section 7).
+
 `scene.randomize_options` (default false) makes every scene launch pick a
 random value for each dropdown property; `scene.include_nsfw_options`
 (default false) lets those picks include options labelled NSFW / nude.

@@ -150,6 +150,7 @@ void SceneHost::updateClock() {
                                       return !entry.second.covered;
                                   });
     bool run = !paused_ && anyVisible;
+    renderer_.setPaused(!run);
     if (run && !clock_.running()) {
         last_tick_ = std::chrono::steady_clock::now();
         clock_.start();
@@ -168,6 +169,11 @@ void SceneHost::tick() {
     ticks_++;
 
     for (auto& [name, output] : outputs_) present(name, output);
+    // The daemon captures audio only for helpers that read it.
+    if (const bool wanted = renderer_.wantsAudio(); wanted != audio_wanted_) {
+        audio_wanted_ = wanted;
+        send({{"type", "audio"}, {"wanted", wanted}});
+    }
 
     window_ticks_++;
     window_cpu_ += std::chrono::steady_clock::now() - begin;

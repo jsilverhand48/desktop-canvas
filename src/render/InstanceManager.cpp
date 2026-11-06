@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include "audio/AudioPolicy.h"
+#include "audio/SpectrumService.h"
 #include "core/EventLoop.h"
 #include "core/Log.h"
 #include "desktop/FullscreenPolicy.h"
@@ -294,6 +295,8 @@ void InstanceManager::startInstance(const std::vector<std::string>& group,
     for (const auto& name : group) where += (where.empty() ? "" : ", ") + name;
     log::info() << "starting " << toString(info.type) << " wallpaper "
                 << info.id << " (" << info.title << ") on " << where;
+    // Muted while other applications play, where that needs no restart.
+    if (instance->mutesLive() && autoMuted()) instance->setMuted(true);
     instance->start();
     for (const auto& name : group) {
         slots_[name] = Slot{instance, group};
@@ -335,9 +338,15 @@ std::shared_ptr<WallpaperInstance> InstanceManager::makeSceneInstance(
         launch.properties = properties;
         launch.strict = engine == SceneEngine::NativeStrict;
         launch.span = span;
+        if (spectrum_) launch.audioFd = spectrum_->childFd();
+        const std::string tag = "native:" + outputName;
         auto instance = std::make_shared<SceneHelperInstance>(
-            loop_, supervisor_, "native:" + outputName, info.id, muted,
+            loop_, supervisor_, tag, info.id, muted,
             audio_.volume(), std::move(launch));
+        if (spectrum_) {
+            SpectrumService* spectrum = spectrum_;
+            instance->setOnAudioDemand([spectrum, tag](bool on) { spectrum->setDemand(tag, on); });
+        }
         std::string id = info.id;
         instance->setOnUnsupported(
             [this, id](const std::vector<std::string>& features) {
@@ -596,7 +605,26 @@ void InstanceManager::setMuted(bool muted) {
     config_.audioMuted = muted;
     config_.save(config_.sourcePath);
     for (auto* instance : instances())
-        instance->setMuted(audio_.effectiveMuted(instance->wallpaperId()));
+        instance->setMuted(audio_.effectiveMuted(instance->wallpaperId()) ||
+                           (instance->mutesLive() && autoMuted()));
+}
+
+void InstanceManager::setOthersPlaying(bool playing) {
+    if (playing == othersPlaying_) return;
+    othersPlaying_ = playing;
+    applyAutoMute();
+}
+
+void InstanceManager::setAutoMute(bool enabled) {
+    if (enabled == autoMute_) return;
+    autoMute_ = enabled;
+    applyAutoMute();
+}
+
+void InstanceManager::applyAutoMute() {
+    for (auto* instance : instances())
+        if (instance->mutesLive())
+            instance->setMuted(audio_.effectiveMuted(instance->wallpaperId()) || autoMuted());
 }
 
 void InstanceManager::setVolume(int volume) {
@@ -616,6 +644,14 @@ std::map<std::string, std::string> InstanceManager::running() const {
     for (const auto& [name, slot] : slots_)
         if (slot.instance) result[name] = slot.instance->wallpaperId();
     return result;
+}
+
+}  // namespace canvas
+
+namespace canvas {
+
+void InstanceManager::setAudioProcessing(bool enabled) {
+    if (spectrum_) spectrum_->setEnabled(enabled);
 }
 
 }  // namespace canvas

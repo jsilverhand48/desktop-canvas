@@ -98,6 +98,7 @@ include(WaylandProtocols)
 add_library(canvas_core STATIC
     src/core/EventLoop.cpp
     src/core/ControlChannel.cpp
+    src/core/AudioSpectrum.cpp
 )
 target_include_directories(canvas_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -177,6 +178,8 @@ add_library(canvas_daemon STATIC
     src/render/Rotator.cpp
     src/render/InstanceManager.cpp
     src/audio/AudioPolicy.cpp
+    src/audio/SpectrumAnalyzer.cpp
+    src/audio/SpectrumService.cpp
     src/process/ChildSupervisor.cpp
     src/process/LweCommandBuilder.cpp
     src/process/ExternalProcessInstance.cpp
@@ -208,6 +211,18 @@ if(LIBSYSTEMD_FOUND)
 else()
     message(WARNING "libsystemd not found: no KDE bridge (fullscreen pause "
                     "and cursor on Plasma Wayland)")
+endif()
+
+# Audio capture for scene audio responses (audio/PulseCapture): the
+# PulseAudio protocol, which PipeWire serves too; optional. Without it
+# audio responsive scenes read silence.
+pkg_check_modules(LIBPULSE IMPORTED_TARGET libpulse)
+if(LIBPULSE_FOUND)
+    target_sources(canvas_daemon PRIVATE src/audio/PulseCapture.cpp src/audio/PlaybackWatcher.cpp)
+    target_link_libraries(canvas_daemon PUBLIC PkgConfig::LIBPULSE)
+    target_compile_definitions(canvas_daemon PUBLIC CANVAS_HAVE_PULSE=1)
+else()
+    message(WARNING "libpulse not found: no audio capture, audio responsive scenes stay still")
 endif()
 # The KWin script the bridge loads, with the bus names filled in. It lives
 # next to the daemon binary in the build tree (KdeBridge::findScript).
@@ -292,6 +307,7 @@ if(DESKTOP_CANVAS_SCENE AND LIBPNG_FOUND AND LZ4_FOUND AND TURBOJPEG_FOUND AND F
         src/scene/text/TextFont.cpp
         src/scene/text/TextLayout.cpp
         src/scene/script/ScriptEngine.cpp
+        src/scene/audio/SoundLayer.cpp
     )
     target_link_libraries(canvas_scene_core
         PUBLIC canvas_core canvas_scene_props
@@ -322,6 +338,7 @@ if(TARGET canvas_scene_core AND EPOXY_FOUND)
         src/scene/gl/Textures.cpp
         src/scene/gl/SceneRenderer.cpp
         src/scene/gl/VideoTexture.cpp
+        src/scene/gl/SoundOutputMpv.cpp
     )
     # Video textures play through libmpv's render API when it is there.
     if(MPV_FOUND)

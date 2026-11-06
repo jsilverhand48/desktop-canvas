@@ -7,7 +7,7 @@ Supported wallpaper types:
 
 | Type | How it renders | Notes |
 |---|---|---|
-| scene (scene.pkg) | supervised desktop-canvas-scene (the native renderer, in development) or linux-wallpaperengine child process | `scene.engine`: `auto` (default: native where it can, linux-wallpaperengine for the rest), `native` or `lwe`; the native renderer draws image, effect, particle and text scenes and runs their scripts (158 of the 208 scenes of the test library; scripts need QuickJS-ng, 116 without it), not yet sound, puppets, lights or scripts that create layers, so other scenes still need linux-wallpaperengine installed (or bundled) |
+| scene (scene.pkg) | supervised desktop-canvas-scene (the native renderer, in development) or linux-wallpaperengine child process | `scene.engine`: `auto` (default: native where it can, linux-wallpaperengine for the rest), `native` or `lwe`; the native renderer draws image, effect, particle and text scenes, runs their scripts, reacts to audio and plays sound layers (195 of the 210 scenes of the test library; scripts need QuickJS-ng), not yet puppets, lights or scripts that create layers, so other scenes still need linux-wallpaperengine installed (or bundled) |
 | video (mp4 etc.) | in process via libmpv into a layer shell surface | hardware decoded when available |
 | web (HTML/JS) | supervised Qt6 WebEngine (Quick) child process | build with -DDESKTOP_CANVAS_WEB=ON; audio reactive visualizers render their static state (no spectrum feed yet) |
 | presets | not supported | items whose project.json has a "dependency" key |
@@ -24,7 +24,8 @@ Audio from wallpapers is muted by default; unmute with
   libepoxy, libpng, lz4, libjpeg-turbo and FreeType (fontconfig for
   system font names, QuickJS-ng for scene scripts) for
   desktop-canvas-scene; libsystemd (sd-bus) for
-  the KDE bridge; linux-wallpaperengine for scene wallpapers on the `lwe`
+  the KDE bridge; libpulse (PulseAudio or PipeWire's pulse server) for
+  audio responsive scenes; linux-wallpaperengine for scene wallpapers on the `lwe`
   engine and for what desktop-canvas-scene does not draw yet.
 - Wallpaper Engine workshop content, e.g. a Steam library containing
   `steamapps/workshop/content/431960`. Content roots are autodetected from

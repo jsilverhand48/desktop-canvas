@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 
+#include "core/AudioSpectrum.h"
 #include "scene/assets/AssetLocator.h"
 #include "scene/model/SceneLoader.h"
 
@@ -39,6 +40,9 @@ struct ScriptFrame {
     bool cursorLeftDown = false;
     int64_t hovered = -1;           // object index under the cursor, -1 none
     Vec3 cursorLocal{0, 0, 0};      // the cursor in that layer's space
+    // The audio spectrum for registered audio buffers
+    // (src/scene/audio/README.md section 1); null reads silence.
+    const canvas::AudioSpectrum* audio = nullptr;
 };
 
 // What scripts reach beyond the scene model; the renderer implements it.
@@ -51,6 +55,9 @@ public:
     // Particle playback: 0 play, 1 pause, 2 stop.
     virtual void particleCommand(size_t object, int command) = 0;
     virtual bool particlePlaying(size_t object) = 0;
+    // Sound playback (ISoundLayer): 0 play, 1 pause, 2 stop.
+    virtual void soundCommand(size_t /*object*/, int /*command*/) {}
+    virtual bool soundPlaying(size_t /*object*/) { return false; }
 };
 
 class ScriptEngine {
@@ -74,6 +81,8 @@ public:
 
     size_t scriptCount() const;  // scripts loaded and still running
     size_t failedCount() const;  // scripts that failed (reported once)
+    // True once a script registered audio buffers.
+    bool usesAudio() const;
     void update(const ScriptFrame& frame);
     // Live user property changes: re-sent script properties and
     // applyUserProperties(changed) on the next update.

@@ -23,6 +23,11 @@
 #include <nlohmann/json.hpp>
 
 #include "audio/AudioPolicy.h"
+#include "audio/SpectrumService.h"
+#ifdef CANVAS_HAVE_PULSE
+#include "audio/PlaybackWatcher.h"
+#include "audio/PulseCapture.h"
+#endif
 #include "config/Config.h"
 #include "control/Controller.h"
 #include "core/EventLoop.h"
@@ -175,8 +180,28 @@ int runDaemon(Config& config) {
     // setup that only uses the native helper never runs it.
 
     AudioPolicy audio(config.audioMuted, config.audioVolume);
+    // One audio capture for every native scene helper that needs it
+    // (src/scene/audio/README.md section 3); declared before the manager so
+    // it outlives the helpers' demand reports.
+#ifdef CANVAS_HAVE_PULSE
+    SpectrumService spectrum(loop, std::make_unique<PulseCapture>());
+#else
+    SpectrumService spectrum(loop, nullptr);
+#endif
+    spectrum.setEnabled(config.audioProcessing);
     ChildSupervisor supervisor(loop);
     InstanceManager manager(loop, platform.get(), config, audio, supervisor);
+    manager.setSpectrumService(&spectrum);
+    manager.setAutoMute(config.audioAutoMute);
+#ifdef CANVAS_HAVE_PULSE
+    // Muting while other applications play (src/scene/audio/README.md
+    // section 6); the manager applies it only where config allows.
+    PlaybackWatcher playbackWatcher(loop, [&manager](bool playing) {
+        log::info() << (playing ? "another application plays audio" : "no other application plays audio");
+        manager.setOthersPlaying(playing);
+    });
+    playbackWatcher.start();
+#endif
 #ifdef CANVAS_HAVE_VIDEO
     // Video plays in process through libmpv. Injecting it here keeps that
     // dependency out of InstanceManager and the libraries tests link.

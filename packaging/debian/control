@@ -19,7 +19,8 @@ Build-Depends: debhelper-compat (= 13),
                libturbojpeg0-dev,
                libfreetype-dev,
                libfontconfig-dev,
-               libsystemd-dev
+               libsystemd-dev,
+               libpulse-dev
 Standards-Version: 4.6.2
 
 Package: desktop-canvas

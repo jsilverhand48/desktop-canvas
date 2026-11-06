@@ -16,4 +16,9 @@ Foundation utilities with no project dependencies (library `canvas_core`).
   single closed notification on peer EOF or error. Callbacks may destroy the
   channel. The daemon and its helper processes layer JSON on it
   (`process/HelperProtocol.h`).
+- `AudioSpectrum` the audio levels the daemon shares with its helpers
+  (`src/scene/audio/README.md` sections 2 and 3): `SpectrumWriter` makes a
+  sealed 4 KiB memfd and hands helpers a read only descriptor of it;
+  `SpectrumReader` maps one read only; a seqlock over atomic words keeps
+  reads consistent across processes.
 - `Log` leveled stderr logging (CANVAS_LOG=error|warn|info|debug).

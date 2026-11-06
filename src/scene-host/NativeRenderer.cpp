@@ -23,6 +23,11 @@ std::unique_ptr<NativeRenderer> NativeRenderer::create(const std::filesystem::pa
         return nullptr;
     }
     r->pending_ = std::move(loaded);
+    if (r->options_.audioFd >= 0) {
+        std::string audioError;
+        if (!r->spectrum_.open(r->options_.audioFd, audioError))
+            log::warn() << "audio spectrum not read: " << audioError;
+    }
     return r;
 }
 
@@ -43,8 +48,12 @@ void NativeRenderer::start() {
     o.clamp = options_.clamp;
     o.shaderCache = options_.shaderCache;
     o.scriptStorage = options_.scriptStorage;
+    o.sound = options_.sound;
     o.debug = options_.debug;
     renderer_ = std::make_unique<scene::SceneRenderer>(assets_, o);
+    renderer_->setMuted(muted_);
+    renderer_->setVolume(volume_);
+    renderer_->setSoundPaused(paused_);
     std::string error;
     if (!renderer_->load(std::move(*pending_), error)) {
         log::warn() << "native renderer: " << error;
@@ -53,13 +62,35 @@ void NativeRenderer::start() {
     pending_.reset();
     if (elapsed_ > 0) renderer_->advance(elapsed_);
     log::info() << "native renderer: " << renderer_->layerCount() << " layers, "
-                << renderer_->scriptCount() << " scripts, " << renderer_->problems().size() << " problems";
+                << renderer_->scriptCount() << " scripts, " << renderer_->soundCount() << " sounds, "
+                << renderer_->problems().size() << " problems";
 }
 
 void NativeRenderer::advance(double dt) {
-    if (renderer_) renderer_->advance(dt);
-    else elapsed_ += dt;
+    if (renderer_) {
+        if (renderer_->wantsAudio()) renderer_->setAudio(spectrum_.read());
+        renderer_->advance(dt);
+    } else {
+        elapsed_ += dt;
+    }
 }
+
+void NativeRenderer::setMuted(bool muted) {
+    muted_ = muted;
+    if (renderer_) renderer_->setMuted(muted);
+}
+
+void NativeRenderer::setVolume(int percent) {
+    volume_ = percent;
+    if (renderer_) renderer_->setVolume(percent);
+}
+
+void NativeRenderer::setPaused(bool paused) {
+    paused_ = paused;
+    if (renderer_) renderer_->setSoundPaused(paused);
+}
+
+bool NativeRenderer::wantsAudio() const { return renderer_ && !failed_ && renderer_->wantsAudio(); }
 
 void NativeRenderer::render(int width, int height) {
     if (!renderer_ && pending_) start();

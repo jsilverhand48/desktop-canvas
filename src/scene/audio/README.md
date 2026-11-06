@@ -208,4 +208,31 @@ no feature: without capture or media players they read silence and
 
 ## Files
 
-(added with the implementation)
+Phase P7a (the spectrum and audio responses):
+- `../../core/AudioSpectrum.h`: the levels and their shared memory
+  (section 3).
+- `../../audio/SpectrumAnalyzer.h`, `SpectrumService.h`,
+  `PulseCapture.h` (daemon): section 2's analysis, the capture shared by
+  helpers, the PulseAudio protocol backend.
+- `../../process/SceneHelperInstance.h`, `../../scene-host/` (`--audio-fd`,
+  the "audio" message), `../gl/SceneRenderer.h` (`setAudio`,
+  `wantsAudio`: shader arrays), `../particles/ParticleSystem.h`
+  (`ParticleAudio`, section 4), `../script/ScriptEngine.cpp` (buffers).
+
+Phase P7b (sound layers):
+- `SoundLayer.h`, `SoundLayer.cpp` (`canvas_scene_core`): `SoundPlayer`,
+  section 5's modes, start silent, script control, the wallpaper's pause
+  and the volume curve, over a `SoundOutput` (`SilentSoundOutput` for
+  screenshots and builds without libmpv).
+- `../gl/SoundOutputMpv.h`: the libmpv output (stream callbacks over the
+  package bytes, end of track events).
+- `../gl/SceneRenderer.h` (`Options::sound`, `setVolume`, `setMuted`,
+  `setSoundPaused`: one player per sound object, updated every advance,
+  ISoundLayer through ScriptHost), `../../scene-host/` (sound only live,
+  never for screenshots; volume, mute and pause from the daemon and the
+  host), `../../scene-host/SceneCheck.cpp` (`sound` unsupported without
+  libmpv).
+
+Tests: `claude_tests/test_audio_spectrum`, `test_scene_sound`, the audio
+parts of `test_engine_selection`, `test_scene_particles`,
+`test_scene_script` and `test_scene_render`.

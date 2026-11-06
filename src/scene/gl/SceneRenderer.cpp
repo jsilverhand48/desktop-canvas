@@ -25,6 +25,8 @@
 #include "scene/model/Json.h"
 #include "scene/particles/ParticleSystem.h"
 #include "scene/render/Animation.h"
+#include "scene/audio/SoundLayer.h"
+#include "scene/gl/SoundOutputMpv.h"
 #include "scene/script/ScriptEngine.h"
 #include "scene/shader/Programs.h"
 #include "scene/shader/Translator.h"
@@ -278,6 +280,8 @@ struct EngineLocations {
           textureProjectionInverse = -1, renderVar1 = -1, orientationRight = -1,
           orientationUp = -1, orientationForward = -1, viewRight = -1, viewUp = -1;
     std::array<GLint, kSlots> resolution, rotation, translation, mipInfo;
+    // g_AudioSpectrum16Left, 16Right, 32Left, 32Right, 64Left, 64Right.
+    std::array<GLint, 6> audio{-1, -1, -1, -1, -1, -1};
     EngineLocations() {
         resolution.fill(-1);
         rotation.fill(-1);
@@ -645,6 +649,14 @@ struct SceneRenderer::Impl : ScriptHost {
     uint64_t scriptGeneration = ~0ull;  // the generation scripts last ran
     int outputSize[2] = {1920, 1080};   // the output being rendered, pixels
     bool pointerDown = false;           // the left button (cursor events)
+    canvas::AudioSpectrum audio;        // the latest spectrum (setAudio)
+    bool audioPrograms = false;         // a program reads the spectrum
+    bool audioParticles = false;        // a particle file responds to audio
+    // Sound layers (src/scene/audio/README.md section 5), by object index.
+    std::map<size_t, std::unique_ptr<SoundPlayer>> sounds;
+    int wallpaperVolume = 15;  // the daemon's 0..100
+    bool wallpaperMuted = true;
+    bool soundPaused = false;
     float projection[2] = {1920, 1080};
     // RGBA16F for hdr scenes: the frame, its copies, layer buffers and
     // rgba_backbuffer fbos (section 5).
@@ -797,6 +809,15 @@ struct SceneRenderer::Impl : ScriptHost {
             e.layerModel = loc("g_LayerModelMatrix");
             e.textureProjection = loc("g_EffectTextureProjectionMatrix");
             e.textureProjectionInverse = loc("g_EffectTextureProjectionMatrixInverse");
+            {
+                const char* names[6] = {"g_AudioSpectrum16Left", "g_AudioSpectrum16Right",
+                                        "g_AudioSpectrum32Left", "g_AudioSpectrum32Right",
+                                        "g_AudioSpectrum64Left", "g_AudioSpectrum64Right"};
+                for (size_t i = 0; i < 6; i++) {
+                    e.audio[i] = loc(names[i]);
+                    audioPrograms |= e.audio[i] >= 0;
+                }
+            }
             for (int i = 0; i < kSlots; i++) {
                 std::string n = "g_Texture" + std::to_string(i);
                 e.resolution[size_t(i)] = loc((n + "Resolution").c_str());
@@ -1102,6 +1123,7 @@ struct SceneRenderer::Impl : ScriptHost {
         system.setFactors(particleFactors(o, *layer.particleFile));
         system.setTransform(model);
         system.setPointer(pointerScene);
+        system.setAudio(audio.left16, audio.right16);
         if (!o.particle || !o.particle->overrides) return;
         for (const auto& [name, field] : o.particle->overrides->controlPoints) {
             const std::string prefix = "controlpoint";
@@ -1538,8 +1560,67 @@ struct SceneRenderer::Impl : ScriptHost {
             error = "no layer this renderer can draw yet";
             return false;
         }
+        for (const auto& [path, file] : scene.particles)
+            if (file && particleUsesAudio(*file)) audioParticles = true;
+        startSounds();
         startScripts();
         return true;
+    }
+
+    // ----------------------------------------------------------- sounds
+
+    // A player per sound object; outputs play only in live helpers
+    // (Options::sound) built with libmpv, otherwise silently.
+    void startSounds() {
+        auto& objects = scene.scene.objects;
+        for (size_t i = 0; i < objects.size(); i++) {
+            if (!objects[i].sound || objects[i].sound->sounds.empty()) continue;
+            const SoundLayer& s = *objects[i].sound;
+            const std::string where = "object " + std::to_string(objects[i].id);
+            std::vector<std::span<const uint8_t>> tracks;
+            std::vector<std::shared_ptr<const void>> keep;
+            for (const auto& path : s.sounds) {
+                auto asset = assets.find(path);
+                if (!asset) {
+                    problem(where + ": sound " + path + " not found");
+                    continue;
+                }
+                tracks.push_back(asset->bytes);
+                keep.push_back(asset->mapping);
+            }
+            if (tracks.empty()) continue;
+            const size_t count = tracks.size();
+            std::unique_ptr<SoundOutput> output;
+            if (options.sound && SoundOutputMpv::available()) {
+                std::string error;
+                output = SoundOutputMpv::open(std::move(tracks), std::move(keep), error);
+                if (!output) problem(where + ": " + error);
+            }
+            auto player = std::make_unique<SoundPlayer>(
+                SoundPlayer::modeFromName(s.playbackMode.value), count, s.minTime.value, s.maxTime.value,
+                std::move(output), uint64_t(objects[i].id) * 0x9E3779B97F4A7C15ull + 1);
+            player->setHostPaused(soundPaused);
+            player->start(s.startSilent.value);
+            sounds[i] = std::move(player);
+        }
+    }
+
+    void updateSounds(double dt) {
+        for (auto& [object, player] : sounds)
+            player->update(dt, scene.scene.objects[object].sound->volume.value, wallpaperVolume, wallpaperMuted);
+    }
+
+    void soundCommand(size_t object, int command) override {
+        auto it = sounds.find(object);
+        if (it == sounds.end()) return;
+        if (command == 0) it->second->play();
+        if (command == 1) it->second->pause();
+        if (command == 2) it->second->stop();
+    }
+
+    bool soundPlaying(size_t object) override {
+        auto it = sounds.find(object);
+        return it != sounds.end() && it->second->isPlaying();
     }
 
     // ---------------------------------------------------------- scripts
@@ -1618,6 +1699,7 @@ struct SceneRenderer::Impl : ScriptHost {
         sf.cursorWorld = {at[0], at[1], 0};
         sf.cursorScreen = {framePointer[0] * float(outputSize[0]), framePointer[1] * float(outputSize[1])};
         sf.cursorLeftDown = pointerDown;
+        sf.audio = &audio;
         sf.hovered = layerAt(sf.cursorWorld, sf.cursorLocal);
         scripts->update(sf);
         takeScriptOutput();
@@ -1898,6 +1980,14 @@ struct SceneRenderer::Impl : ScriptHost {
             glUniform4f(e.renderVar0, in.renderVar0[0], in.renderVar0[1], in.renderVar0[2],
                         in.renderVar0[3]);
         if (e.daytime >= 0) glUniform1f(e.daytime, daytime);
+        {
+            // The spectrum (src/scene/audio/README.md section 1).
+            const float* arrays[6] = {audio.left16.data(), audio.right16.data(), audio.left32.data(),
+                                      audio.right32.data(), audio.left64.data(), audio.right64.data()};
+            const GLsizei counts[6] = {16, 16, 32, 32, 64, 64};
+            for (size_t i = 0; i < 6; i++)
+                if (e.audio[i] >= 0) glUniform1fv(e.audio[i], counts[i], arrays[i]);
+        }
         if (e.renderVar1 >= 0)
             glUniform4f(e.renderVar1, in.renderVar1[0], in.renderVar1[1], in.renderVar1[2],
                         in.renderVar1[3]);
@@ -2689,6 +2779,7 @@ void SceneRenderer::advance(double dt) {
     const double k = delay > 0 ? 1 - std::exp(-dt / delay) : 1.0;
     for (int i = 0; i < 2; i++)
         m.parallaxPointer[i] += float((m.framePointer[i] - m.parallaxPointer[i]) * k);
+    m.updateSounds(dt);
 }
 
 void SceneRenderer::render(int width, int height) { impl_->render(width, height); }
@@ -2705,6 +2796,24 @@ void SceneRenderer::setPointer(float x, float y) {
 }
 
 void SceneRenderer::setPointerDown(bool down) { impl_->pointerDown = down; }
+
+void SceneRenderer::setAudio(const canvas::AudioSpectrum& spectrum) { impl_->audio = spectrum; }
+
+void SceneRenderer::setVolume(int percent) { impl_->wallpaperVolume = std::clamp(percent, 0, 100); }
+
+void SceneRenderer::setMuted(bool muted) { impl_->wallpaperMuted = muted; }
+
+void SceneRenderer::setSoundPaused(bool paused) {
+    impl_->soundPaused = paused;
+    for (auto& [object, player] : impl_->sounds) player->setHostPaused(paused);
+}
+
+size_t SceneRenderer::soundCount() const { return impl_->sounds.size(); }
+
+bool SceneRenderer::wantsAudio() const {
+    const Impl& m = *impl_;
+    return m.audioPrograms || m.audioParticles || (m.scripts && m.scripts->usesAudio());
+}
 
 size_t SceneRenderer::scriptCount() const { return impl_->scripts ? impl_->scripts->scriptCount() : 0; }
 

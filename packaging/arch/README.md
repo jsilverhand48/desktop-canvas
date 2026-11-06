@@ -96,7 +96,8 @@ base package and adds `libepoxy`, `libpng`, `lz4`, `libjpeg-turbo`
 (2.1 or later), `freetype2` and `fontconfig` (text layers) and
 `quickjs-ng` (scene scripts) to `depends`;
 `systemd-libs`
-(sd-bus) backs the KDE bridge, whose KWin script installs to
+(sd-bus) backs the KDE bridge, `libpulse` the audio capture for audio
+responsive scenes, whose KWin script installs to
 `share/desktop-canvas/kwin/`. `.SRCINFO` lists them too.
 
 Scene wallpapers need linux-wallpaperengine, which exists in the AUR only as

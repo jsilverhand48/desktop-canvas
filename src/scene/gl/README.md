@@ -64,7 +64,18 @@ context; the GPU free parts live in the other `src/scene/` modules.
   or text layer under the cursor. Live property changes reach them
   (`setProperty()`), their failures become problems and their console
   lines go to the log; `Options::scriptStorage` names the localStorage
-  file. GL objects need the context current, including at
+  file. `setAudio()` hands in the latest audio spectrum
+  (`../audio/README.md`): programs declaring `g_AudioSpectrum*` get the
+  arrays with every draw, particle systems the 16 band levels, scripts
+  their buffers; `wantsAudio()` says whether the scene reads any of it.
+  Sound objects get a `SoundPlayer` each (`../audio/SoundLayer.h`), with
+  a `SoundOutputMpv` only when `Options::sound` is set (live helpers) and
+  libmpv is built in, silent otherwise; every `advance()` updates them
+  with the layer volume and the wallpaper's `setVolume`/`setMuted`, and
+  `setSoundPaused` holds them while the wallpaper is paused.
+- `SoundOutputMpv` a sound layer's libmpv player: audio only, reading the
+  layer's files from memory through mpv's stream callbacks like
+  `VideoTexture`; built only with libmpv. GL objects need the context current, including at
   destruction.
 
 Tests: `claude_tests/test_scene_gl` and `test_scene_render` (opt-in GL

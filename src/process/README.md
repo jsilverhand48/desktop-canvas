@@ -26,13 +26,15 @@ Supervised child processes: linux-wallpaperengine (lwe) for scenes on the
   then SIGKILL after 3 s, to the whole group, so helpers' own subprocesses
   go too), gets PR_SET_PDEATHSIG so it dies with the daemon, and inherits
   only stdio plus, with `controlChannel`, its end of a fresh socketpair as
-  fd 3 (`onSpawn` hands the daemon's end to the owner). Exit policy:
+  fd 3 (`onSpawn` hands the daemon's end to the owner) and, with
+  `inheritFd`, one more descriptor as fd 4 (the audio spectrum memory). Exit policy:
   `RespawnAlways` (lwe, web: any exit respawns) or `HelperProtocol` (exit 0
   clean, 2 usage and 3 unsupported end the child for good, 3 without
   counting as a failure; anything else is a crash). `onExit` reports the
   classified exit before any respawn.
 - `HelperProtocol.h` the daemon/helper protocol: transport (ControlChannel
-  on fd 3), every message type in both directions, exit codes, heartbeat
+  on fd 3, the spectrum memory on fd 4), every message type in both
+  directions (helpers ask for audio capture with "audio"), exit codes, heartbeat
   timing, and a decoder that rejects non objects and JSON nested deeper
   than 16 levels before parsing (helper messages are untrusted input).
 - `HelperLocator` finds helper executables: `<NAME>_PATH` override (for
@@ -45,7 +47,10 @@ Supervised child processes: linux-wallpaperengine (lwe) for scenes on the
   `native:<first output>`. Pause, resume, mute, volume, pointer and
   per output coverage by fullscreen windows are live messages (pointer
   coalesced to one update per 16 ms); state is re-sent after every hello,
-  so respawned helpers pick it up. `Launch::span` adds `--span`. No
+  so respawned helpers pick it up. `Launch::span` adds `--span`;
+  `Launch::audioFd` hands the spectrum memory over with `--audio-fd 4`,
+  and `setOnAudioDemand` reports whether the helper needs the capture
+  (its scene reads audio and it runs unpaused; false on exit and stop). No
   message for 10 s means the helper hung: SIGKILL, which the supervisor
   counts as a crash.
   A strict helper's unsupported report fires `onUnsupported` (deferred one

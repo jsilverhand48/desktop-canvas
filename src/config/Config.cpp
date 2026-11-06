@@ -73,6 +73,9 @@ Config Config::load(const fs::path& path) {
     if (j.contains("audio") && j["audio"].is_object()) {
         cfg.audioMuted = j["audio"].value("muted", cfg.audioMuted);
         cfg.audioVolume = j["audio"].value("volume", cfg.audioVolume);
+        cfg.audioProcessing = j["audio"].value("processing", cfg.audioProcessing);
+        cfg.audioAutoMute = j["audio"].value("auto_mute", cfg.audioAutoMute);
+        cfg.audioMedia = j["audio"].value("media", cfg.audioMedia);
     }
     if (j.contains("scene") && j["scene"].is_object()) {
         std::string engine = j["scene"].value("engine", cfg.sceneEngine);
@@ -215,7 +218,8 @@ bool Config::save(const fs::path& path) const {
     j["fps"] = fps;
     j["scaling"] = scaling;
     j["layer"] = layer;
-    j["audio"] = {{"muted", audioMuted}, {"volume", audioVolume}};
+    j["audio"] = {{"muted", audioMuted}, {"volume", audioVolume}, {"processing", audioProcessing},
+                  {"auto_mute", audioAutoMute}, {"media", audioMedia}};
     j["scene"] = {{"engine", sceneEngine},
                   {"engine_path", sceneEnginePath},
                   {"assets_dir", sceneAssetsDir},

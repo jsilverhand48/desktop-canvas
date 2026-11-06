@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -38,6 +39,7 @@ ScriptEngine::ScriptEngine(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) 
 ScriptEngine::~ScriptEngine() = default;
 size_t ScriptEngine::scriptCount() const { return 0; }
 size_t ScriptEngine::failedCount() const { return 0; }
+bool ScriptEngine::usesAudio() const { return false; }
 void ScriptEngine::update(const ScriptFrame&) {}
 void ScriptEngine::userPropertiesChanged(const std::vector<std::string>&) {}
 std::vector<std::string> ScriptEngine::takeLog() { return {}; }
@@ -91,7 +93,7 @@ class Layer {
 }
 for (const p of ['origin', 'angles', 'scale', 'visible', 'parallaxDepth', 'alpha', 'color', 'alignment', 'text',
                  'pointsize', 'padding', 'horizontalalign', 'verticalalign', 'anchor', 'limitrows', 'maxrows',
-                 'limitwidth', 'maxwidth', 'opaquebackground', 'backgroundcolor'])
+                 'limitwidth', 'maxwidth', 'opaquebackground', 'backgroundcolor', 'volume'])
   Object.defineProperty(Layer.prototype, p, { get() { return n.get(this.__i, p); },
                                               set(v) { n.set(this.__i, p, v); }, configurable: true });
 for (const p of ['name', 'size', 'font', 'id'])
@@ -830,9 +832,61 @@ struct ScriptEngine::Impl {
         JS_SetPropertyStr(ctx, frameObject, "cursorDown", JS_NewBool(ctx, frame.cursorLeftDown));
     }
 
+    // Copies n floats into a Float32Array a script holds; anything else
+    // (a script replaced the member) is left alone.
+    void fillFloats(JSValueConst array, const float* values, size_t n) {
+        size_t offset = 0, length = 0, perElement = 0;
+        JSValue buffer = JS_GetTypedArrayBuffer(ctx, array, &offset, &length, &perElement);
+        if (JS_IsException(buffer)) {
+            JS_FreeValue(ctx, JS_GetException(ctx));
+            return;
+        }
+        size_t size = 0;
+        uint8_t* bytes = JS_GetArrayBuffer(ctx, &size, buffer);
+        if (bytes && perElement == 4 && offset + length <= size)
+            std::memcpy(bytes + offset, values, std::min(length, n * sizeof(float)));
+        JS_FreeValue(ctx, buffer);
+    }
+
+    size_t audioBufferCount() const {
+        JSValue list = JS_GetPropertyStr(ctx, native, "audio");
+        int64_t n = 0;
+        JS_GetLength(ctx, list, &n);
+        JS_FreeValue(ctx, list);
+        return size_t(std::max<int64_t>(0, n));
+    }
+
+    // Registered audio buffers take this frame's levels (section 1).
+    void fillAudio() {
+        const size_t count = audioBufferCount();
+        if (!count) return;
+        const AudioSpectrum silence;
+        const AudioSpectrum& a = frame.audio ? *frame.audio : silence;
+        JSValue list = JS_GetPropertyStr(ctx, native, "audio");
+        for (size_t i = 0; i < count; i++) {
+            JSValue b = JS_GetPropertyUint32(ctx, list, uint32_t(i));
+            JSValue left = JS_GetPropertyStr(ctx, b, "left");
+            int64_t n = 0;
+            JS_GetLength(ctx, left, &n);
+            const float* l = n == 64 ? a.left64.data() : n == 32 ? a.left32.data() : a.left16.data();
+            const float* r = n == 64 ? a.right64.data() : n == 32 ? a.right32.data() : a.right16.data();
+            const size_t bands = n == 64 ? 64 : n == 32 ? 32 : 16;
+            float average[64];
+            for (size_t k = 0; k < bands; k++) average[k] = (l[k] + r[k]) / 2;
+            JSValue right = JS_GetPropertyStr(ctx, b, "right");
+            JSValue avg = JS_GetPropertyStr(ctx, b, "average");
+            fillFloats(left, l, bands);
+            fillFloats(right, r, bands);
+            fillFloats(avg, average, bands);
+            for (JSValue v : {left, right, avg, b}) JS_FreeValue(ctx, v);
+        }
+        JS_FreeValue(ctx, list);
+    }
+
     void update(const ScriptFrame& f) {
         frame = f;
         writeFrame();
+        fillAudio();
         // resizeScreen(size) when the output size changes (section 2).
         if (haveScreen && frame.screen != lastScreen) {
             JSValue size = toJs(frame.screen);
@@ -1002,6 +1056,7 @@ struct ScriptEngine::Impl {
             if (name == "color") return f(im.color), true;
             if (name == "alignment") return f(im.alignment), true;
         }
+        if (o.sound && name == "volume") return f(o.sound->volume), true;
         if (o.text) {
             TextLayer& t = *o.text;
             if (name == "text") return f(t.text), true;
@@ -1283,10 +1338,13 @@ struct ScriptEngine::Impl {
                 auto command = number(arg(1));
                 if (o && o->particle && command)
                     host.particleCommand(size_t(o - objects.data()), int(*command));
+                else if (o && o->sound && command)
+                    host.soundCommand(size_t(o - objects.data()), int(*command));
                 return JS_UNDEFINED;
             }
             case kParticlePlaying: {
                 SceneObject* o = object(arg(0));
+                if (o && o->sound) return JS_NewBool(ctx, host.soundPlaying(size_t(o - objects.data())));
                 return JS_NewBool(ctx, o && o->particle && host.particlePlaying(size_t(o - objects.data())));
             }
             case kSceneGet: {
@@ -1408,6 +1466,8 @@ size_t ScriptEngine::scriptCount() const {
 }
 
 size_t ScriptEngine::failedCount() const { return impl_->scripts.size() - scriptCount(); }
+
+bool ScriptEngine::usesAudio() const { return impl_->audioBufferCount() > 0; }
 
 void ScriptEngine::update(const ScriptFrame& frame) { impl_->update(frame); }
 

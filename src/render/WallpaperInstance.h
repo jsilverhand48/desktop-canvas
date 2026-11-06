@@ -30,6 +30,10 @@ public:
     // May restart the instance when the backend cannot change mute live
     // (linux-wallpaperengine uses the --silent flag of its child process).
     virtual void setMuted(bool muted) = 0;
+    // True when setMuted applies without restarting anything; muting while
+    // other applications play (src/scene/audio/README.md section 6) only
+    // touches these.
+    virtual bool mutesLive() const { return true; }
 
     // Applies a new volume (0..100) live and returns true, or returns false
     // when the backend can only take it at launch; the owner then restarts

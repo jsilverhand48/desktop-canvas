@@ -96,6 +96,7 @@ void ChildSupervisor::spawn(const std::string& tag) {
         return;
     }
 
+    const int inherit = child.spec.inheritFd;
     pid_t parent = getpid();
     pid_t pid = fork();
     if (pid < 0) {
@@ -114,12 +115,20 @@ void ChildSupervisor::spawn(const std::string& tag) {
         prctl(PR_SET_PDEATHSIG, SIGKILL);
         if (getppid() != parent) _exit(127);  // daemon already gone
         int keep = 2;
+        // Out of the way of fd 3 and 4 first, so neither dup2 clobbers it.
+        const int extra = inherit >= 0 ? fcntl(inherit, F_DUPFD, 10) : -1;
+        if (inherit >= 0 && extra < 0) _exit(127);
         if (fds[1] >= 0) {
             if (fds[1] != helper::kControlFd &&
                 dup2(fds[1], helper::kControlFd) < 0)
                 _exit(127);
             fcntl(helper::kControlFd, F_SETFD, 0);
             keep = helper::kControlFd;
+        }
+        if (extra >= 0) {
+            if (dup2(extra, helper::kInheritFd) < 0) _exit(127);
+            fcntl(helper::kInheritFd, F_SETFD, 0);
+            keep = helper::kInheritFd;
         }
         close_range(static_cast<unsigned>(keep + 1), UINT_MAX, 0);
         execvp(argv[0], argv.data());

@@ -53,6 +53,7 @@
 namespace canvas {
 
 class AudioPolicy;
+class SpectrumService;
 class ChildSupervisor;
 class EventLoop;
 class Platform;
@@ -139,6 +140,20 @@ public:
     // Applies a new volume to every instance: live where the backend can
     // (video, native scenes), otherwise by restarting unmuted instances.
     void setVolume(int volume);
+    // The audio capture shared with native scene helpers (set once at
+    // startup, must outlive this manager; null: helpers read silence).
+    // Helpers started afterwards get its memory and report their demand.
+    void setSpectrumService(SpectrumService* service) { spectrum_ = service; }
+    // Config audio.processing, applied live.
+    void setAudioProcessing(bool enabled);
+    // Muting while other applications play (src/scene/audio/README.md
+    // section 6): whether another application plays now (the watcher's
+    // verdict, after its hold time) and config audio.auto_mute. Applies
+    // only to instances that mute live (native helpers, videos); lwe mutes
+    // itself.
+    void setOthersPlaying(bool playing);
+    void setAutoMute(bool enabled);
+    bool autoMuted() const { return autoMute_ && othersPlaying_; }
 
     // Fullscreen pause. setToplevels stores the desktop's latest window list
     // (Platform::watchToplevels or the KDE bridge) and recomputes the
@@ -216,6 +231,10 @@ private:
     std::function<void()> onRescan_;
     std::string assetsDir_;
     VideoFactory videoFactory_;
+    SpectrumService* spectrum_ = nullptr;
+    bool autoMute_ = true;
+    bool othersPlaying_ = false;
+    void applyAutoMute();
     std::optional<bool> lweLayer_;  // lazy `lwe --help` probe result
     std::string sceneHelper_;       // desktop-canvas-scene, empty if missing
     std::unique_ptr<NativeSupportCache> nativeSupport_;

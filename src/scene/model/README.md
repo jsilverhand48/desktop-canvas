@@ -316,7 +316,9 @@ section 5) from phase P4a, `timeline`, `parallax`, `camera-shake`,
 `particles` from P5a, `particle-controlpoints`, `particle-children` and
 `particle-trails` from P5b, `text` from P6b, and `script` from P6a
 (only in builds with QuickJS-ng, `../script/README.md` section 6;
-`script-layers`, scripts that call `createLayer`, is not supported yet), so
+`script-layers`, scripts that call `createLayer`, is not supported yet),
+and `sound` from P7b (only with libmpv, which the helper's check
+verifies), so
 the "auto" engine uses the native renderer only for scenes made of those
 and keeps linux-wallpaperengine for the rest.
 `--check-all ROOT` runs the check on every scene folder in ROOT and

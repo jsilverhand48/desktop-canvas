@@ -34,6 +34,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/AudioSpectrum.h"
 #include "scene/assets/AssetLocator.h"
 #include "scene/model/SceneLoader.h"
 #include "scene/render/Layout.h"
@@ -80,6 +81,8 @@ public:
         // The scripts' localStorage file (src/scene/script/README.md
         // section 3); empty: kept in memory only.
         std::filesystem::path scriptStorage;
+        // Play sound layers (live helpers); otherwise they run silently.
+        bool sound = false;
         RenderDebug debug;
     };
 
@@ -99,6 +102,20 @@ public:
     void setPointer(float x, float y);
     // The left pointer button, for script cursor events.
     void setPointerDown(bool down);
+    // The audio spectrum for the next frames (src/scene/audio/README.md
+    // section 1: shader arrays, script buffers, particle responses).
+    void setAudio(const canvas::AudioSpectrum& spectrum);
+    // True when the scene reads the spectrum: a program declares one of
+    // the arrays, a particle file responds to audio, or a script
+    // registered audio buffers.
+    bool wantsAudio() const;
+    // The wallpaper's volume (0..100, the daemon's scale) and mute for
+    // sound layers, and whether the wallpaper is paused (src/scene/audio/
+    // README.md section 5).
+    void setVolume(int percent);
+    void setMuted(bool muted);
+    void setSoundPaused(bool paused);
+    size_t soundCount() const;  // sound layers with at least one file
 
     const std::vector<std::string>& problems() const;
     size_t layerCount() const;

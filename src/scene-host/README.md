@@ -6,7 +6,7 @@ it for scene wallpapers on the "native" and "auto" engines (see
 over the control channel protocol in `process/HelperProtocol.h`. It also
 runs by hand for previews, screenshots and checks.
 
-Status: plan phase P6a. The engine draws image, solid, composition and
+Status: plan phase P7b. The engine draws image, solid, composition and
 fullscreen layers with their effects and bloom, and moves them: timeline
 animations, sprite sheets, video textures (when built with libmpv),
 camera shake, parallax and the pointer uniforms
@@ -15,9 +15,10 @@ control points (the cursor included), child systems, sprite trails,
 ropes and rope trails (`src/scene/particles/README.md`) and text layers
 (`src/scene/text/README.md`), and runs scene scripts when built with
 QuickJS-ng (`src/scene/script/README.md`; scripts that create layers
-are not supported yet); sound and puppets arrive with later phases.
-"auto", the daemon's default engine, uses it for 158 of the 208 scenes
-of the test library with QuickJS-ng (116 without). The support check
+are not supported yet), reacts to audio (the daemon's capture,
+`src/scene/audio/README.md`) and plays sound layers (with libmpv);
+puppets and lights arrive with later phases. "auto", the daemon's
+default engine, uses it for 195 of the 210 scenes of the test library. The support check
 reports scenes made only of what this build
 draws as supported, so "auto" uses the native renderer for those and
 linux-wallpaperengine for the rest; "native" draws what it can and skips
@@ -72,7 +73,8 @@ blocks the daemon's single threaded event loop.
   catch up burst after a stall (it restarts from now).
 - `Renderer` the interface SceneHost drives: `advance(dt)` once per tick,
   then `render(width, height)` per output into the bound framebuffer, plus
-  live pointer (motion and buttons), property, mute and volume inputs.
+  live pointer (motion and buttons), property, mute and volume inputs,
+  `setPaused()` (the host stopped ticking) and `wantsAudio()`.
 - `NativeRenderer` the scene engine (`scene/gl/SceneRenderer`) behind
   that interface: `create()` reads the wallpaper and loads the scene
   before GL exists (and before the sandbox), the first `render()` builds
@@ -83,7 +85,15 @@ blocks the daemon's single threaded event loop.
   localStorage in
   `$XDG_DATA_HOME/desktop-canvas/localstorage/<wallpaper folder>.json`
   (`~/.local/share/...` without the variable; none for `--screenshot`),
-  and the left pointer button (BTN_LEFT) feeds their cursor events. GL
+  and the left pointer button (BTN_LEFT) feeds their cursor events.
+  `--audio-fd N` (the daemon passes 4) maps the daemon's audio spectrum
+  memory read only; every tick the engine gets the latest levels while
+  its scene reads them, and SceneHost tells the daemon
+  `{"type":"audio","wanted":...}` whenever that changes, so the capture
+  runs only for scenes that need it (`src/scene/audio/README.md`).
+  Sound layers play only in live runs (never for `--screenshot`), at the
+  daemon's volume and mute, and pause whenever the host stops ticking
+  (paused, or every output covered). GL
   objects are freed only by
   `shutdown()` with the context current (the screenshot path does so);
   otherwise the driver frees them at exit.

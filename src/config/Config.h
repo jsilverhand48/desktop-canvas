@@ -12,7 +12,10 @@
 //   "fps": 30,
 //   "scaling": "fill",                            // fill | fit | stretch
 //   "layer": "background",                        // background | bottom
-//   "audio": {"muted": true, "volume": 15},
+//   "audio": {"muted": true, "volume": 15,
+//             "processing": true,            // audio capture for scenes
+//             "auto_mute": true,             // mute while other apps play
+//             "media": true},                // media info for scene scripts
 //   "scene": {"engine": "auto",               // lwe | native | auto
 //             "engine_path": "", "assets_dir": "", "disable_mouse": false,
 //             "randomize_options": false,     // random dropdown values
@@ -86,6 +89,13 @@ struct Config {
     std::string layer = "background";
     bool audioMuted = true;   // requirement: audio defaults to muted
     int audioVolume = 15;
+    // Capture what the system plays for audio responsive scenes
+    // (src/scene/audio/README.md section 3); lwe's --no-audio-processing.
+    bool audioProcessing = true;
+    // Mute wallpapers while another application plays (lwe's automute).
+    bool audioAutoMute = true;
+    // Media player information (MPRIS) for scene scripts.
+    bool audioMedia = true;
     std::string sceneEngine = "auto";  // lwe | native | auto
     std::string sceneEnginePath;  // empty = search PATH
     std::string sceneAssetsDir;   // empty = autodetect from content roots

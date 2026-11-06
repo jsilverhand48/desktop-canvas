@@ -125,7 +125,8 @@ system without `colorrandom`], and `speed` its initial velocity.
   corpus systems do to spawn at the cursor, like the presets' mouse rope
   [asset: presets interactive/trail_1];
 - `audioprocessing*`: "The emitter is active only while audio plays"
-  [doc]: silent until phase P7 brings audio.
+  [doc]: from phase P7a the rate is multiplied by the audio response of
+  `../audio/README.md` section 4 (none without audio).
 
 ## 4. Initializers
 
@@ -182,7 +183,7 @@ blending"]; linear ramps [inference]. f below is age / lifetime.
 | `turbulence` | 76 | velocity += smooth noise of (position * `scale`, time * `timescale`) * `mask` * a per particle speed between `speedmin` and `speedmax` * dt [doc; inference: the noise] |
 | `capvelocity` | 1 | limits the speed to `maxspeed` [doc] |
 | `controlpointattract` | 73 | (P5b) within `threshold` (default 512 [inference: the presets' interactive trail]) of control point `controlpoint` (0) moved by `origin`: velocity += the unit vector towards it * `scale` * the speed factor * dt; positive pulls, negative pushes [doc: Control Point Force], with the same strength over the whole distance [inference]. 56 of the 73 act on a point locked to the pointer, so particles follow or avoid the cursor [corpus]. Its flags 1 (reduce velocity near the centre) and 2 (delete particles in the centre) appear in no corpus file and are not done [doc; corpus: flags 0 only] |
-| `vortex` | 4 | (P5b) turns particles about `axis` (default 0 0 1) through control point `controlpoint` (0) at a speed along the circle of `speedinner` within `distanceinner` of it, `speedouter` from `distanceouter` on, linear between (scene units per second, positive counterclockwise looking against the axis) [doc: Vortex]; flag 1 measures the distance from the axis ("Infinite axis: the influence range becomes cylinder-shaped instead of a sphere" [doc]), otherwise from the point. The turn moves positions and keeps the radius [inference: the presets' dna sets both distances 0 and speed -250, a helix that turns with no other force holding its radius]. With an audio response (`audioprocessingmode` not 0) the vortex stands still without audio ("ties the particle speed to audio playback, causing the vortex to stop spinning" [doc]) until phase P7 |
+| `vortex` | 4 | (P5b) turns particles about `axis` (default 0 0 1) through control point `controlpoint` (0) at a speed along the circle of `speedinner` within `distanceinner` of it, `speedouter` from `distanceouter` on, linear between (scene units per second, positive counterclockwise looking against the axis) [doc: Vortex]; flag 1 measures the distance from the axis ("Infinite axis: the influence range becomes cylinder-shaped instead of a sphere" [doc]), otherwise from the point. The turn moves positions and keeps the radius [inference: the presets' dna sets both distances 0 and speed -250, a helix that turns with no other force holding its radius]. With an audio response (`audioprocessingmode` not 0) the speed is multiplied by the response of `../audio/README.md` section 4, so the vortex stands still without audio ("ties the particle speed to audio playback, causing the vortex to stop spinning" [doc]) |
 | `vortex_v2` | 1 | (P5b) `vortex`, and with flag 2 the ring shape [doc: Vortex; asset: presets magic_vortex_orb]: distances count from the ring of radius `ringradius` (default 256 [inference]) and width `ringwidth` (default 0) about the axis; particles farther than `ringpulldistance` (default 0) from the ring are "unaffected by any forces" [doc], those within it are pulled towards the ring at `ringpullforce` (default 1000 [inference]) units/s² |
 | `remapvalue` | 7 | (P5b) every step ("continuously applied to all particles" [doc: Remap Value]): x is the `input` (default the particle's life fraction [inference]; `particlesystemtime` the system's time [corpus 1/7]; `distancetocontrolpoint` to `inputcontrolpoint0`) mapped from [`inputrangemin` 0, `inputrangemax` 1] to 0..1 (clamped with flag 1 [doc: "Clamp input value"; inference: the bit]); a `transformfunction` (`sine`, `simplexnoise`, `fbmnoise` [corpus]) replaces x by 0.5 + 0.5 f(x * `transforminputscale` (1) + a phase per particle) with this project's noise (fbm: three octaves) [inference]; y = lerp(`outputrangemin` 0, `outputrangemax` 1, x) (clamped to that range with flag 2 [doc]) goes to `output` by `operation`: `remap` (corpus 4/4) and `assign` set it, `multiply`, `add` and `subtract` [doc] combine. Outputs: `velocity` (a vector range), `speed` (the velocity's length, direction kept), `opacity` and `size` multiply the particle's values after the other operators [corpus: velocity 4, speed 2, opacity 1]; the default operation is `remap` [inference] |
 | `reducemovementnearcontrolpoint` | 4 | (P5b) within `distanceouter` of control point `controlpoint` (0): velocity *= exp(-k dt), k = `reductioninner` within `distanceinner`, then linearly to `reductionouter` (0) at the outer distance [doc: "reduces the movement speed of particles in its range. Negative reduction values result in a speeding up"; inference: the drag form] |
@@ -408,7 +409,10 @@ not nested again.
   defaults. Phase P6a adds `setPaused` for scripts' `pause()` and
   `play()` (`../script/README.md` section 4): a paused system's
   emitters hold, its particles and children live on, and with nothing
-  left it counts as `finished`.
+  left it counts as `finished`. Phase P7a adds `setAudio` (the 16 band
+  levels, passed on to children) and `ParticleAudio`, the audio response
+  of emitters and vortices; `particleUsesAudio()` tells whether a file
+  has one.
 - Drawing lives in `../gl/SceneRenderer.cpp` (particle layers) and the
   program request in `../shader/Programs.h` (`particleRequest`: the
   combos of section 6).

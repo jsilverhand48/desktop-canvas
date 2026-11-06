@@ -182,6 +182,8 @@ int main(int argc, char** argv) {
 
     app.add_option("wallpaper", wallpaper, "Wallpaper directory (has project.json)");
     app.add_option("--control-fd", controlFd, "Daemon control socket (HelperProtocol)");
+    int audioFd = -1;
+    app.add_option("--audio-fd", audioFd, "Daemon audio spectrum memory (src/scene/audio/README.md)");
     // Repeatable options take one value per use, so a WALLPAPER_DIR after
     // them stays the positional.
     app.add_option("--output", outputs, "Output to cover (repeatable; default all)")
@@ -297,6 +299,8 @@ int main(int argc, char** argv) {
     nativeOptions.scaling = scene::scalingFromName(scaling);
     nativeOptions.clamp = scene::clampFromName(clamp);
     nativeOptions.shaderCache = shaderCacheDir();
+    nativeOptions.audioFd = audioFd;
+    nativeOptions.sound = screenshot.empty();  // screenshots stay silent
     // Scripts keep localStorage in <dir>/<wallpaper folder name>.json, but
     // not for screenshots: one-off runs leave what the wallpaper remembers.
     fs::path storageDir;

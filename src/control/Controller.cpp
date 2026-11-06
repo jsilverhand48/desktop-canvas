@@ -153,7 +153,9 @@ json Controller::settings() const {
             {"scaling", config_.scaling},
             {"layer", config_.layer},
             {"audio",
-             {{"muted", config_.audioMuted}, {"volume", config_.audioVolume}}},
+             {{"muted", config_.audioMuted}, {"volume", config_.audioVolume},
+              {"processing", config_.audioProcessing}, {"auto_mute", config_.audioAutoMute},
+              {"media", config_.audioMedia}}},
             {"scene",
              {{"engine", config_.sceneEngine},
               {"native_available", !manager_.sceneHelperPath().empty()},
@@ -236,6 +238,9 @@ bool Controller::updateSettings(const json& patch, std::string& error,
                 next.audioVolume = v;
             }
             if (a.contains("muted")) next.audioMuted = a["muted"].get<bool>();
+            if (a.contains("processing")) next.audioProcessing = a["processing"].get<bool>();
+            if (a.contains("auto_mute")) next.audioAutoMute = a["auto_mute"].get<bool>();
+            if (a.contains("media")) next.audioMedia = a["media"].get<bool>();
         }
         if (patch.contains("scene")) {
             const auto& s = patch["scene"];
@@ -423,6 +428,8 @@ bool Controller::updateSettings(const json& patch, std::string& error,
     if (!save(error)) return false;
 
     if (volumeChanged) manager_.setVolume(config_.audioVolume);
+    manager_.setAudioProcessing(config_.audioProcessing);
+    manager_.setAutoMute(config_.audioAutoMute);
     if (mutedChanged) manager_.setMuted(newMuted);
     if (coverage) manager_.refreshCoverage();
     for (const auto& id : unbroken) manager_.clearBroken(id);

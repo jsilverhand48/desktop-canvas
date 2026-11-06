@@ -35,6 +35,7 @@ public:
     void pause() override;   // SIGSTOP the child
     void resume() override;  // SIGCONT the child
     void setMuted(bool muted) override;  // restarts the child
+    bool mutesLive() const override { return false; }
 
     const std::string& wallpaperId() const override { return wallpaper_id_; }
     const std::string& outputName() const override { return output_name_; }

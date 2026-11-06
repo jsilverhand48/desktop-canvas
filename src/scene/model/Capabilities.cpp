@@ -67,14 +67,15 @@ const std::set<std::string>& supportedFeatures() {
     // src/scene/particles/README.md, src/scene/text/README.md,
     // src/scene/script/README.md). hdr as users without Ultra
     // post-processing see it; video-texture needs libmpv, which the helper
-    // checks (SceneCheck); script needs QuickJS in the build.
+    // checks (SceneCheck), as does sound (P7b); script needs QuickJS in
+    // the build.
     static const std::set<std::string> supported = [] {
         std::set<std::string> s = {
             "scene",       "image",           "effects",          "solid-layer",
             "fullscreen-layer", "composition-layer", "group",     "user-properties",
             "bloom",       "hdr",             "timeline",         "parallax",
             "camera-shake", "sprite-animation", "video-texture", "particles",
-            "particle-controlpoints", "particle-children", "particle-trails", "text"};
+            "particle-controlpoints", "particle-children", "particle-trails", "text", "sound"};
         if (ScriptEngine::available()) s.insert("script");
         return s;
     }();

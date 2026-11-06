@@ -61,6 +61,9 @@ struct ChildSpec {
     // Give every spawn a fresh SOCK_SEQPACKET socketpair: the child gets its
     // end as fd 3, onSpawn receives the parent's end and takes ownership.
     bool controlChannel = false;
+    // A descriptor the child gets as fd 4 (helper::kInheritFd), for
+    // example the audio spectrum memory; -1 for none. Not owned.
+    int inheritFd = -1;
     // After each successful fork (also respawns). controlFd is -1 without a
     // channel; with one the callee must close it (ControlChannel does).
     std::function<void(pid_t pid, int controlFd)> onSpawn;

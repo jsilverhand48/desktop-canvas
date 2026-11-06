@@ -64,6 +64,18 @@ ParticleRendering particleRendering(const ParticleFile& file);
 // Child particle files by path (section 9); null when not loaded.
 using ParticleFileLookup = std::function<const ParticleFile*(const std::string& path)>;
 
+// An emitter's or operator's audio response (../audio/README.md section
+// 4): mode 0 off (response 1), 1 left, 2 right, 3 both; the mean of the
+// 16 band levels first..last, smoothstep(low, high), pow(exponent),
+// clamped to 0..1.
+struct ParticleAudio {
+    int mode = 0, first = 0, last = 1;
+    float low = 0.5f, high = 1, exponent = 1;
+    ParticleAudio() = default;
+    explicit ParticleAudio(const ParticleComponent& c);
+    float response(const std::array<float, 16>& left, const std::array<float, 16>& right) const;
+};
+
 class ParticleSystem {
 public:
     static constexpr int kMaxDepth = 4;  // child nesting levels (section 9)
@@ -76,6 +88,9 @@ public:
 
     // Inputs, read by the next step(); they reach the children too.
     void setFactors(const ParticleFactors& factors);
+    // The 16 band audio levels for audio responsive emitters and vortices
+    // (silence until set).
+    void setAudio(const std::array<float, 16>& left, const std::array<float, 16>& right);
     // System space to scene space (the layer's world transform).
     void setTransform(const Mat4& model);
     // The cursor in scene space (control points locked to the pointer).
@@ -136,6 +151,7 @@ private:
     double time_ = 0;
     bool stopped_ = false;
     bool paused_ = false;
+    std::array<float, 16> audioLeft_{}, audioRight_{};
     uint32_t nextId_ = 1;
     float trailClock_ = 0;  // seconds into the current keeping interval
     ParticleRendering rendering_;
@@ -164,6 +180,8 @@ struct ParticleNeeds {
     std::vector<std::string> unknown;
 };
 ParticleNeeds particleNeeds(const ParticleFile& file);
+// True when an emitter or operator of the file responds to audio.
+bool particleUsesAudio(const ParticleFile& file);
 
 
 // Smooth value noise in -1..1 (section 5), deterministic for a seed.

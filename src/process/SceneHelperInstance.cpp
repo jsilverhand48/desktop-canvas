@@ -28,6 +28,15 @@ SceneHelperInstance::SceneHelperInstance(EventLoop& loop,
 SceneHelperInstance::~SceneHelperInstance() {
     *alive_ = false;
     stop();
+    audio_wanted_ = false;
+    reportAudioDemand();
+}
+
+void SceneHelperInstance::reportAudioDemand() {
+    const bool demand = audio_wanted_ && !paused_ && channel_ != nullptr;
+    if (demand == audio_demand_) return;
+    audio_demand_ = demand;
+    if (on_audio_demand_) on_audio_demand_(demand);
 }
 
 std::vector<std::string> SceneHelperInstance::buildArgv(const Launch& launch,
@@ -53,6 +62,10 @@ std::vector<std::string> SceneHelperInstance::buildArgv(const Launch& launch,
     if (muted) argv.push_back("--muted");
     argv.push_back("--volume");
     argv.push_back(std::to_string(volume));
+    if (launch.audioFd >= 0) {
+        argv.push_back("--audio-fd");
+        argv.push_back(std::to_string(helper::kInheritFd));
+    }
     if (launch.strict) argv.push_back("--strict");
     if (launch.span) argv.push_back("--span");
     argv.push_back(launch.wallpaperDir);
@@ -66,6 +79,7 @@ void SceneHelperInstance::start() {
     spec.argv = buildArgv(launch_, muted_, volume_);
     spec.exitPolicy = ExitPolicy::HelperProtocol;
     spec.controlChannel = true;
+    spec.inheritFd = launch_.audioFd;
     spec.onSpawn = [this](pid_t pid, int fd) { onSpawn(pid, fd); };
     spec.onExit = [this](ExitKind kind, int) { onExit(kind); };
     supervisor_.start(tag_, std::move(spec));
@@ -79,6 +93,8 @@ void SceneHelperInstance::stop() {
     // exit on its own; the supervisor's SIGTERM follows either way.
     channel_.reset();
     supervisor_.stop(tag_);
+    audio_wanted_ = false;
+    reportAudioDemand();
 }
 
 void SceneHelperInstance::cancelTimers() {
@@ -100,6 +116,8 @@ void SceneHelperInstance::onExit(ExitKind kind) {
     cancelTimers();
     channel_.reset();
     helper_ready_ = false;
+    audio_wanted_ = false;  // a respawned helper says so again
+    reportAudioDemand();
     if (kind == ExitKind::Crash) return;  // the supervisor respawns it
     started_ = false;  // the supervisor has forgotten the tag
     if (kind != ExitKind::Unsupported) return;
@@ -148,6 +166,9 @@ void SceneHelperInstance::handleMessage(const std::string& data) {
     } else if (type == "error") {
         log::warn() << tag_ << ": helper error: "
                     << message->value("message", "").substr(0, 500);
+    } else if (type == "audio") {
+        audio_wanted_ = message->value("wanted", false);
+        reportAudioDemand();
     } else if (type == "stats") {
         log::debug() << tag_ << ": " << message->value("fps", 0.0) << " fps, "
                      << message->value("cpu_ms", 0.0) << " ms cpu";
@@ -175,11 +196,13 @@ void SceneHelperInstance::setCovered(const std::string& output, bool covered) {
 void SceneHelperInstance::pause() {
     paused_ = true;
     send({{"type", "pause"}});
+    reportAudioDemand();
 }
 
 void SceneHelperInstance::resume() {
     paused_ = false;
     send({{"type", "resume"}});
+    reportAudioDemand();
 }
 
 void SceneHelperInstance::setMuted(bool muted) {

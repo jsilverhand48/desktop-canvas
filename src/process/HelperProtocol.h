@@ -28,6 +28,9 @@
 //   {"type":"error","message":"..."}
 //   {"type":"stats","fps":30.0,"cpu_ms":1.5,"gpu_ms":0.8,"rss":123456}
 //       every kStatsIntervalMs while running; doubles as the heartbeat
+//   {"type":"audio","wanted":true}
+//       the scene reads the audio spectrum (src/scene/audio/README.md
+//       section 3); sent when that changes, false is the default
 //
 // Exit codes, honoured by ChildSupervisor for children started with
 // ExitPolicy::HelperProtocol:
@@ -47,6 +50,8 @@ namespace canvas::helper {
 
 inline constexpr int kProtocolVersion = 1;
 inline constexpr int kControlFd = 3;
+// The audio spectrum memory (core/AudioSpectrum.h), given with --audio-fd.
+inline constexpr int kInheritFd = 4;
 
 inline constexpr int kExitClean = 0;
 inline constexpr int kExitUsage = 2;

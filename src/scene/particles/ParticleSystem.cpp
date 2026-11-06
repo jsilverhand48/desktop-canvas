@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <numbers>
 #include <set>
 
@@ -209,6 +210,40 @@ Vec3 noiseVector(Vec3 p, uint32_t seed) {
 
 }  // namespace
 
+// ---------------------------------------------------------------- audio
+
+ParticleAudio::ParticleAudio(const ParticleComponent& c) {
+    mode = int(c.integer("audioprocessingmode", 0));
+    first = int(std::clamp<int64_t>(c.integer("audioprocessingfrequencystart", 0), 0, 15));
+    last = int(std::clamp<int64_t>(c.integer("audioprocessingfrequencyend", 1), 0, 15));
+    exponent = float(c.number("audioprocessingexponent", 1));
+    const std::string bounds = c.text("audioprocessingbounds");
+    float lo = 0.5f, hi = 1.0f;
+    if (!bounds.empty() && std::sscanf(bounds.c_str(), "%f %f", &lo, &hi) == 2) {
+        low = lo;
+        high = hi;
+    }
+}
+
+float ParticleAudio::response(const std::array<float, 16>& left, const std::array<float, 16>& right) const {
+    if (mode <= 0) return 1;
+    const int a = std::min(first, last), b = std::max(first, last);
+    float sum = 0;
+    int n = 0;
+    for (int i = a; i <= b; i++) {
+        if (mode != 2) sum += left[size_t(i)], n++;
+        if (mode != 1) sum += right[size_t(i)], n++;
+    }
+    float r = n ? sum / float(n) : 0;
+    if (high > low) {
+        const float t = std::clamp((r - low) / (high - low), 0.0f, 1.0f);
+        r = t * t * (3 - 2 * t);
+    } else {
+        r = r >= high ? 1.0f : 0.0f;
+    }
+    return std::clamp(std::pow(r, exponent), 0.0f, 1.0f);
+}
+
 // ------------------------------------------------------------- emitters
 
 struct ParticleSystem::Emitter {
@@ -216,7 +251,8 @@ struct ParticleSystem::Emitter {
     float rate = 0;
     int64_t instantaneous = 0;
     double duration = 0, delay = 0;
-    bool onePerFrame = false, periodic = false, audio = false;
+    bool onePerFrame = false, periodic = false;
+    ParticleAudio audio;
     double minPeriod = 0, maxPeriod = 0, minPause = 0, maxPause = 0;
     int64_t maxPerPeriod = 0;
     Vec3 origin{0, 0, 0}, directions{1, 1, 1}, sign{0, 0, 0};
@@ -245,7 +281,7 @@ struct ParticleSystem::Emitter {
         minPause = c.number("minperiodicdelay", 0);
         maxPause = c.number("maxperiodicdelay", minPause);
         maxPerPeriod = c.integer("maxtoemitperperiod", 0);
-        audio = c.integer("audioprocessingmode", 0) != 0;
+        audio = ParticleAudio(c);
         origin = c.vec3("origin", origin);
         directions = c.vec3("directions", directions);
         sign = c.vec3("sign", sign);
@@ -256,10 +292,9 @@ struct ParticleSystem::Emitter {
         controlPoint = int(std::clamp<int64_t>(c.integer("controlpoint", 0), 0, 7));
     }
 
-    // Done when it can emit no more: audio emitters (until phase P7), a
+    // Done when it can emit no more: a
     // burst without a rate, or a duration that is over.
     bool finished() const {
-        if (audio) return true;
         if (burstDone && rate <= 0) return true;
         return duration > 0 && elapsed - delay > duration;
     }
@@ -272,8 +307,8 @@ struct ParticleSystem::Emitter {
     }
 
     // How many particles to emit this step (section 3).
-    int64_t update(double dt, float countFactor, uint64_t& rng) {
-        if (audio) return 0;  // active only while audio plays; phase P7
+    // audioScale: the emitter's audio response, 1 without one.
+    int64_t update(double dt, float countFactor, uint64_t& rng, float audioScale = 1) {
         elapsed += dt;
         const double active = elapsed - delay;
         if (active < 0) return 0;
@@ -299,7 +334,7 @@ struct ParticleSystem::Emitter {
                 return n;
             }
         }
-        owed += double(rate) * double(countFactor) * dt;
+        owed += double(rate) * double(countFactor) * double(audioScale) * dt;
         int64_t whole = int64_t(std::floor(owed));
         owed -= double(whole);
         if (periodic && maxPerPeriod > 0) {
@@ -571,7 +606,8 @@ struct ParticleSystem::Operator {
     Vec3 origin{0, 0, 0}, axis{0, 0, 1};
     float threshold = 512, strength = 0;  // controlpointattract: distance, scale
     float distanceInner = 0, distanceOuter = 0, inner = 0, outer = 0;  // speeds or reductions
-    bool cylinder = false, ring = false, audio = false;
+    bool cylinder = false, ring = false;
+    ParticleAudio audio;
     float ringRadius = 256, ringWidth = 0, ringPull = 0, ringForce = 1000;
     float distance = 256;  // maintaindistancetocontrolpoint; strength is variablestrength
     std::unique_ptr<Remap> remap;
@@ -644,7 +680,7 @@ struct ParticleSystem::Operator {
             ringWidth = float(c.number("ringwidth", 0));
             ringPull = float(c.number("ringpulldistance", 0));
             ringForce = float(c.number("ringpullforce", 1000));
-            audio = c.integer("audioprocessingmode", 0) != 0;
+            audio = ParticleAudio(c);
         } else if (n == "remapvalue") {
             kind = Kind::Remap;
             remap = std::make_unique<Remap>(c, Remap::Output::Opacity);
@@ -767,6 +803,18 @@ ParticleSystem::ParticleSystem(const ParticleFile& file, uint64_t seed, Particle
 ParticleSystem::~ParticleSystem() = default;
 
 void ParticleSystem::setFactors(const ParticleFactors& factors) { factors_ = factors; }
+
+void ParticleSystem::setAudio(const std::array<float, 16>& left, const std::array<float, 16>& right) {
+    audioLeft_ = left;
+    audioRight_ = right;
+}
+
+bool particleUsesAudio(const ParticleFile& file) {
+    for (const auto* list : {&file.emitters, &file.operators})
+        for (const auto& c : *list)
+            if (c.integer("audioprocessingmode", 0) > 0) return true;
+    return false;
+}
 
 void ParticleSystem::setTransform(const Mat4& model) {
     model_ = model;
@@ -955,7 +1003,7 @@ void ParticleSystem::step(double dtIn) {
     std::vector<uint32_t> born;
     if (!stopped_ && !paused_)
         for (auto& emitter : emitters_) {
-            int64_t n = emitter->update(dt, factors_.count, rng_);
+            int64_t n = emitter->update(dt, factors_.count, rng_, emitter->audio.response(audioLeft_, audioRight_));
             n = std::min<int64_t>(n, file_.maxCount - int64_t(particles_.size()));
             for (int64_t i = 0; i < n; i++) spawn(*emitter, born);
         }
@@ -1037,7 +1085,8 @@ void ParticleSystem::step(double dtIn) {
                     break;
                 }
                 case Operator::Kind::Vortex: {
-                    if (op->audio) break;  // still without audio (phase P7)
+                    const float audioScale = op->audio.response(audioLeft_, audioRight_);
+                    if (audioScale <= 0) break;  // still without audio
                     const Vec3 axis = axes[k];
                     const Vec3 c = points_[size_t(op->point)].sim;
                     const Vec3 r = p.position - c;
@@ -1054,7 +1103,7 @@ void ParticleSystem::step(double dtIn) {
                             p.velocity = p.velocity + towards * (op->ringForce * dt * w);
                         }
                     }
-                    const float speed = op->byDistance(d);
+                    const float speed = op->byDistance(d) * audioScale;
                     if (radial > 1e-4f)
                         p.position = c + axis * along + rotateAbout(across, axis, speed * dt * w / radial);
                     break;
@@ -1192,6 +1241,7 @@ void ParticleSystem::runChildren(double dt, const std::vector<uint32_t>& born,
             ParticleSystem& child = *instance.system;
             child.setTransform(at * slot.local);
             child.setFactors(factors_);
+            child.setAudio(audioLeft_, audioRight_);
             if (hasPointer_) child.setPointer(pointer_);
             if (slot.def.flags & 1) {
                 // Set control points: this system's particles, oldest first.

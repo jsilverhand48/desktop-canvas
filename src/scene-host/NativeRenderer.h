@@ -20,6 +20,7 @@
 #include <optional>
 #include <string>
 
+#include "core/AudioSpectrum.h"
 #include "scene-host/Renderer.h"
 #include "scene/assets/AssetLocator.h"
 #include "scene/gl/SceneRenderer.h"
@@ -34,6 +35,8 @@ public:
         scene::Clamp clamp = scene::Clamp::Clamp;
         std::filesystem::path shaderCache;  // empty: no disk cache
         std::filesystem::path scriptStorage;  // scripts' localStorage file; empty: memory only
+        int audioFd = -1;  // the daemon's spectrum memory (--audio-fd); owned once given
+        bool sound = false;  // play sound layers (not for screenshots)
         float placeholder[3] = {0, 0, 0};   // shown when nothing draws
         scene::RenderDebug debug;
     };
@@ -51,6 +54,10 @@ public:
     void setPointer(const std::string& output, double x, double y) override;
     void setPointerButton(const std::string& output, uint32_t button, bool pressed) override;
     void setProperty(const std::string& name, const std::string& value) override;
+    bool wantsAudio() const override;
+    void setMuted(bool muted) override;
+    void setVolume(int percent) override;
+    void setPaused(bool paused) override;
 
     // Problems the engine met so far (empty before the first render).
     std::vector<std::string> problems() const;
@@ -70,6 +77,9 @@ private:
     double elapsed_ = 0;  // time advanced before the engine existed
     double pointer_[2] = {-1, -1};
     bool leftDown_ = false;
+    bool muted_ = true, paused_ = false;
+    int volume_ = 15;
+    canvas::SpectrumReader spectrum_;
     int lastWidth_ = 0, lastHeight_ = 0;
 };
 

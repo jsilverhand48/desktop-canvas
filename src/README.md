@@ -56,7 +56,8 @@ shared by the daemon, helper binaries and tests. `canvas_core` is `core/`;
 `canvas_display` is `gl/`, `display/` and `input/X11PointerPoller` (built when
 EGL plus Wayland or X11 are available, never needs libmpv); `canvas_daemon`
 is `config/`, `source/`, `render/` except VideoBackend, `process/`, `audio/`,
-`ipc/`, `control/` and `http/`, and links no display or video library. The
+`ipc/`, `control/` and `http/`, and links no display or video library
+(libpulse when found, for `audio/PulseCapture`). The
 `desktop-canvas` executable is `main.cpp` plus those, with
 `render/VideoBackend.cpp` and libmpv added when mpv is found.
 `canvas_scene_props` is `scene/model/UserProperties` (no dependencies;

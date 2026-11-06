@@ -9,7 +9,12 @@ Wallpaper instance orchestration and in-process backends.
   cover a merged group.
 - `InstanceManager` owns scan results and running instances; reconciles
   config assignments against present outputs (apply()), services IPC
-  commands, persists changes, and blacklists scene wallpapers whose child
+  commands, persists changes, connects native scene helpers to the audio
+  capture (`setSpectrumService`, `setAudioProcessing`, see
+  `src/audio/README.md`), mutes instances that can mute live (native
+  helpers, videos; `WallpaperInstance::mutesLive`) while other
+  applications play (`setOthersPlaying`, `setAutoMute`; lwe mutes
+  itself, web helpers would need a restart), and blacklists scene wallpapers whose child
   process keeps crashing (config "broken" list). Resolution order for an
   output is: runtime override (exact name, then `*`), then the config
   assignment (exact name, then `*`). Overrides belong to Rotator and are

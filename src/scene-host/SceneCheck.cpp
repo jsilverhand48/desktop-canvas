@@ -8,6 +8,7 @@
 
 #include "process/HelperProtocol.h"
 #include "scene/assets/AssetLocator.h"
+#include "scene/gl/SoundOutputMpv.h"
 #include "scene/gl/VideoTexture.h"
 #include "scene/model/Capabilities.h"
 #include "scene/model/Json.h"
@@ -32,9 +33,13 @@ Examination examine(const fs::path& wallpaper, const fs::path& assetsDir,
         if (exam.loaded) exam.features = scene::sceneFeatures(loaded);
     }
     exam.report = scene::checkReport(wallpaper.string(), exam.loaded, exam.features, loaded.report);
-    // Video textures need libmpv in this build.
+    // Video textures and sound layers need libmpv in this build.
     if (exam.features.count("video-texture") && !scene::VideoTexture::available()) {
         exam.report["unsupported"].push_back("video-texture");
+        exam.report["supported"] = false;
+    }
+    if (exam.features.count("sound") && !scene::SoundOutputMpv::available()) {
+        exam.report["unsupported"].push_back("sound");
         exam.report["supported"] = false;
     }
     exam.unsupported = exam.report["unsupported"].get<std::vector<std::string>>();

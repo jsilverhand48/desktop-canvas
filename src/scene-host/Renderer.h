@@ -36,6 +36,12 @@ public:
                              const std::string& /*value*/) {}
     virtual void setMuted(bool /*muted*/) {}
     virtual void setVolume(int /*percent*/) {}
+    // The host stopped ticking (paused, or every output covered): sounds
+    // pause with it.
+    virtual void setPaused(bool /*paused*/) {}
+    // True while the scene reads the audio spectrum (the host asks the
+    // daemon for capture, src/scene/audio/README.md section 3).
+    virtual bool wantsAudio() const { return false; }
 };
 
 }  // namespace canvas::scenehost
