@@ -306,22 +306,21 @@ clear colour and projection: every scene), `image`, `effects`, `solid-layer`, `f
 `particle-controlpoints`, `particle-children`, `particle-trails`
 (particle systems using what phase P5b brings,
 `../particles/README.md` section 7), `script-layers` (a script that
-calls `createLayer`), `puppet-blendshapes`, `puppet-ik`,
-`puppet-unreadable` (puppets with blend shapes, inverse kinematics
-bones, or an MDL file that cannot be read,
-`../puppet/README.md` section 8). A build
-supports the features of the phases it contains; this one (phase P4a)
-supports `scene`, `image`, `effects`, `solid-layer`, `fullscreen-layer`,
+calls `createLayer`), `puppet-unreadable` (a puppet whose MDL file
+cannot be read, `../puppet/README.md` section 8). A build supports the
+features of the phases it contains: `scene`, `image`, `effects`, `solid-layer`, `fullscreen-layer`,
 `composition-layer`, `group`, `user-properties`, `bloom` and `hdr`
 (drawn as users without Ultra post-processing see it, `../render/README.md`
 section 5) from phase P4a, `timeline`, `parallax`, `camera-shake`,
 `sprite-animation` and `video-texture` (with libmpv only) from P4b,
 `particles` from P5a, `particle-controlpoints`, `particle-children` and
 `particle-trails` from P5b, `text` from P6b, and `script` from P6a
-(only in builds with QuickJS-ng, `../script/README.md` section 6;
-`script-layers`, scripts that call `createLayer`, is not supported yet),
+(only in builds with QuickJS-ng, `../script/README.md` section 6),
+`script-layers` from P9a (with QuickJS-ng, `../script/README.md`
+section 3.1),
 `sound` from P7b (only with libmpv, which the helper's check
-verifies), and `puppet`, `light` and `shape-layer` from P8 (camera path
+verifies), and `puppet` (blend shapes and inverse kinematics from
+P9a), `light` and `shape-layer` from P8 (camera path
 layers without paths are not reported, `../render/README.md` section
 11), so
 the "auto" engine uses the native renderer only for scenes made of those

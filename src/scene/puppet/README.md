@@ -93,10 +93,16 @@ radians, scale xyz, relative to the parent [req A5]. A track holds
 length + 1 keyframes [corpus 2810/2810] and its first keyframe equals
 the rest pose [corpus 2789 to 2808 of 2810 per component].
 
-Between one animation's last track and the next animation there are
-version specific bytes [corpus: version 1: 4 zero bytes; version 4: more
-keyframe blocks then 10 zero bytes; version 6: 35 bytes, longer when the
-file has blend shapes]. They are skipped: the next animation starts at
+After the bone tracks come version specific bytes [corpus]:
+- version 6: 5 zero bytes, u8 blend shape track count, per track u32
+  (1), f32 (the shape's range, section 2.5), u32 (1), u32 byte size and
+  size / 4 f32 weights, one per keyframe (length + 1, 0 to 1), then 29
+  zero bytes [corpus 13/13 animations; 6 with one track];
+- version 4: IK controller tracks, each u32 (0), u32 byte size and
+  size / 36 keyframes like a bone track (section 3.4), as many as fit
+  with length + 1 keyframes, then 10 zero bytes [corpus 7/7];
+- version 1: 4 zero bytes.
+Anything else is skipped: the next animation starts at
 the first offset after the last track where an animation header parses
 with a known mode, 0 < fps <= 1000, a name under 256 bytes and the
 skeleton's bone count. An animation is kept only if fps > 0, length > 0
@@ -104,10 +110,20 @@ and its bone count matches [req A5].
 
 ### 2.5 Other sections
 
-`MDLE` (version 2, 9 files) and `MDMP` (version 1, 2 files: blend
-shapes, with format 0x181000E meshes) are not decoded [corpus]. A puppet
-with `MDMP` reports feature `puppet-blendshapes` (unsupported: its shapes
-would stay neutral) [this project].
+`MDLE` (version 2, 9 files) is not decoded [corpus].
+
+`MDMP` (version 1, 2 files, both with format 0x181000E meshes) holds
+blend shapes [corpus; doc: Shape Animations]: u32 section end, u16 shape
+count, then per shape f32 range, u32 record count, u32 id, u32 (0), NUL
+terminated name, u32 byte size and records of 3 x i16 (x, y, z; z is
+always 0), then u32 byte size and that many bytes (all 0x7FFF, not
+used) [corpus 2/2 parse to the section end]. A record is the offset
+value / 32767 * range in mesh pixels (Y up) [corpus: offsets from 0.4 to
+49 pixels downward on a 333 pixel image, the eyelid closing the docs
+describe]. The extra f32 of format 0x181000E vertices is a 1 based
+record index, 0 for vertices the shapes leave alone [corpus: exactly
+record count vertices carry 1 to record count]; every shape indexes its
+records this way [inference: one shape per file in the library].
 
 ### 2.6 Damaged files
 
@@ -153,9 +169,41 @@ overrides (section 7) and physics (section 6) replace bone values before
 their children are evaluated. Skin matrix = world * inverse(rest world)
 [req A5].
 
-### 3.4 Skinning
+### 3.4 Inverse kinematics
 
-On the CPU every frame a puppet is drawn: each vertex's position is the
+Bones whose physics JSON has `ik` true (3 bones in 3 files [corpus])
+end a limb of `ikd` bones (2 in all). The bytes after the version 2 and
+4 skeleton list the IK controllers; each animation has one track per
+controller (section 2.4) [corpus]. The target track is the one whose
+first keyframe position equals the IK bone's rest world origin, and its
+Z angle equals the bone's rest world angle [corpus 3/3 exact]; another
+track in the same animation is the pole [inference: it sits beside the
+limb's middle joint].
+
+Each frame, after the pose of section 3.3, the target position T and
+angle are blended over the visible layers like a bone (rest: the rest
+world origin and angle). The chain is the IK bone's parent B and, when
+`ikd` is 2 and B has a parent, B's parent A. With A: the joint lengths
+are the current world distances A to B and B to the IK bone; the
+distance to T is clamped to what the limb reaches; the middle joint goes
+to the side of the pole when there is one, else to the side it is on;
+A and B turn by the angles that put the IK bone's origin on T (law of
+cosines). Without A, B turns to point at T. Finally the IK bone's own
+angle is set so its world angle equals the target angle, and the bones
+are evaluated again from the new angles. Joint limits (`ikrmin`,
+`ikrmax`) are not applied [inference: the docs page Limb Animations with
+Inverse Kinematics describes target and orientation controllers, not the
+solver].
+
+### 3.5 Skinning
+
+Blend shapes first [inference]: each shape's weight starts at 0 and
+follows the visible layers like a bone channel (normal layers move it
+toward the track's interpolated value by the layer weight, additive
+layers add value * weight), clamped to 0..1; a script's
+`setBlendShapeWeight` replaces it from then on. A vertex's rest position
+gains the sum of weight * its record of each shape. Then, on the CPU
+every frame a puppet is drawn: each vertex's position is the
 sum over its up to 4 non zero weights of weight * (skin matrix of that
 bone * rest position), not renormalised; its z stays the rest z [req
 A5]. A bone index out of range counts as weight 0. Vertices with no
@@ -231,8 +279,7 @@ offset. Gravity, when enabled, adds a constant acceleration of
 limits (angle limits and max distance) and to ±pi and 4 * tip size
 otherwise; a non finite value resets the bone. Torque is not limited.
 
-Inverse kinematics is not simulated: a puppet with an `ik` bone reports
-feature `puppet-ik` (unsupported) [this project].
+Inverse kinematics follows section 3.4.
 
 ## 7. Scripts
 
@@ -263,8 +310,9 @@ feature `puppet-ik` (unsupported) [this project].
   the first animation layer [inference: a library script plays
   `getAnimation()` of a puppet with no timeline animations; the
   `IAnimationLayer` methods are those of `IAnimation`].
-- Blend shapes: `getBlendShapeIndex` returns -1, `getBlendShapeWeight`
-  0, `setBlendShapeWeight` does nothing (section 2.5).
+- Blend shapes: `getBlendShapeIndex(name)` (-1 when absent),
+  `getBlendShapeWeight(shape)` (the current weight),
+  `setBlendShapeWeight(shape, weight)` (section 3.5) [doc].
 - `ILayer.getAttachmentIndex(name)`, `getAttachmentMatrix`,
   `getAttachmentOrigin`, `getAttachmentAngles` (world values of the
   section 4 frame) [doc].
@@ -274,10 +322,10 @@ scripted re-evaluates every frame like any field.
 
 ## 8. Capability
 
-`puppet` is supported. A missing MDL file is a file error and the layer
-draws as the plain image, which is the rest pose (1 object [corpus]).
-`puppet-unreadable` (the MDL cannot be read), `puppet-blendshapes` and `puppet-ik` (one scene each
-[corpus]) are not, so `auto` keeps those scenes on lwe. The scene
+`puppet` is supported, with blend shapes and inverse kinematics from
+phase P9a. A missing MDL file is a file error and the layer draws as the
+plain image, which is the rest pose (1 object [corpus]).
+`puppet-unreadable` (the MDL cannot be read) is not supported. The scene
 loader reads every model's MDL once (`LoadedScene::puppets`).
 
 ## Files
