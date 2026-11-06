@@ -105,7 +105,16 @@ Layer kinds by model flags [asset: models/util, materials/util]:
 Composition and fullscreen layers without visible effects are not drawn
 (capturing and drawing back changes nothing). With effects, their result
 and that of solid layers with effects goes back onto the frame over the
-layer's rectangle with translucent blending [inference].
+layer's rectangle with translucent blending [inference]. When such a
+layer has a `colorBlendMode` other than 0 (the `flat` shader of solid
+layers has no `BLENDMODE`), the result goes back instead through
+`materials/util/solidlayer_instance.json` (genericimage2, white
+`g_Color4`) with that `BLENDMODE`, blending against
+`_rt_FullFrameBuffer` like an image layer; a solid layer with a blend
+mode and no effects takes the same route [inference: 3784295445 layer
+308, an audio ring drawn opaque black outside its bars under an opacity
+mask with mode 31 `A+B*opacity`, shows a dark disc with translucent
+blending and matches its preview additively].
 
 Per layer values [asset shaders; inference]: `g_Color4` is (color *
 brightness, alpha), used by genericimage3 and genericimage4 and by

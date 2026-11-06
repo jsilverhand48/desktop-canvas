@@ -102,9 +102,14 @@ gets 1 or 0). All 42 such bindings with a known property name a
 combo and a condition equal to one of its option values, around a bool
 (layer, effect or animation layer visibility) [corpus]; this is the combo
 property's "associate the layer with an option" feature [doc: Combo Box
-User Property]. A binding naming no property (26 plain, 12 conditional
-[corpus]) or `"user": null` (particle overrides, 8 [corpus]) leaves the
-stored value.
+User Property]. A plain binding naming no property (26 [corpus]) or
+`"user": null` (particle overrides, 8 [corpus]) leaves the stored value.
+A conditional binding naming no property (12 [corpus]) is unmet: false,
+or 0 for a number field [inference: all 12 are `visible` bools stored
+true; 6 are pointer locked particle systems in 3636723645, titled "No
+mouse Trail", and 6 are a music player widget's box, progress and
+duration layers in 3784295445 and 3829421289, whose box draws as a black
+square when shown without media playing].
 
 ## 3. project.json
 

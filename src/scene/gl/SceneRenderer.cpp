@@ -106,6 +106,9 @@ constexpr uint64_t kUnusedFrames = 120;  // pooled buffers idle this long are fr
 
 const char* const kPassthroughMaterial = "materials/util/effectpassthrough.json";
 const char* const kComposeBackgroundMaterial = "materials/util/effectcomposebackground.json";
+// genericimage2 over util/white: draws solid, compose and fullscreen
+// results back with their colorBlendMode (section 2).
+const char* const kBlendBackMaterial = "materials/util/solidlayer_instance.json";
 // Text layers (src/scene/text/README.md section 6): the font shader paints
 // the coverage, flattexture draws the coloured text; the fallback font.
 const char* const kFontMaterial = "materials/fonts/basefont.json";
@@ -502,6 +505,10 @@ struct Layer {
     std::vector<EffectRun> effects;
     Pass base;  // effectpassthrough or effectcomposebackground (image layers)
     bool hasBase = false;
+    // Solid, compose and fullscreen layers with a colorBlendMode: their
+    // result goes back onto the frame through this pass (section 2).
+    Pass blendBack;
+    bool hasBlendBack = false;
     bool usable = true;
     // Another layer samples this one's composite: it is computed every
     // frame, shown or not, and kept until the frame ends.
@@ -1446,6 +1453,19 @@ struct SceneRenderer::Impl : ScriptHost {
                                           nullptr, nullptr, false, o.id);
                 layer.base.slots[0].kind = SlotKind::Layer;
                 layer.hasBase = true;
+            }
+        }
+        const int blendMode = int(o.image->colorBlendMode.value);
+        if (layer.kind != LayerKind::Image && blendMode != 0) {
+            auto util = material(kBlendBackMaterial);
+            if (util && !util->passes.empty()) {
+                const MaterialPass& mp = util->passes.front();
+                ProgramRequest request = programRequest(mp, scene, nullptr, nullptr);
+                request.combos["BLENDMODE"] = blendMode;
+                layer.blendBack = materialPass(mp, request, where + " blend pass", nullptr, nullptr,
+                                               nullptr, nullptr, false, o.id);
+                layer.blendBack.slots[0].kind = SlotKind::Layer;
+                layer.hasBlendBack = true;
             }
         }
         if (layer.kind == LayerKind::Image && !m.puppet.empty()) buildPuppet(layer, o, m.puppet);
@@ -2856,7 +2876,10 @@ struct SceneRenderer::Impl : ScriptHost {
         }
 
         const bool keep = layer.referenced && layer.hasBase;
-        if (active.empty() && !keep) {
+        // A solid layer with a blend mode needs its colour in a buffer to
+        // blend it against the frame.
+        const bool blendSolid = layer.hasBlendBack && layer.kind == LayerKind::Solid;
+        if (active.empty() && !keep && !blendSolid) {
             if (!shown || layer.kind == LayerKind::Compose || fullscreen) return;  // nothing would change
             in.mvp = screenMvp;
             in.quad = layerQuad(rect, uMax, vMax);
@@ -2936,6 +2959,13 @@ struct SceneRenderer::Impl : ScriptHost {
                 in.overrides[0] = input;
                 if (layer.rig) usePuppetMesh(layer, in, 1, 1);
                 for (const Pass& pass : layer.passes) drawPass(pass, in);
+            } else if (layer.hasBlendBack) {
+                in.mvp = screenMvp;
+                in.quad = onScreen;
+                in.overrides[0] = input;
+                in.white = true;
+                drawPass(layer.blendBack, in);
+                in.white = false;
             } else {
                 blit(*input, nullptr, screenMvp, onScreen, Blend::Translucent);
             }

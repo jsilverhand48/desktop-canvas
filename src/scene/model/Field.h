@@ -133,16 +133,20 @@ Field<T> readField(const nlohmann::json& object, const char* key, T def, LoadRep
 }
 
 // Sets a bound field's value from the current property values; plain
-// fields are left alone. With a report, failed conversions are warned.
+// fields are left alone. A plain binding to an unknown property keeps the
+// stored value; a conditional one resolves as unmet (false / 0). With a
+// report, failed conversions are warned.
 template <class T>
 void resolve(Field<T>& field, const PropertyValues& values, LoadReport* report = nullptr) {
     if (!field.bound()) return;
     const Binding& binding = *field.dynamics->binding;
     field.value = field.stored;
     auto it = values.find(binding.property);
-    if (it == values.end()) return;  // unknown property: stored value
+    // Unknown property: a plain binding keeps the stored value, a
+    // conditional one is unmet (README section 2.3).
+    if (it == values.end() && !binding.condition) return;
     if (binding.condition) {
-        bool match = conditionMatches(it->second, *binding.condition);
+        bool match = it != values.end() && conditionMatches(it->second, *binding.condition);
         if constexpr (std::is_same_v<T, bool>) field.value = match;
         else if constexpr (std::is_same_v<T, float>) field.value = match ? 1.0f : 0.0f;
         return;

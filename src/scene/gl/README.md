@@ -36,7 +36,11 @@ context; the GPU free parts live in the other `src/scene/` modules.
   Puppet image layers (`../puppet/README.md`) own a `PuppetRig`: animation
   layer fields are copied to it when they change, it advances before the
   scripts and is posed after them once per `advance()`, and the final
-  pass draws its skinned mesh; attachment frames go to the layout. Shape
+  pass draws its skinned mesh; attachment frames go to the layout.
+  Solid, compose and fullscreen layers with a `colorBlendMode` keep a
+  `blendBack` pass (genericimage2 from `solidlayer_instance.json` with
+  that `BLENDMODE`) that draws their result back onto the frame in place
+  of the plain translucent blit. Shape
   layers are transparent projection sized rectangles through their
   effects; light layers fill the light uniforms of lit programs each
   frame (`../render/README.md` section 12). Layers scripts create

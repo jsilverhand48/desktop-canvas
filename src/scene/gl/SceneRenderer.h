@@ -10,7 +10,9 @@
 // transforms and visibility follow the fields' current values), draws
 // image, solid, composition, fullscreen, particle and text layers in
 // order into an offscreen frame laid out top row first (section 1),
-// running effects through pooled ping pong buffers, then presents the
+// running effects through pooled ping pong buffers (solid, composition
+// and fullscreen results go back with their colorBlendMode through a
+// genericimage2 pass when they have one), then presents the
 // frame into the framebuffer that was bound when render() was called:
 // fill and stretch cover it, fit centres the frame and fills the bars by
 // the clamp mode.
